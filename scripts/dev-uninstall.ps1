@@ -1,11 +1,25 @@
 # dev-uninstall.ps1 — Type3arabi local development uninstallation script
 [CmdletBinding()]
-param()
+param(
+    [switch]$NoElevate
+)
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
 Write-Host "=== Type3arabi Development Uninstaller ===" -ForegroundColor Cyan
+
+# 0. Check for Administrator privileges
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    if ($NoElevate) {
+        Write-Warning "Running without Administrator privileges. Unregistering Windows TSF TIP in HKLM requires elevation."
+    } else {
+        Write-Host "Requesting Administrator privileges to unregister Windows TSF Text Input Processor..." -ForegroundColor Cyan
+        $proc = Start-Process powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"") -Verb RunAs -Wait -PassThru
+        exit $proc.ExitCode
+    }
+}
 
 # 1. Disable layout via InstallLayoutOrTip
 Write-Host "[1/3] Disabling input layout..." -ForegroundColor Yellow

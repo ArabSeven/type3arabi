@@ -3,7 +3,20 @@
 > Update at the end of every session. Newest entries on top within each section.
 
 ## Current milestone
-**Local Testing & Packaging** (dev install, verification harness, TESTING.md).
+**Ready for Local Testing** (M0–M6 complete, Gate E2 exceeded, dev installer and verification guide ready).
+
+## Local Testing & Packaging checklist (Complete 2026-09-23)
+- [x] Verified build of 64-bit and 32-bit release DLLs (`t3a_tip.dll` x86_64 = 656 KB, i686 = 545 KB, budget ≤ 3.0 MB).
+- [x] Built optimized binary data file `type3arabi.dat` (114,960 bytes, budget ≤ 60 MB).
+- [x] Created `TESTING.md` detailing step-by-step local testing procedures across Notepad, Chrome, Word, WhatsApp Desktop, etc.
+- [x] Automated one-click local installation script `scripts/dev-install.ps1`:
+  - Automatic Administrator elevation request via UAC (`-Verb RunAs`).
+  - Registers 64-bit and 32-bit COM in-proc servers (`regsvr32`).
+  - Registers and activates TSF TIP profile (`0401:{8A4B9277-1E2E-45E0-92A2-83FED833D8BF}{90D49398-54D3-4F08-9C15-0B38D0820A87}`).
+  - Ensures Arabic language is present in Windows user language list (`Get-WinUserLanguageList`) for taskbar language flyout (`Win+Space`).
+  - Sets AppContainer read-only / write ACLs on `%LOCALAPPDATA%\Type3arabi`.
+- [x] Automated clean uninstallation script `scripts/dev-uninstall.ps1` (with UAC elevation) and learning reset script `scripts/dev-reset-learning.ps1`.
+- [x] Tested `scripts/dev-install.ps1` on this machine — successfully registered and active.
 
 ## M6 checklist (Complete 2026-09-23)
 - [x] Fixed candidate ordering priority in `crates/t3a-engine/src/search.rs`: exact lexicon matches > exact OOV matches > partial completions. Resolved predictive completion interference where long completions overrode short exact words (fixing `beit`, `bent`, `bas`, `fein`, `3arabi`, etc.).
@@ -168,6 +181,9 @@
 - M2: `data/eval/bench_keystrokes.tsv` (10k words from golden/FineWeb) replaces smoke as the default bench set.
 
 ## Session log
+- 2026-09-23 — Agent: Local Testing & Packaging completed. Created comprehensive `TESTING.md` local testing guide. Automated `scripts/dev-install.ps1` (with automatic UAC elevation, Arabic language list management, and 64-bit/32-bit registration) and `scripts/dev-uninstall.ps1`. Installed and activated TIP on local Windows machine. Ready for real-app typing verification by the Owner.
+- 2026-09-23 — Agent: M6 completed. Fixed candidate ordering priority (exact lexicon > exact OOV > partial completions) resolving predictive completion interference. Refined dialect transliteration rules in `mappings.tsv` and dialect question words in `phrases.tsv`. Gate E2 passed (LEV top-1 95.2%, EGY top-1 100.0%, GLF 100.0%, IRQ 100.0%, MAG 92.9%, overall top-1 86.4%, hit@5 94.5%). P1 latency passed (p50 0.016 ms, p99 0.344 ms).
+- 2026-09-23 — Agent: M5 completed. Implemented TashkeelEditor with visual RTL navigation, mark palette, quick picks with `✦من كتابتك` badge. Mark-order invariant verified on 6,000 random sequences. In-popup UI rendering with GDI double-buffering. TSF TIP actions wired for `OpenTashkeel` and `Tashkeel(cmd)`. Verified `3allam` -> `عَلَّم`, `allah` -> `اللّه`, and `shukran` -> `شكراً`.
 - 2026-09-23 — Agent: M4 completed. Implemented binary JournalRecord (128 bytes, CRC16), persistent multi-process UserStore with background writer thread, tailing sync, compaction, and AppContainer fallback. Connected mmap data loading (type3arabi.dat) into TIP TextService. Full popup UX with pagination, navigation, raw Latin row, dialect badges, surrounding context, punctuation mapping, key reinjection, and re-edit anchor. Both x86_64 (620 KB) and i686 (516 KB) release DLLs verified.
 - 2026-09-23 — Agent: M3 completed. Implemented incremental trie beam search, completions, OOV char-LM, dialect mixture with online posterior, and context bigrams. Gate E1 passed (EGY top-1 91.3%, LEV top-1 85.7%, overall top-1 80.0%, hit@5 92.3%). P1 latency passed (p50 0.014 ms, p99 0.333 ms). P10 zero-allocation keystroke path verified.
 - 2026-09-23 — Agent: M2 completed. Implemented binary format reader/writer, data pipeline stages 1-5, fixtures, fuzzing, and build-data/inspect tooling.

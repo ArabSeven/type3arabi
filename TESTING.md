@@ -6,7 +6,7 @@ This guide describes how to install, test, and verify **Type3arabi** on your Win
 
 ## 1. Quick Installation (One Command)
 
-From an elevated or regular PowerShell prompt in the repository root:
+From a PowerShell prompt in the repository root (the script will automatically request Administrator elevation to register the TSF Text Input Processor):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\dev-install.ps1

@@ -3,13 +3,29 @@
 param(
     [string]$Target = "x86_64",
     [switch]$SkipBuild,
-    [switch]$SetDefault
+    [switch]$SetDefault,
+    [switch]$NoElevate
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
 Write-Host "=== Type3arabi Development Installer ===" -ForegroundColor Cyan
+
+# 0. Check for Administrator privileges
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    if ($NoElevate) {
+        Write-Warning "Running without Administrator privileges. Windows TSF profile registration in HKLM requires elevation."
+    } else {
+        Write-Host "Requesting Administrator privileges to register Windows TSF Text Input Processor..." -ForegroundColor Cyan
+        $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"")
+        if ($SkipBuild) { $argList += "-SkipBuild" }
+        if ($SetDefault) { $argList += "-SetDefault" }
+        $proc = Start-Process powershell.exe -ArgumentList $argList -Verb RunAs -Wait -PassThru
+        exit $proc.ExitCode
+    }
+}
 
 # 1. Build if needed
 if (-not $SkipBuild) {
@@ -76,6 +92,18 @@ $ILOT_DEFPROFILE = 0x00000008
 $flags = $ILOT_INSTALL
 if ($SetDefault) {
     $flags = $flags -bor $ILOT_DEFPROFILE
+}
+
+# Ensure Arabic language is in the user's language list for Windows input switcher flyout
+try {
+    $userLanguages = Get-WinUserLanguageList
+    if (-not ($userLanguages | Where-Object { $_.LanguageTag -like "ar*" })) {
+        Write-Host "Adding Arabic (ar-SA) to Windows user language list..." -ForegroundColor Gray
+        $userLanguages.Add("ar-SA")
+        Set-WinUserLanguageList $userLanguages -Force
+    }
+} catch {
+    Write-Warning "Could not update user language list: $_"
 }
 
 $res = [NativeInput]::InstallLayoutOrTip($LayoutString, [uint32]$flags)
