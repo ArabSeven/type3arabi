@@ -5,18 +5,15 @@ param()
 $ErrorActionPreference = "Stop"
 Write-Host "=== Type3arabi Reset User Learning ===" -ForegroundColor Cyan
 
-$UserDataDir = Join-Path $env:APPDATA "Type3arabi"
-$UserDb = Join-Path $UserDataDir "user.db"
-$UserTsv = Join-Path $UserDataDir "user.tsv"
-
-if (Test-Path $UserDb) {
-    Remove-Item -Path $UserDb -Force
-    Write-Host "Removed $UserDb" -ForegroundColor Green
+$LocalUserDir = Join-Path $env:LOCALAPPDATA "Type3arabi\user"
+if (Test-Path $LocalUserDir) {
+    Remove-Item -Path "$LocalUserDir\*" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "Cleaned $LocalUserDir" -ForegroundColor Green
 }
 
-if (Test-Path $UserTsv) {
-    Remove-Item -Path $UserTsv -Force
-    Write-Host "Removed $UserTsv" -ForegroundColor Green
+$RoamingDir = Join-Path $env:APPDATA "Type3arabi"
+if (Test-Path $RoamingDir) {
+    Remove-Item -Path "$RoamingDir\user.db", "$RoamingDir\user.tsv" -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host "User learning state reset complete." -ForegroundColor Green

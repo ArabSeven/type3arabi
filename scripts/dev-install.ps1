@@ -28,6 +28,13 @@ $x86Dll = Join-Path $RepoRoot "target\i686-pc-windows-msvc\release\t3a_tip.dll"
 
 if (-not (Test-Path $x64Dll)) { throw "Missing $x64Dll" }
 
+# Ensure type3arabi.dat is next to the DLLs
+$datFile = Join-Path $RepoRoot "target\type3arabi.dat"
+if (Test-Path $datFile) {
+    Copy-Item -Path $datFile -Destination (Join-Path $RepoRoot "target\x86_64-pc-windows-msvc\release\type3arabi.dat") -Force
+    Copy-Item -Path $datFile -Destination (Join-Path $RepoRoot "target\i686-pc-windows-msvc\release\type3arabi.dat") -Force
+}
+
 # 2. Register COM / TSF in 64-bit view
 Write-Host "[2/5] Registering 64-bit TIP DLL..." -ForegroundColor Yellow
 Start-Process -FilePath "regsvr32.exe" -ArgumentList "/s `"$x64Dll`"" -Wait -NoNewWindow
@@ -76,20 +83,25 @@ if (-not $res) {
     Write-Warning "InstallLayoutOrTip returned false; checking if already registered"
 }
 
-# 5. Set AppContainer permissions for AppData\Type3arabi
+# 5. Set AppContainer permissions for Type3arabi data folders
 Write-Host "[5/5] Ensuring AppContainer permissions on user data folder..." -ForegroundColor Yellow
-$UserDataDir = Join-Path $env:APPDATA "Type3arabi"
-if (-not (Test-Path $UserDataDir)) {
-    New-Item -ItemType Directory -Path $UserDataDir -Force | Out-Null
-}
+$userDirs = @(
+    (Join-Path $env:LOCALAPPDATA "Type3arabi"),
+    (Join-Path $env:APPDATA "Type3arabi")
+)
 
 $appContainerSids = @(
     "S-1-15-2-1",  # ALL APPLICATION PACKAGES
     "S-1-15-2-2"   # ALL RESTRICTED APPLICATION PACKAGES
 )
 
-foreach ($sid in $appContainerSids) {
-    Start-Process -FilePath "icacls.exe" -ArgumentList "`"$UserDataDir`" /grant *${sid}:(OI)(CI)(RX) /T /Q" -Wait -NoNewWindow
+foreach ($dir in $userDirs) {
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    foreach ($sid in $appContainerSids) {
+        Start-Process -FilePath "icacls.exe" -ArgumentList "`"$dir`" /grant *${sid}:(OI)(CI)(RX) /T /Q" -Wait -NoNewWindow
+    }
 }
 
 Write-Host "=== Type3arabi registered and enabled successfully! ===" -ForegroundColor Green
