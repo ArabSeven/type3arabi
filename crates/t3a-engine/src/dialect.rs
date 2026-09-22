@@ -24,6 +24,14 @@ impl Dialect {
     pub fn code(self) -> &'static str {
         ["MSA", "LEV", "EGY", "GLF", "IRQ", "MAG"][self as usize]
     }
+    #[inline]
+    pub fn as_str(self) -> &'static str {
+        self.code()
+    }
+    #[inline]
+    pub fn index(self) -> usize {
+        self as usize
+    }
     /// Arabic display name for the popup badge (docs/05 §7).
     pub fn arabic_name(self) -> &'static str {
         ["فصحى", "شامي", "مصري", "خليجي", "عراقي", "مغاربي"][self as usize]

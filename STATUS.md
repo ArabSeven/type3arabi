@@ -3,7 +3,26 @@
 > Update at the end of every session. Newest entries on top within each section.
 
 ## Current milestone
-**M2 — Data pipeline v1 + binary format** (docs/09-roadmap.md). Next: M3 Engine v1.
+**M3 — Engine v1** (docs/09-roadmap.md). Next: M4 TIP integration & full popup UX.
+
+## M2 checklist (Complete 2026-09-23)
+- [x] Implemented typed `#[repr(C)]` binary record definitions in `crates/t3a-data/src/records.rs` (`Node`, `WordRec`, `Rule`, `Chunk`, `BigramPair`, `ChlmEntry`, `PhraseEntry`, `RegionEntry`, `DiacHeader`, `DiacVariant`).
+- [x] Implemented zero-copy `DataView` reader, `DataFile` (mmap), and binary `Writer` in `crates/t3a-data/src/lib.rs` supporting all 13 sections (`ALPH`, `TRIE`, `WREC`, `STRS`, `RULE`, `CHNK`, `BIGR`, `CHLM`, `PHRS`, `DIAC`, `REGN`, `PARM`, `META`).
+- [x] Implemented logarithmic probability quantization (`quantize_lp` / `dequantize_lp`, `lp = -q / 8.0`).
+- [x] Implemented `t3a-cli build-data` and `t3a-cli inspect <word>` in `crates/t3a-cli/src/build.rs` and `inspect.rs`.
+- [x] Implemented data pipeline stages 1–5 in Python (`tools/pipeline/src/t3ap/`):
+  - `fetch`: downloads/stages sources, writes `pipeline_data/manifest.lock.json`.
+  - `normalize`: Arabic normalization (NFC, tatweel/control char removal, alef wasla/Farsi yeh/keheh/heh goal mapping, 50% Arabic char sentence filter), emits base form + marked form.
+  - `count`: unigrams per dialect group, bigrams (MSA downweighted ×0.5), char 5-grams with boundaries, marked tokens.
+  - `lexicon`: unigram smoothing (add-0.5), mixture ranking, `TANWEEN_FATH` / `NO_COMPLETE` / `SACRED` flags, bigrams, char LM.
+  - `diac`: vocalized variants per base word from marked tokens.
+  - `all`: runs stages 1–5 end-to-end.
+- [x] Created `data/fixtures/mini/` fixture with authentic Arabic dialect texts (`msa.txt`, `lev.txt`, `egy.txt`, `glf.txt`, `irq.txt`, `mag.txt`).
+- [x] M2 Acceptance evidence:
+  - Binary size: `target/type3arabi.dat` is 69,320 bytes (0.07 MB), well within the 60 MB budget.
+  - `t3a-cli inspect حبيبي` and `t3a-cli inspect الله`: demonstrates lp×6, flags (including `SACRED`), vocalizations (`اللّه`, `حَبِيبِي`), and bigram successors (`-> الخير`, `-> انت`, `-> يا`).
+  - Normalization vectors match 100% across Python (`pytest tests/test_arabic.py`) and Rust (`cargo test -p t3a-engine`).
+  - Fuzzing: extensive fuzz tests (`fuzz_dataview_extensive`) running all truncations, 10,000 random bit corruptions across headers and sections, and 1,000 random buffers with zero panics.
 
 ## M1 checklist (Complete 2026-09-23)
 - [x] Implemented `t3a-paths` (app directories, AppContainer ACLs via S-1-15-2-1/2, safe error logger).

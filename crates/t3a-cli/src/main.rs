@@ -6,8 +6,12 @@
 //!   t3a-cli bench [<file.tsv>] [--iters 3]
 //!   t3a-cli build-data ...        (M2)
 
+mod build;
+mod inspect;
+
 use std::collections::BTreeMap;
 use std::io::{self, BufRead, Write};
+use std::path::Path;
 use std::time::Instant;
 use t3a_engine::arabic::strip_marks;
 use t3a_engine::dialect::{fixed_profile, Dialect, DEFAULT_PRIOR};
@@ -36,13 +40,11 @@ fn main() {
         "eval" => eval(&args[1..]),
         "explain" => explain(&args[1..]),
         "bench" => bench(&args[1..]),
-        "build-data" => {
-            eprintln!("build-data: implemented in M2 (docs/04 §2 stage 8, docs/12).");
-            2
-        }
+        "build-data" => cmd_build_data(&args[1..]),
+        "inspect" => cmd_inspect(&args[1..]),
         _ => {
             eprintln!(
-                "usage: t3a-cli <repl|eval|explain|bench|build-data> [args]\nsee AGENTS.md §7"
+                "usage: t3a-cli <repl|eval|explain|bench|build-data|inspect> [args]\nsee AGENTS.md §7"
             );
             if cmd == "help" {
                 0
@@ -52,6 +54,43 @@ fn main() {
         }
     };
     std::process::exit(code);
+}
+
+fn cmd_build_data(args: &[String]) -> i32 {
+    let out_path = arg_value(args, "--out").unwrap_or_else(|| "target/type3arabi.dat".to_string());
+    let seed_dir = arg_value(args, "--seed").unwrap_or_else(|| "data/seed".to_string());
+    let in_dir = arg_value(args, "--in");
+    let mode = arg_value(args, "--mode").unwrap_or_else(|| "internal".to_string());
+
+    match build::build_data(
+        in_dir.as_deref().map(Path::new),
+        Path::new(&seed_dir),
+        Path::new(&out_path),
+        &mode,
+    ) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("build-data error: {e}");
+            1
+        }
+    }
+}
+
+fn cmd_inspect(args: &[String]) -> i32 {
+    let data_path =
+        arg_value(args, "--data").unwrap_or_else(|| "target/type3arabi.dat".to_string());
+    let word = args.iter().find(|a| !a.starts_with("--"));
+    let Some(word) = word else {
+        eprintln!("usage: t3a-cli inspect <word> [--data target/type3arabi.dat]");
+        return 2;
+    };
+    match inspect::inspect_word(Path::new(&data_path), word) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("inspect error: {e}");
+            1
+        }
+    }
 }
 
 fn repl(args: &[String]) -> i32 {

@@ -14,6 +14,12 @@ pub const LETTERS: [char; 42] = [
 /// Number of letters in the alphabet.
 pub const COUNT: u8 = 42;
 
+/// Alphabet array constant for convenience.
+pub const T3A_ALPHABET: [char; 42] = LETTERS;
+
+/// Alias for `code_of`.
+pub use code_of as t3a_code;
+
 /// T3A code of an Arabic letter, or `None` if `c` is not in the alphabet.
 pub fn code_of(c: char) -> Option<u8> {
     LETTERS.iter().position(|&l| l == c).map(|i| i as u8 + 1)

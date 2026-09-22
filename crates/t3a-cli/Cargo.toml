@@ -13,4 +13,4 @@ path = "src/main.rs"
 
 [dependencies]
 t3a-engine = { workspace = true }
-t3a-data = { workspace = true }
+t3a-data = { workspace = true, features = ["mmap"] }

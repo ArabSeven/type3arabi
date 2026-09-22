@@ -101,8 +101,8 @@ This keeps the UI reusable by the Plan-B overlay front-end (`docs/11`).
 |---|---|---|---|---|
 | `windows` | =0.62.2 | MIT/Apache-2.0 | tip, ui, hotkey, paths | Win32/COM/TSF/D2D/DWrite bindings, `#[implement]` for COM. Do **not** move to 0.100 until an ADR (API churn). |
 | `windows-core` | (via windows) | MIT/Apache-2.0 | tip, ui | COM core types. |
-| `bytemuck` | 1.x | Zlib/MIT/Apache-2.0 | data | Zero-copy `#[repr(C)]` casts of mmapped sections. *(planned, M2)* |
-| `memmap2` | 0.9.x | MIT/Apache-2.0 | data (feature `mmap`) | Portable read-only file mapping. *(planned, M2)* |
+| `bytemuck` | 1.x | Zlib/MIT/Apache-2.0 | data | Zero-copy `#[repr(C)]` casts of mmapped sections. |
+| `memmap2` | 0.9.x | MIT/Apache-2.0 | data (feature `mmap`) | Portable read-only file mapping. |
 | `tauri` | 2.x | MIT/Apache-2.0 | apps/settings | Settings UI shell (WebView2). *(planned, M7)* |
 | `embed-resource` | 3.x | MIT | tip (build-dep) | Compile `res/t3a.rc` (icons, VERSIONINFO). *(planned, M1)* |
 

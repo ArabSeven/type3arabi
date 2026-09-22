@@ -26,6 +26,8 @@ t3a-paths = { path = "crates/t3a-paths" }
 # ADR-0002: pinned exactly. Features are declared per crate, never wildcards.
 windows = { version = "=0.62.2" }
 windows-core = { version = "=0.62.2" }
+bytemuck = { version = "1.21", features = ["derive"] }
+memmap2 = { version = "0.9" }
 
 [profile.release]
 opt-level = 3

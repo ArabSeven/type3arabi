@@ -9,6 +9,9 @@ publish.workspace = true
 
 # M2 adds: bytemuck (zero-copy section casts) and memmap2 behind feature "mmap" (ledger: docs/01 §8).
 [dependencies]
+bytemuck = { workspace = true }
+memmap2 = { workspace = true, optional = true }
 
 [features]
-mmap = []
+default = []
+mmap = ["dep:memmap2"]
