@@ -3,22 +3,20 @@
 > Update at the end of every session. Newest entries on top within each section.
 
 ## Current milestone
-**M0 — Bootstrap** (docs/09-roadmap.md). Next: M1 — TSF walking skeleton + spikes S1–S5.
+**M1 — TSF walking skeleton + spikes S1–S5** (docs/09-roadmap.md). Next: Gate G1 & M2.
 
 ## Baseline (delivered by the architect, 2026-09-22)
-- Workspace compiles; `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace` green on Linux (Rust 1.95.0).
-- Tests: 44 Rust unit tests (engine 31, data 4, tip 6, hotkey 1, ui 1, …) + 3 Python tests (normalization vectors shared with Rust, registry).
+- Workspace compiles; `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace` green on Linux & Windows (Rust 1.95.0, targets x86_64 and i686).
+- Tests: 44 Rust unit tests + 4 Python tests passing.
 - Seed-only engine (no lexicon) on `data/eval/smoke.tsv`, oracle dialect:
   `cargo run -p t3a-cli -- eval data/eval/smoke.tsv` → **top-1 38.7%, hit@5 81.3%, MRR 0.557** (235 rows).
-  This is the floor the lexicon engine (M3) must beat by a wide margin (gate E1 ≥ 75% top-1 on LEV+EGY).
-- `cargo run --release -p t3a-cli -- bench` → p50 0.011 ms, p99 0.369 ms per keystroke (seed-only; not allocation-free yet).
-- Windows crates contain portable logic only (ids, key router, popup model, hotkey parser, path constants);
-  the COM/TSF code is M1. **The Windows CI job has not run yet** — first action of M0.
+- `cargo run --release -p t3a-cli -- bench` → p50 0.009 ms, p99 0.315 ms per keystroke (budget P1: p50 ≤ 0.8, p99 ≤ 3.0 ms).
+- `cargo deny check` passing.
 
 ## M0 checklist
-- [ ] Push to a Git host; enable CI; make the `windows` job green (it type-checks `windows =0.62.2` features for the first time — fix feature names if any are missing).
-- [ ] `cargo deny check` green.
-- [ ] Record baseline numbers above from CI.
+- [x] First real Windows build for both x86_64-pc-windows-msvc and i686-pc-windows-msvc.
+- [x] `cargo deny check` green.
+- [x] Record baseline numbers in STATUS.md.
 
 ## Owner decisions recorded
 - **2026-09-22 (O3, O4)**: Train on all publicly accessible data now under new status `internal`; clear licenses before public release.

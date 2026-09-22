@@ -13,4 +13,5 @@ pub mod keyrouter;
 mod win;
 
 #[cfg(windows)]
+#[allow(unused_imports)]
 pub use win::*;
