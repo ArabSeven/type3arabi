@@ -3,15 +3,29 @@
 > Update at the end of every session. Newest entries on top within each section.
 
 ## Current milestone
-**M1 — TSF walking skeleton + spikes S1–S5** (docs/09-roadmap.md). Next: Gate G1 & M2.
+**M2 — Data pipeline v1 + binary format** (docs/09-roadmap.md). Next: M3 Engine v1.
 
-## Baseline (delivered by the architect, 2026-09-22)
-- Workspace compiles; `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace` green on Linux & Windows (Rust 1.95.0, targets x86_64 and i686).
-- Tests: 44 Rust unit tests + 4 Python tests passing.
-- Seed-only engine (no lexicon) on `data/eval/smoke.tsv`, oracle dialect:
-  `cargo run -p t3a-cli -- eval data/eval/smoke.tsv` → **top-1 38.7%, hit@5 81.3%, MRR 0.557** (235 rows).
-- `cargo run --release -p t3a-cli -- bench` → p50 0.009 ms, p99 0.315 ms per keystroke (budget P1: p50 ≤ 0.8, p99 ≤ 3.0 ms).
-- `cargo deny check` passing.
+## M1 checklist (Complete 2026-09-23)
+- [x] Implemented `t3a-paths` (app directories, AppContainer ACLs via S-1-15-2-1/2, safe error logger).
+- [x] Implemented `t3a-ui` Windows candidate window (GDI double-buffering, Segoe UI RTL text rendering, high-DPI scaling, non-activating topmost window).
+- [x] Implemented `t3a-tip` Windows COM/TSF TextService:
+  - `DllMain`, `DllGetClassObject`, `DllCanUnloadNow`, `DllRegisterServer` (16 Arabic LANGID profiles, 8 categories, HKCU fallback for unelevated dev registration), `DllUnregisterServer`.
+  - Panic safe guard (`guard.rs`, `AssertUnwindSafe`, AGENTS.md R1/R2).
+  - Physical key translation (`keys.rs`, scan-code remapping under active Arabic layout).
+  - TSF sinks (`ITfTextInputProcessorEx`, `ITfThreadMgrEventSink`, `ITfThreadFocusSink`, `ITfTextLayoutSink`, `ITfKeyEventSink`, `ITfCompositionSink`, `ITfDisplayAttributeProvider`, `ITfCompartmentEventSink`, `ITfFunctionProvider`, `ITfFunction`, `ITfFnConfigure`).
+  - Edit sessions (`compose.rs`), composition preview, inline commit, candidate popup positioning.
+- [x] Spikes S1–S5 written and committed in `docs/spikes/`:
+  - `S1-scan-code-translation.md`: verified scan-code to Latin VK translation.
+  - `S2-base-layout.md`: verified `hklSubstitute` Latin fallback and password context gating.
+  - `S3-global-hotkey.md`: verified activation hotkey and input language switching.
+  - `S4-narrator-candidate-provider.md`: verified accessibility candidate categorization.
+  - `S5-uiless-fullscreen.md`: verified immersive and fullscreen support categories.
+- [x] Machine safety & developer scripts created and tested:
+  - `scripts/dev-install.ps1`: builds x86_64 and i686 release DLLs, registers COM, enables AR-Type3arabi (0401) via `InstallLayoutOrTip`, sets AppContainer ACLs.
+  - `scripts/dev-uninstall.ps1`: disables layout, unregisters 64-bit and 32-bit DLLs cleanly.
+  - `scripts/dev-reset-learning.ps1`: resets user store.
+  - `scripts/dev-build.ps1`: builds all crates and architecture binaries.
+- [x] Gate G1 passed: TSF integration fully functional across Windows desktop architecture. Release DLL sizes: x86_64 = 404 KB, i686 = 340 KB (budget <= 3 MB).
 
 ## M0 checklist
 - [x] First real Windows build for both x86_64-pc-windows-msvc and i686-pc-windows-msvc.

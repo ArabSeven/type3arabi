@@ -121,10 +121,10 @@ pub const MARK_PALETTE: [(char, &str, &str); 10] = [
 pub const FOOTER_HINTS_AR: &str = "مسافة: إدراج · Tab: تشكيل · Esc: لاتيني";
 
 #[cfg(windows)]
-pub mod win {
-    //! M1: minimal GDI popup (owned, no-activate). M4: Direct2D DC render target (software) + DirectWrite
-    //! RTL layouts, DPI, themes, hover/click hit-testing, UIA provider (`IME_Candidate_Window`), light-dismiss events.
-}
+pub mod win;
+
+#[cfg(windows)]
+pub use win::*;
 
 #[cfg(test)]
 mod tests {
