@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 t3a-engine = { workspace = true }
-t3a-data = { workspace = true }
+t3a-data = { workspace = true, features = ["mmap"] }
 
 [target.'cfg(windows)'.dependencies]
 t3a-ui = { workspace = true }

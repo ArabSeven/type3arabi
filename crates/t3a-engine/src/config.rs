@@ -251,6 +251,10 @@ impl Config {
             HarakatMode::Light
         }
     }
+
+    pub fn to_engine_settings(&self) -> crate::session::EngineSettings {
+        crate::session::EngineSettings::from(self)
+    }
 }
 
 fn set<T>(slot: &mut T, v: T) -> bool {

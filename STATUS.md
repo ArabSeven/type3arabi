@@ -3,9 +3,27 @@
 > Update at the end of every session. Newest entries on top within each section.
 
 ## Current milestone
-**M4 — TIP integration & full popup UX** (docs/09-roadmap.md).
+**M5 — Tashkeel editor** (docs/09-roadmap.md).
 
-## M3 checklist (Complete 2026-09-23)
+## M4 checklist (Complete 2026-09-23)
+- [x] Implemented 128-byte binary `JournalRecord` with CRC16-CCITT and kinds (Choose, Negative, AddWord, DeleteWord, Dialect, Wipe) in `crates/t3a-engine/src/journal.rs`.
+- [x] Implemented multi-process persistent `UserStore` with snapshot loading, journal replay, background writer thread, tailing synchronization, compaction, and AppContainer read-only fallback in `crates/t3a-engine/src/store.rs`.
+- [x] Connected zero-copy mmap binary data loader `DataFile::open` (`type3arabi.dat`) into TIP `get_engine()`, falling back to `Engine::builtin()`.
+- [x] Integrated `UserStore` and `Config` into TIP `TextService`:
+  - Cross-process learning synchronization (`user_store.sync()`).
+  - Learning record on candidate commit (`user_store.record()`).
+  - Read-only degradation under AppContainer or secure mode.
+- [x] Implemented full candidate popup UX and key navigation (`docs/02 §5.2`):
+  - Next/Prev candidate selection with wrapping and raw Latin row as permanent last option.
+  - Page navigation (`NextPage` / `PrevPage`) with footer page indicators (`1/2 ▾`).
+  - Inline preview per config (`"arabic"` vs `"latin"`).
+  - Dialect badge display via posterior argmax (`[ شامي ]`, `[ مصري ]`, etc.).
+  - Arabic punctuation mapping (`, ; ?` -> `، ؛ ؟`).
+  - Key reinjection via `SendInput` with `T3A_REINJECT_MAGIC`.
+  - Re-edit anchor: Backspace undoes commit (first trailing space, then reopening Latin buffer and candidate list with previous choice highlighted).
+  - Surrounding context tracking for context bigrams.
+- [x] Verified builds for both x86_64 (620 KB) and i686 (516 KB) release DLLs (budget ≤ 3.0 MB).
+- [x] `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo deny check` all green.
 - [x] Implemented incremental lattice over the trie in `crates/t3a-engine/src/search.rs`:
   - `TrieLattice`, `Column`, `LatticeState`, `BackEdge` with node-level recombination and `f_best - prune_delta` pruning.
   - Final expansion handling terminal node exact matches and `waw-alif` insertion.
@@ -108,6 +126,7 @@
 - M2: `data/eval/bench_keystrokes.tsv` (10k words from golden/FineWeb) replaces smoke as the default bench set.
 
 ## Session log
+- 2026-09-23 — Agent: M4 completed. Implemented binary JournalRecord (128 bytes, CRC16), persistent multi-process UserStore with background writer thread, tailing sync, compaction, and AppContainer fallback. Connected mmap data loading (type3arabi.dat) into TIP TextService. Full popup UX with pagination, navigation, raw Latin row, dialect badges, surrounding context, punctuation mapping, key reinjection, and re-edit anchor. Both x86_64 (620 KB) and i686 (516 KB) release DLLs verified.
 - 2026-09-23 — Agent: M3 completed. Implemented incremental trie beam search, completions, OOV char-LM, dialect mixture with online posterior, and context bigrams. Gate E1 passed (EGY top-1 91.3%, LEV top-1 85.7%, overall top-1 80.0%, hit@5 92.3%). P1 latency passed (p50 0.014 ms, p99 0.333 ms). P10 zero-allocation keystroke path verified.
 - 2026-09-23 — Agent: M2 completed. Implemented binary format reader/writer, data pipeline stages 1-5, fixtures, fuzzing, and build-data/inspect tooling.
 - 2026-09-23 — Agent: M1 completed. Implemented Windows TSF TIP, spikes S1-S5, Gate G1 passed, install/uninstall scripts.

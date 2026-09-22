@@ -19,12 +19,14 @@ pub mod arabic;
 pub mod config;
 pub mod dialect;
 pub mod display;
+pub mod journal;
 pub mod normalize;
 pub mod oov;
 pub mod params;
 pub mod search;
 pub mod seed;
 pub mod session;
+pub mod store;
 pub mod tashkeel;
 pub mod user;
 
@@ -37,4 +39,5 @@ pub use session::{
     Candidate, CandidateKind, CandidateList, Commit, CommitHow, Engine, EngineError,
     EngineSettings, Session, Trailing,
 };
+pub use store::UserStore;
 pub use user::{MemoryUser, NoUser, UserScorer};
