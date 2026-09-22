@@ -107,30 +107,7 @@ pub struct RouterState {
 }
 
 /// Commands inside the tashkeel editor (docs/05 §4.3).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TashkeelCmd {
-    Fatha,
-    Damma,
-    Kasra,
-    Sukun,
-    ShaddaToggle,
-    Fathatan,
-    Dammatan,
-    Kasratan,
-    DaggerAlif,
-    Clear,
-    /// Backspace: clear marks on the focused letter, or back to the list if it has none.
-    ClearOrBack,
-    LetterNext,
-    LetterPrev,
-    LetterFirst,
-    LetterLast,
-    QuickPick(u8),
-    PickUp,
-    PickDown,
-    Back,
-    Ignore,
-}
+pub use t3a_engine::tashkeel::TashkeelCmd;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {

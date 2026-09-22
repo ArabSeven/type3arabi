@@ -162,6 +162,7 @@ pub struct Inner {
     pub last_commit: Option<ReEditState>,
     pub recent_words: Vec<String>,
     pub last_raw_key: (WPARAM, LPARAM),
+    pub tashkeel_editor: Option<t3a_engine::TashkeelEditor>,
 }
 
 #[implement(
@@ -213,6 +214,7 @@ impl TextService {
                 last_commit: None,
                 recent_words: Vec::new(),
                 last_raw_key: (WPARAM(0), LPARAM(0)),
+                tashkeel_editor: None,
             }),
         })
     }
@@ -244,6 +246,7 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
             inner.active_composition = None;
             inner.composition_range = None;
             inner.last_commit = None;
+            inner.tashkeel_editor = None;
 
             if let Some(tm) = inner.thread_mgr.take() {
                 if let Ok(source) = tm.cast::<ITfSource>() {
@@ -422,7 +425,9 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
             let state = RouterState {
                 context: ctx_mode,
                 composing: !inner.session.is_empty(),
-                popup: if inner.popup.as_ref().is_some_and(|p| p.is_visible()) {
+                popup: if inner.tashkeel_editor.is_some() {
+                    Popup::Tashkeel
+                } else if inner.popup.as_ref().is_some_and(|p| p.is_visible()) {
                     Popup::List
                 } else {
                     Popup::Hidden
@@ -468,7 +473,9 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
                 let state = RouterState {
                     context: ctx_mode,
                     composing: !inner.session.is_empty(),
-                    popup: if inner.popup.as_ref().is_some_and(|p| p.is_visible()) {
+                    popup: if inner.tashkeel_editor.is_some() {
+                        Popup::Tashkeel
+                    } else if inner.popup.as_ref().is_some_and(|p| p.is_visible()) {
                         Popup::List
                     } else {
                         Popup::Hidden
@@ -552,6 +559,7 @@ impl ITfCompositionSink_Impl for TextService_Impl {
         let mut inner = self.inner.borrow_mut();
         inner.active_composition = None;
         inner.composition_range = None;
+        inner.tashkeel_editor = None;
         inner.session.reset();
         if let Some(popup) = &mut inner.popup {
             popup.hide();
@@ -951,8 +959,60 @@ impl TextService_Impl {
                 self.commit_candidate_internal(ctx, &mut inner, selected, CommitHow::Enter)?;
                 inner.arabic_mode = !inner.arabic_mode;
             }
-            Action::OpenTashkeel | Action::Tashkeel(_) => {
-                // Handled in M5
+            Action::OpenTashkeel => {
+                let (word, picks, from_typing) = {
+                    let inner = self.inner.borrow();
+                    let selected = inner.selected_index;
+                    let cands = inner.session.candidates();
+                    if selected < cands.items.len() {
+                        let word = cands.items[selected].text.clone();
+                        let vh = inner.session.vowel_harakat(selected);
+                        let picks = inner.session.vocalizations(selected);
+                        let from_typing = vh.as_ref().is_some_and(|v| picks.first() == Some(v));
+                        (Some(word), picks, from_typing)
+                    } else {
+                        (None, Vec::new(), false)
+                    }
+                };
+                if let Some(w) = word {
+                    let editor = t3a_engine::TashkeelEditor::new(&w, picks, from_typing);
+                    let mut inner = self.inner.borrow_mut();
+                    inner.tashkeel_editor = Some(editor);
+                    drop(inner);
+                    self.sync_tashkeel_ui(ctx)?;
+                }
+            }
+            Action::Tashkeel(cmd) => {
+                let (action, to_commit) = {
+                    let mut inner = self.inner.borrow_mut();
+                    if let Some(editor) = &mut inner.tashkeel_editor {
+                        let action = editor.apply_cmd(cmd);
+                        let to_commit = match &action {
+                            t3a_engine::TashkeelAction::Commit(w) => Some(w.clone()),
+                            _ => None,
+                        };
+                        (Some(action), to_commit)
+                    } else {
+                        (None, None)
+                    }
+                };
+                match action {
+                    Some(t3a_engine::TashkeelAction::Continue) => {
+                        self.sync_tashkeel_ui(ctx)?;
+                    }
+                    Some(t3a_engine::TashkeelAction::BackToList) => {
+                        let mut inner = self.inner.borrow_mut();
+                        inner.tashkeel_editor = None;
+                        drop(inner);
+                        self.sync_composition_and_ui(ctx, &mut self.inner.borrow_mut())?;
+                    }
+                    Some(t3a_engine::TashkeelAction::Commit(_)) => {
+                        let mut inner = self.inner.borrow_mut();
+                        inner.tashkeel_editor = None;
+                        self.end_composition_internal(ctx, &mut inner, to_commit.as_deref())?;
+                    }
+                    None => {}
+                }
             }
             _ => {}
         }
@@ -969,7 +1029,31 @@ impl TextService_Impl {
         let latin = inner.session.candidates().raw.clone();
         let total_cands = inner.session.candidates().items.len();
 
-        let (commit_text, trailing_space, had_rank) = if index < total_cands {
+        let (commit_text, trailing_space, had_rank) = if let Some(editor) =
+            inner.tashkeel_editor.take()
+        {
+            let vocalized = editor.render();
+            if index < total_cands {
+                let top_word = inner
+                    .session
+                    .candidates()
+                    .items
+                    .first()
+                    .map(|c| c.base.clone());
+                let navigated = index > 0;
+                let base = inner.session.candidates().items[index].base.clone();
+                if inner.config.learning_enabled
+                    && !inner.secure_mode
+                    && !t3a_paths::is_app_container()
+                {
+                    inner
+                        .user_store
+                        .record(&latin, &base, index, navigated, top_word.as_deref());
+                }
+            }
+            let has_space = how == CommitHow::Space;
+            (vocalized, has_space, index)
+        } else if index < total_cands {
             let top_word = inner
                 .session
                 .candidates()
@@ -1183,9 +1267,66 @@ impl TextService_Impl {
         if let Some(popup) = &mut inner.popup {
             popup.hide();
         }
+        inner.tashkeel_editor = None;
         inner.session.reset();
         inner.active_composition = None;
         inner.composition_range = None;
+
+        Ok(())
+    }
+
+    fn sync_tashkeel_ui(&self, ctx: &ITfContext) -> windows::core::Result<()> {
+        let (preview_text, model, tid) = {
+            let inner = self.inner.borrow();
+            let Some(editor) = &inner.tashkeel_editor else {
+                return Ok(());
+            };
+            let word = editor.render();
+            let model = t3a_ui::TashkeelModel {
+                picks: editor.picks.clone(),
+                from_typing: editor.from_typing,
+                highlighted_pick: editor.highlighted_pick,
+                word: word.clone(),
+                focused_letter: editor.focused_letter,
+            };
+            (word, model, inner.client_id)
+        };
+
+        let preview_utf16: Vec<u16> = preview_text.encode_utf16().collect();
+        let ctx_clone = ctx.clone();
+        let edit_session = EditSession::new(move |ec| unsafe {
+            let insert_at_sel: ITfInsertAtSelection = ctx_clone.cast()?;
+            let range = insert_at_sel.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &preview_utf16)?;
+
+            range.Collapse(ec, TF_ANCHOR_END)?;
+            let sel = TF_SELECTION {
+                range: std::mem::ManuallyDrop::new(Some(range)),
+                style: TF_SELECTIONSTYLE {
+                    ase: windows::Win32::UI::TextServices::TF_AE_NONE,
+                    fInterimChar: BOOL::from(false),
+                },
+            };
+            ctx_clone.SetSelection(ec, &[sel])?;
+            Ok(())
+        });
+
+        unsafe {
+            let session_inst: windows::Win32::UI::TextServices::ITfEditSession =
+                edit_session.into();
+            let _ =
+                ctx.RequestEditSession(tid, &session_inst, TF_ES_READWRITE | TF_ES_ASYNCDONTCARE);
+        }
+
+        // Show popup
+        let mut inner = self.inner.borrow_mut();
+        if let Some(popup) = &mut inner.popup {
+            let mut pt = windows::Win32::Foundation::POINT::default();
+            unsafe {
+                let _ = windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut pt);
+            }
+            let anchor = (pt.x, pt.y, pt.x + 20, pt.y + 20);
+            popup.show(PopupModel::Tashkeel(model), anchor);
+        }
 
         Ok(())
     }

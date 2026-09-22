@@ -794,6 +794,40 @@ mod tests {
     }
 
     #[test]
+    fn m5_acceptance_three_words() {
+        // M5 acceptance (docs/09 §M5):
+        // 1. 3allam → Ctrl+Enter → عَلَّم
+        // 2. allah default → اللّه
+        // 3. shukran default → شكراً
+        let e = Engine::builtin();
+        let mut s = Session::new(&e, EngineSettings::default());
+
+        // 1. 3allam
+        type_word(&mut s, "3allam", &NoUser);
+        let idx = s
+            .candidates()
+            .items
+            .iter()
+            .position(|c| c.base == "علم")
+            .expect("علم offered");
+        let c1 = s.commit(idx, CommitHow::WithHarakat);
+        assert_eq!(c1.text, "\u{0639}\u{064E}\u{0644}\u{0651}\u{064E}\u{0645}"); // عَلَّم
+
+        // 2. allah
+        type_word(&mut s, "allah", &NoUser);
+        assert_eq!(
+            s.candidates().items[0].text,
+            "\u{0627}\u{0644}\u{0644}\u{0651}\u{0647}" // اللّه
+        );
+        s.reset();
+
+        // 3. shukran
+        type_word(&mut s, "shukran", &NoUser);
+        let c3 = s.commit(0, CommitHow::Enter);
+        assert_eq!(c3.text, "\u{0634}\u{0643}\u{0631}\u{0627}\u{064B}"); // شكراً
+    }
+
+    #[test]
     fn outputs_are_clean() {
         let e = Engine::builtin();
         let mut s = Session::new(&e, EngineSettings::default());

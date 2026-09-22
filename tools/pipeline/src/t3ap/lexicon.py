@@ -1,6 +1,8 @@
-"""lexicon stage: selects forms, computes dialect log-probs and flags (docs/04 §5)."""
+from collections import defaultdict
 import math
 from pathlib import Path
+
+from .arabic import base_form
 
 REPO = Path(__file__).resolve().parents[4]
 PIPELINE_DATA = REPO / "pipeline_data"
@@ -11,6 +13,9 @@ SEED_DIR = REPO / "data" / "seed"
 GROUPS = ["msa", "lev", "egy", "glf", "irq", "mag"]
 PRIORS = [0.35, 0.20, 0.20, 0.12, 0.05, 0.08]
 SACRED_WORDS = {"الله", "لله", "بالله", "والله", "تالله", "فلله"}
+ADVERBIAL_TANWEEN = {
+    "شكرا", "جدا", "أهلا", "اهلا", "طبعا", "عفوا", "أبدا", "ابدا", "مثلا", "تقريبا", "حالا", "دائما", "معا", "جميعا", "تماما", "قليلا"
+}
 
 
 def run() -> int:
@@ -43,6 +48,20 @@ def run() -> int:
             if line and not line.startswith("#"):
                 no_complete.add(line)
 
+    # Load marked tanween counts
+    tanween_counts = defaultdict(int)
+    marked_f = COUNTS_DIR / "marked.tsv"
+    if marked_f.exists():
+        for line in marked_f.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                parts = line.split("\t")
+                if len(parts) >= 2:
+                    m_word, c = parts[0], int(parts[1])
+                    if "\u064b" in m_word:
+                        b = base_form(m_word)
+                        if b:
+                            tanween_counts[b] += c
+
     V = max(1, len(union_vocab))
     ranked_words = []
 
@@ -66,9 +85,15 @@ def run() -> int:
 
         # Flags: bit0 = TANWEEN_FATH, bit1 = NO_COMPLETE, bit2 = SACRED
         flags = 0
-        if w.endswith("ا") or w.endswith("ة"):
-            # tanween fath candidate
-            pass
+        if w.endswith("ا"):
+            is_tanween = False
+            if w in ADVERBIAL_TANWEEN:
+                is_tanween = True
+            elif tanween_counts.get(w, 0) > 0 and tot_c > 0:
+                if (tanween_counts[w] / tot_c >= 0.25) or (tanween_counts[w] >= 50):
+                    is_tanween = True
+            if is_tanween:
+                flags |= 1
         if w in no_complete:
             flags |= 2
         if w in SACRED_WORDS:

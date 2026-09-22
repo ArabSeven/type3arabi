@@ -7,10 +7,10 @@ use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POI
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreateSolidBrush,
     DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, GetMonitorInfoW,
-    MonitorFromPoint, SelectObject, SetBkMode, SetTextColor, DT_CENTER, DT_LEFT, DT_NOPREFIX,
-    DT_RIGHT, DT_SINGLELINE, DT_VCENTER, FONT_CHARSET, FONT_CLIP_PRECISION, FONT_OUTPUT_PRECISION,
-    FONT_QUALITY, FW_NORMAL, FW_SEMIBOLD, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, PAINTSTRUCT,
-    SRCCOPY, TRANSPARENT,
+    MonitorFromPoint, SelectObject, SetBkMode, SetTextColor, DT_CALCRECT, DT_CENTER, DT_LEFT,
+    DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, FONT_CHARSET, FONT_CLIP_PRECISION,
+    FONT_OUTPUT_PRECISION, FONT_QUALITY, FW_NORMAL, FW_SEMIBOLD, HDC, MONITORINFO,
+    MONITOR_DEFAULTTONEAREST, PAINTSTRUCT, SRCCOPY, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -192,7 +192,7 @@ impl PopupWindow {
                 };
                 (width, header_h + rows_h + footer_h + 2)
             }
-            PopupModel::Tashkeel(_) => (scale(320.0), scale(180.0)),
+            PopupModel::Tashkeel(_) => (scale(380.0), scale(158.0)),
             PopupModel::Hidden => (0, 0),
         }
     }
@@ -424,6 +424,245 @@ impl PopupWindow {
             let _ = DeleteObject(font_marker.into());
         }
 
+        if let PopupModel::Tashkeel(tashkeel) = &self.model {
+            let font_chip = CreateFontW(
+                -scale(12.0),
+                0,
+                0,
+                0,
+                FW_NORMAL.0 as i32,
+                0,
+                0,
+                0,
+                FONT_CHARSET(1),
+                FONT_OUTPUT_PRECISION(0),
+                FONT_CLIP_PRECISION(0),
+                FONT_QUALITY(0),
+                0u32,
+                w!("Segoe UI"),
+            );
+            let font_word = CreateFontW(
+                -scale(34.0),
+                0,
+                0,
+                0,
+                FW_SEMIBOLD.0 as i32,
+                0,
+                0,
+                0,
+                FONT_CHARSET(1),
+                FONT_OUTPUT_PRECISION(0),
+                FONT_CLIP_PRECISION(0),
+                FONT_QUALITY(0),
+                0u32,
+                w!("Segoe UI"),
+            );
+            let font_palette = CreateFontW(
+                -scale(13.0),
+                0,
+                0,
+                0,
+                FW_NORMAL.0 as i32,
+                0,
+                0,
+                0,
+                FONT_CHARSET(1),
+                FONT_OUTPUT_PRECISION(0),
+                FONT_CLIP_PRECISION(0),
+                FONT_QUALITY(0),
+                0u32,
+                w!("Segoe UI"),
+            );
+            let font_footer = CreateFontW(
+                -scale(11.0),
+                0,
+                0,
+                0,
+                FW_NORMAL.0 as i32,
+                0,
+                0,
+                0,
+                FONT_CHARSET(1),
+                FONT_OUTPUT_PRECISION(0),
+                FONT_CLIP_PRECISION(0),
+                FONT_QUALITY(0),
+                0u32,
+                w!("Segoe UI"),
+            );
+
+            let pad_x = scale(metrics::PAD_X);
+            let chip_bar_h = scale(32.0);
+            let word_h = scale(64.0);
+            let palette_h = scale(36.0);
+
+            // 1. Quick picks bar (top, RTL chips)
+            let mut chip_x = width - pad_x;
+            let old_font = SelectObject(mem_dc, font_chip.into());
+
+            for (idx, pick) in tashkeel.picks.iter().take(8).enumerate() {
+                let badge_suffix = if idx == 0 && tashkeel.from_typing {
+                    " ✦من كتابتك"
+                } else {
+                    ""
+                };
+                let num_symbol = match idx {
+                    0 => "①",
+                    1 => "②",
+                    2 => "③",
+                    3 => "④",
+                    4 => "⑤",
+                    5 => "⑥",
+                    6 => "⑦",
+                    _ => "⑧",
+                };
+                let chip_text = format!("{num_symbol} {pick}{badge_suffix}");
+                let mut chip_utf16: Vec<u16> = chip_text.encode_utf16().collect();
+
+                let mut calc_rc = RECT::default();
+                let _ = DrawTextW(
+                    mem_dc,
+                    &mut chip_utf16,
+                    &mut calc_rc,
+                    DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX,
+                );
+                let chip_w = (calc_rc.right - calc_rc.left) + scale(12.0);
+                let chip_left = chip_x - chip_w;
+                if chip_left < pad_x {
+                    break;
+                }
+
+                let chip_rc = RECT {
+                    left: chip_left,
+                    top: scale(4.0),
+                    right: chip_x,
+                    bottom: chip_bar_h - scale(4.0),
+                };
+
+                if tashkeel.highlighted_pick == Some(idx) {
+                    let _ = FillRect(mem_dc, &chip_rc, accent_brush);
+                    SetTextColor(mem_dc, COLORREF(0x00FFFFFF));
+                } else {
+                    let _ = FrameRect(mem_dc, &chip_rc, border_brush);
+                    SetTextColor(mem_dc, to_colorref(self.theme.text));
+                }
+
+                let mut text_rc = chip_rc;
+                let _ = DrawTextW(
+                    mem_dc,
+                    &mut chip_utf16,
+                    &mut text_rc,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                );
+
+                chip_x = chip_left - scale(6.0);
+            }
+
+            // Divider below chips
+            let div1_rc = RECT {
+                left: 1,
+                top: chip_bar_h,
+                right: width - 1,
+                bottom: chip_bar_h + 1,
+            };
+            let _ = FillRect(mem_dc, &div1_rc, border_brush);
+
+            // 2. Main word display
+            let word_y = chip_bar_h;
+            let mut word_rc = RECT {
+                left: pad_x,
+                top: word_y,
+                right: width - pad_x,
+                bottom: word_y + word_h,
+            };
+            let _ = SelectObject(mem_dc, font_word.into());
+            SetTextColor(mem_dc, to_colorref(self.theme.text));
+            let mut word_utf16: Vec<u16> = tashkeel.word.encode_utf16().collect();
+            let _ = DrawTextW(
+                mem_dc,
+                &mut word_utf16,
+                &mut word_rc,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+            );
+
+            // Divider below word
+            let div2_y = word_y + word_h;
+            let div2_rc = RECT {
+                left: 1,
+                top: div2_y,
+                right: width - 1,
+                bottom: div2_y + 1,
+            };
+            let _ = FillRect(mem_dc, &div2_rc, border_brush);
+
+            // 3. Mark palette (10 items)
+            let palette_y = div2_y + 1;
+            let num_items = crate::MARK_PALETTE.len();
+            let item_w = (width - 2 * pad_x) / num_items as i32;
+            let _ = SelectObject(mem_dc, font_palette.into());
+
+            for (idx, &(mark, key_hint, _name)) in crate::MARK_PALETTE.iter().enumerate() {
+                let item_left = pad_x + idx as i32 * item_w;
+                let item_rc = RECT {
+                    left: item_left + scale(2.0),
+                    top: palette_y + scale(4.0),
+                    right: item_left + item_w - scale(2.0),
+                    bottom: palette_y + palette_h - scale(4.0),
+                };
+
+                let _ = FrameRect(mem_dc, &item_rc, border_brush);
+
+                let mark_str = if mark == '\u{2715}' {
+                    format!("✕ {key_hint}")
+                } else {
+                    format!("◌{mark} {key_hint}")
+                };
+                let mut mark_utf16: Vec<u16> = mark_str.encode_utf16().collect();
+                SetTextColor(mem_dc, to_colorref(self.theme.text));
+                let mut text_rc = item_rc;
+                let _ = DrawTextW(
+                    mem_dc,
+                    &mut mark_utf16,
+                    &mut text_rc,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                );
+            }
+
+            // Divider below palette
+            let div3_y = palette_y + palette_h;
+            let div3_rc = RECT {
+                left: 1,
+                top: div3_y,
+                right: width - 1,
+                bottom: div3_y + 1,
+            };
+            let _ = FillRect(mem_dc, &div3_rc, border_brush);
+
+            // 4. Footer hints
+            let footer_y = div3_y + 1;
+            let mut footer_rc = RECT {
+                left: pad_x,
+                top: footer_y,
+                right: width - pad_x,
+                bottom: height - 1,
+            };
+            let _ = SelectObject(mem_dc, font_footer.into());
+            SetTextColor(mem_dc, to_colorref(self.theme.secondary));
+            let footer_text = "Enter: إدراج · Esc: رجوع · ←→: حرف";
+            let mut f_utf16: Vec<u16> = footer_text.encode_utf16().collect();
+            let _ = DrawTextW(
+                mem_dc,
+                &mut f_utf16,
+                &mut footer_rc,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+            );
+
+            let _ = SelectObject(mem_dc, old_font);
+            let _ = DeleteObject(font_chip.into());
+            let _ = DeleteObject(font_word.into());
+            let _ = DeleteObject(font_palette.into());
+            let _ = DeleteObject(font_footer.into());
+        }
+
         // Copy memory DC to screen DC
         let _ = BitBlt(hdc, 0, 0, width, height, Some(mem_dc), 0, 0, SRCCOPY);
 
@@ -466,13 +705,33 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
                 let dpi = (*ptr).dpi;
                 let scale = |v: f32| metrics::scale(v, dpi) as i32;
-                let header_h = scale(metrics::HEADER_H);
-                let row_h = scale(metrics::ROW_H);
-                if y >= header_h {
-                    let row_idx = ((y - header_h) / row_h) as usize;
-                    if let Some(cb) = &(*ptr).on_candidate_clicked {
-                        cb(row_idx);
+                match &(*ptr).model {
+                    PopupModel::List(_) => {
+                        let header_h = scale(metrics::HEADER_H);
+                        let row_h = scale(metrics::ROW_H);
+                        if y >= header_h {
+                            let row_idx = ((y - header_h) / row_h) as usize;
+                            if let Some(cb) = &(*ptr).on_candidate_clicked {
+                                cb(row_idx);
+                            }
+                        }
                     }
+                    PopupModel::Tashkeel(_) => {
+                        let chip_bar_h = scale(32.0);
+                        if y < chip_bar_h {
+                            let x = (lparam.0 & 0xFFFF) as i16 as i32;
+                            let pad_x = scale(metrics::PAD_X);
+                            let width = scale(380.0);
+                            let rel_x = (width - pad_x) - x;
+                            if rel_x > 0 {
+                                let chip_idx = (rel_x / scale(60.0)) as usize;
+                                if let Some(cb) = &(*ptr).on_candidate_clicked {
+                                    cb(chip_idx);
+                                }
+                            }
+                        }
+                    }
+                    PopupModel::Hidden => {}
                 }
             }
             LRESULT(0)

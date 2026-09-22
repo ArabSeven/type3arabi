@@ -3,7 +3,28 @@
 > Update at the end of every session. Newest entries on top within each section.
 
 ## Current milestone
-**M5 — Tashkeel editor** (docs/09-roadmap.md).
+**M6 — Accuracy push** (docs/09-roadmap.md).
+
+## M5 checklist (Complete 2026-09-23)
+- [x] Implemented `TashkeelCmd`, `TashkeelAction`, `LetterSlot`, and `TashkeelEditor` in `crates/t3a-engine/src/tashkeel.rs`:
+  - Visual RTL letter navigation (← logical next, → logical prev, Home/End first/last).
+  - Mark palette application (`a, u, i, o, w, A, U, I, ^, x`), auto-advancing after vowel/tanween/sukun/clear, preserving focus on shadda and dagger alif.
+  - Quick picks (`1`–`8`, Tab / Shift+Tab, Up / Down) with `✦من كتابتك` badge for vowel-derived reading.
+  - Clear / back navigation: Backspace on bare letter reverts to candidate list (`ClearOrBack`).
+- [x] Mark-order invariant verified across all editor paths (`tashkeel::tests::property_random_editor_paths_preserve_mark_order`, 6,000 randomized command sequences assert `canonical_mark_order(&rendered) == rendered`).
+- [x] In-popup Tashkeel editor UI layout and GDI double-buffered rendering in `crates/t3a-ui/src/win/mod.rs` (380×158 DIPs, quick pick chip bar, large word display, 10-item mark palette, footer hints, mouse click hit testing).
+- [x] TSF TIP integration in `crates/t3a-tip/src/win/service.rs`:
+  - `Action::OpenTashkeel` opens editor for highlighted candidate with vocalized quick picks.
+  - `Action::Tashkeel(cmd)` applies commands, updating composition inline preview and popup via `sync_tashkeel_ui`.
+  - `commit_candidate_internal` transparently commits vocalized text upon Space, Enter, or punctuation.
+- [x] Verified M5 acceptance criteria in unit tests and CLI explain (`m5_acceptance_three_words`):
+  - `3allam` → Ctrl+Enter → `عَلَّم` (`\u{0639}\u{064E}\u{0644}\u{0651}\u{064E}\u{0645}`)
+  - `allah` default → `اللّه` (`\u{0627}\u{0644}\u{0644}\u{0651}\u{0647}`)
+  - `shukran` default → `شكراً` (`\u{0634}\u{0643}\u{0631}\u{0627}\u{064B}`)
+- [x] Latency and binary size budgets verified:
+  - P1 keystroke latency: p50 = 0.015 ms, p99 = 0.345 ms (budget ≤ 0.8 ms / ≤ 3.0 ms).
+  - Release DLL sizes: x86_64 = 640 KB, i686 = 532 KB (budget ≤ 3.0 MB).
+- [x] Code quality: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo deny check` all green.
 
 ## M4 checklist (Complete 2026-09-23)
 - [x] Implemented 128-byte binary `JournalRecord` with CRC16-CCITT and kinds (Choose, Negative, AddWord, DeleteWord, Dialect, Wipe) in `crates/t3a-engine/src/journal.rs`.

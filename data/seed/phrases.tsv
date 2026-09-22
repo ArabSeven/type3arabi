@@ -24,6 +24,10 @@ astaghfirullah	أستغفر الله	*	1
 astaghfirallah	أستغفر الله	*	1	
 allahuakbar	الله أكبر	*	1	
 allahakbar	الله أكبر	*	1	
+allah	الله	*	1	
+wallah	والله	*	1	
+billah	بالله	*	1	
+lillah	لله	*	1	
 jazakallah	جزاك الله خيراً	*	1	
 jazakallahkhair	جزاك الله خيراً	*	1	
 jzk	جزاك الله خيراً	*	0	
@@ -38,6 +42,7 @@ s3	سلام عليكم	*	0	Maren abbreviation
 slm	سلام	*	0	
 lol	ههههه	*	1	
 thx	شكراً	*	0	
+shukran	شكراً	*	1	adverbial tanween
 plz	لو سمحت	LEV,GLF	0	
 plz	من فضلك	MSA,EGY,MAG	0	
 b4	قبل	*	0	
