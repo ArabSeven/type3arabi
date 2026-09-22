@@ -618,9 +618,7 @@ fn load_bigrams_tsv(path: &Path) -> Result<BigramMap, Box<dyn std::error::Error>
     Ok(m)
 }
 
-fn load_lexicon_tsv(
-    path: &Path,
-) -> Result<Vec<RawLexiconEntry>, Box<dyn std::error::Error>> {
+fn load_lexicon_tsv(path: &Path) -> Result<Vec<RawLexiconEntry>, Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
     let mut result = Vec::new();
     for line in content.lines().filter(|l| !l.starts_with('#')) {

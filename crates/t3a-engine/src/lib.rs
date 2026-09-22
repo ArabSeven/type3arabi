@@ -22,6 +22,7 @@ pub mod display;
 pub mod normalize;
 pub mod oov;
 pub mod params;
+pub mod search;
 pub mod seed;
 pub mod session;
 pub mod tashkeel;

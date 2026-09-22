@@ -22,22 +22,46 @@ pub enum EngineError {
     BadData(String),
 }
 
+pub enum EngineBackend {
+    Seed(SeedTables),
+    Data {
+        view: t3a_data::DataView<'static>,
+        seed: SeedTables,
+    },
+}
+
 /// Immutable engine state shared by all sessions (Send + Sync).
 pub struct Engine {
-    seed: SeedTables,
+    backend: EngineBackend,
     params: EngineParams,
 }
 
 impl Engine {
-    /// Engine over a compiled data file (docs/12). M3.
-    pub fn new(_data: t3a_data::DataView<'_>) -> Result<Self, EngineError> {
-        Err(EngineError::LexiconNotImplemented)
+    /// Engine over a compiled data file (docs/12).
+    pub fn new(data: t3a_data::DataView<'static>) -> Result<Self, EngineError> {
+        let seed = SeedTables::builtin();
+        let mut params = EngineParams::default();
+        if let Ok(parm_str) = data.parm() {
+            params.merge_toml(parm_str);
+        }
+        Ok(Self {
+            backend: EngineBackend::Data { view: data, seed },
+            params,
+        })
+    }
+
+    /// Construct engine from owned binary bytes. Leaks buffer to static.
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, EngineError> {
+        let leaked: &'static [u8] = Box::leak(bytes.into_boxed_slice());
+        let view =
+            t3a_data::DataView::parse(leaked).map_err(|e| EngineError::BadData(e.to_string()))?;
+        Self::new(view)
     }
 
     /// Bootstrap engine over the seed tables only (OOV path + specials).
     pub fn seed_only(seed: SeedTables) -> Self {
         Self {
-            seed,
+            backend: EngineBackend::Seed(seed),
             params: EngineParams::default(),
         }
     }
@@ -52,7 +76,17 @@ impl Engine {
     }
 
     pub fn seed(&self) -> &SeedTables {
-        &self.seed
+        match &self.backend {
+            EngineBackend::Seed(s) => s,
+            EngineBackend::Data { seed, .. } => seed,
+        }
+    }
+
+    pub fn data(&self) -> Option<&t3a_data::DataView<'static>> {
+        match &self.backend {
+            EngineBackend::Seed(_) => None,
+            EngineBackend::Data { view, .. } => Some(view),
+        }
     }
 }
 
@@ -109,7 +143,7 @@ pub struct Candidate {
     pub base: String,
     pub kind: CandidateKind,
     pub score: f32,
-    hyp: Option<usize>,
+    pub(crate) hyp: Option<usize>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -170,6 +204,7 @@ pub struct Session<'e> {
     hyps: Vec<Hyp>,
     pi: Posterior,
     context: Vec<String>,
+    lattice: crate::search::TrieLattice,
 }
 
 const JOINER_ARTICLE: [&str; 4] = ["el", "al", "il", "l"];
@@ -185,6 +220,7 @@ impl<'e> Session<'e> {
             hyps: Vec::new(),
             pi: dialect::DEFAULT_PRIOR,
             context: Vec::new(),
+            lattice: crate::search::TrieLattice::new(),
         }
     }
 
@@ -244,6 +280,7 @@ impl<'e> Session<'e> {
         self.buf.clear();
         self.list = CandidateList::default();
         self.hyps.clear();
+        self.lattice.clear();
     }
 
     pub fn candidates(&self) -> &CandidateList {
@@ -286,6 +323,30 @@ impl<'e> Session<'e> {
             c.kind,
             CandidateKind::Number | CandidateKind::Laughter | CandidateKind::Joiner
         );
+
+        // Update dialect posterior if committing a lexicon word (docs/03 §7.2)
+        if c.kind == CandidateKind::Word {
+            if let Some(data) = self.engine.data() {
+                if let Ok(words) = data.words() {
+                    if let Some(w_idx) = words.iter().position(|w| {
+                        data.string(w.surface)
+                            .map(crate::arabic::strip_marks)
+                            .as_deref()
+                            == Ok(&c.base)
+                    }) {
+                        let w_rec = &words[w_idx];
+                        crate::search::update_dialect_posterior(
+                            &mut self.pi,
+                            w_rec.q,
+                            self.engine.params.dialect_eta,
+                            self.engine.params.unseen_dialect_lp,
+                            self.engine.params.dialect_floor,
+                        );
+                    }
+                }
+            }
+        }
+
         let commit = Commit {
             text,
             trailing,
@@ -299,6 +360,43 @@ impl<'e> Session<'e> {
         commit
     }
 
+    /// Tashkeel quick picks for candidate `index` (docs/03 §10.5).
+    pub fn vocalizations(&self, index: usize) -> Vec<String> {
+        let Some(c) = self.list.items.get(index) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        if let Some(v) = self.vowel_harakat(index) {
+            if v != c.base {
+                out.push(v);
+            }
+        }
+        if let Some(data) = self.engine.data() {
+            if let (Ok(words), Ok(Some(diac_view))) = (data.words(), data.diacritics()) {
+                if let Some(w_idx) = words.iter().position(|w| {
+                    data.string(w.surface)
+                        .map(crate::arabic::strip_marks)
+                        .as_deref()
+                        == Ok(&c.base)
+                }) {
+                    let w_rec = &words[w_idx];
+                    if w_rec.diac > 0 {
+                        let variants = diac_view.variants_for((w_rec.diac - 1) as usize);
+                        for v in variants {
+                            if let Ok(v_str) = data.string(v.s) {
+                                let v_s = v_str.to_string();
+                                if !out.contains(&v_s) {
+                                    out.push(v_s);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// "Harakat from your vowels" for candidate `index` (docs/03 §10.6).
     pub fn vowel_harakat(&self, index: usize) -> Option<String> {
         let c = self.list.items.get(index)?;
@@ -306,7 +404,7 @@ impl<'e> Session<'e> {
         let d = dialect::argmax(&self.pi);
         let v = tashkeel::vowel_harakat(
             &h.steps,
-            &self.engine.seed,
+            self.engine.seed(),
             d,
             self.settings.harakat,
             self.settings.tanween,
@@ -410,44 +508,80 @@ impl<'e> Session<'e> {
                     );
                 }
             }
-            // 4. Lattice readings (seed-only: OOV path)
-            self.hyps = oov::search(
-                &self.engine.seed,
-                p,
-                &self.pi,
-                self.buf.syms(),
-                p.k_oov_seed_only,
-            );
-            let mut scored: Vec<Candidate> = self
-                .hyps
-                .iter()
-                .enumerate()
-                .map(|(i, h)| {
-                    let base = alphabet::decode(&h.letters);
-                    let tanween = h.steps.last().is_some_and(|s| s.flags & F_TANWEEN != 0);
-                    let text = if tanween {
-                        display::add_tanween_fath(&base, self.settings.tanween)
-                    } else {
-                        base.clone()
-                    };
-                    let score = p.lambda_tm * h.score + p.lambda_usr * user.usr(&key, &base);
-                    Candidate {
-                        text,
-                        base,
-                        kind: CandidateKind::Oov,
-                        score,
-                        hyp: Some(i),
-                    }
-                })
-                .collect();
-            scored.sort_by(|a, b| b.score.total_cmp(&a.score));
-            // 5. Phrases (docs/03 §6.2): default=1 → before readings, default=0 → rank 2.
-            let phrases: Vec<(String, bool)> = self
+            // 4. Lattice readings: trie search if data is present, else seed OOV
+            let scored = if let Some(data) = self.engine.data() {
+                let query = crate::search::SearchQuery {
+                    data,
+                    seed: self.engine.seed(),
+                    params: p,
+                    settings: &self.settings,
+                    pi: &self.pi,
+                    syms: self.buf.syms(),
+                    prev_words: &self.context,
+                    user,
+                    key: &key,
+                };
+                let res = crate::search::search_trie(&mut self.lattice, &query);
+                self.hyps = res.hyps;
+                res.candidates
+            } else {
+                self.hyps = oov::search(
+                    self.engine.seed(),
+                    p,
+                    &self.pi,
+                    self.buf.syms(),
+                    p.k_oov_seed_only,
+                );
+                let mut s: Vec<Candidate> = self
+                    .hyps
+                    .iter()
+                    .enumerate()
+                    .map(|(i, h)| {
+                        let base = alphabet::decode(&h.letters);
+                        let tanween = h.steps.last().is_some_and(|st| st.flags & F_TANWEEN != 0);
+                        let text = if tanween {
+                            display::add_tanween_fath(&base, self.settings.tanween)
+                        } else {
+                            base.clone()
+                        };
+                        let score = p.lambda_tm * h.score + p.lambda_usr * user.usr(&key, &base);
+                        Candidate {
+                            text,
+                            base,
+                            kind: CandidateKind::Oov,
+                            score,
+                            hyp: Some(i),
+                        }
+                    })
+                    .collect();
+                s.sort_by(|a, b| b.score.total_cmp(&a.score));
+                s
+            };
+
+            // 5. Phrases (docs/03 §6.2)
+            let mut phrases: Vec<(String, bool)> = self
                 .engine
-                .seed
+                .seed()
                 .phrases_for(&key, &self.pi)
                 .map(|ph| (ph.output.clone(), ph.default))
                 .collect();
+            if let Some(data) = self.engine.data() {
+                if let Ok(ph_entries) = data.phrases() {
+                    for ph in ph_entries {
+                        if let (Ok(ph_key), Ok(ph_out)) = (data.string(ph.key), data.string(ph.out))
+                        {
+                            if ph_key == key
+                                && (ph.dialect_mask & (1 << dialect::argmax(&self.pi).index())) != 0
+                            {
+                                let default = (ph.flags & 1) != 0;
+                                if !phrases.iter().any(|(o, _)| o == ph_out) {
+                                    phrases.push((ph_out.to_string(), default));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             for (out, _) in phrases.iter().filter(|(_, d)| *d) {
                 push(
                     &mut items,
@@ -672,6 +806,96 @@ mod tests {
                 assert_eq!(crate::arabic::canonical_mark_order(&c.text), c.text);
             }
             s.reset();
+        }
+    }
+
+    #[test]
+    fn sacred_negative_tests() {
+        // Invariant 2 (docs/08 §2): Allah styling applies only to SACRED set (negative tests: كله، له، ظله)
+        assert!(!display::contains_sacred("كله"));
+        assert!(!display::contains_sacred("له"));
+        assert!(!display::contains_sacred("ظله"));
+        assert!(!display::contains_sacred("اللهو"));
+        assert!(display::contains_sacred("الله"));
+        assert!(display::contains_sacred("والله"));
+        assert!(display::contains_sacred("لله"));
+        assert!(display::contains_sacred("بالله"));
+
+        let e = Engine::builtin();
+        let mut s = Session::new(&e, EngineSettings::default());
+        type_word(&mut s, "kull", &NoUser);
+        for c in &s.candidates().items {
+            assert!(
+                !c.text.contains('\u{0670}'),
+                "كله or كل must not have dagger alif: {}",
+                c.text
+            );
+        }
+    }
+
+    #[test]
+    fn reedit_restores_buffer_and_previous_choice() {
+        // Invariant 7 (docs/08 §2): commit then re-edit restores the Latin buffer with previous choice
+        let e = Engine::builtin();
+        let u = MemoryUser::new();
+        let mut s = Session::new(&e, EngineSettings::default());
+        type_word(&mut s, "mar7aba", &u);
+        let list_before = s.candidates().clone();
+        assert!(!list_before.is_empty());
+        let top_choice = list_before.items[0].base.clone();
+
+        let commit = s.commit(0, CommitHow::Space);
+        assert_eq!(commit.base, top_choice);
+        assert!(s.is_empty());
+
+        // Simulate re-edit: restore Latin buffer
+        s.restore("mar7aba", &u);
+        assert_eq!(s.candidates().raw, "mar7aba");
+        assert_eq!(s.candidates().items[0].base, top_choice);
+    }
+
+    #[test]
+    fn property_random_inputs_never_panic() {
+        // Property test (docs/08 §1): random ASCII & Unicode never panics, finite scores, bounded list
+        let e = Engine::builtin();
+        let mut s = Session::new(&e, EngineSettings::default());
+        let u = NoUser;
+
+        let test_inputs = [
+            "",
+            "a",
+            "1",
+            "123",
+            "!",
+            "???",
+            "abc123xyz",
+            "3allam",
+            "hhhhhhhhhh",
+            "mar7aba ya 7abibi",
+            "مرحبا",
+            "élégant",
+            "   ",
+            "\t\n",
+            "a'b'c",
+            "2026-09-23",
+            "verylongarabizistringthatcouldexceedbuffersizesomewherealongtheway1234567890",
+        ];
+
+        for &input in &test_inputs {
+            s.reset();
+            for ch in input.chars() {
+                s.push(InputChar::new(ch), &u);
+                let list = s.candidates();
+                if !s.is_empty() {
+                    assert!(list.len() <= e.params().max_candidates);
+                    for c in &list.items {
+                        if c.kind != CandidateKind::RawLatin {
+                            assert!(c.score.is_finite(), "Score must be finite: {:?}", c);
+                        }
+                    }
+                    assert!(list.items.iter().any(|c| c.kind == CandidateKind::RawLatin));
+                }
+            }
         }
     }
 }

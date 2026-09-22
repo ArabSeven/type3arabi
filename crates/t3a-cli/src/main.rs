@@ -32,6 +32,23 @@ fn prior_for(s: Option<String>) -> Posterior {
     }
 }
 
+fn load_engine(data_arg: Option<String>) -> Engine {
+    let path = data_arg.unwrap_or_else(|| "target/type3arabi.dat".to_string());
+    if Path::new(&path).exists() {
+        match std::fs::read(&path) {
+            Ok(bytes) => match Engine::from_bytes(bytes) {
+                Ok(eng) => {
+                    eprintln!("Loaded engine with lexicon from {path}");
+                    return eng;
+                }
+                Err(e) => eprintln!("Warning: failed to load {path}: {e:?}, using builtin"),
+            },
+            Err(e) => eprintln!("Warning: failed to read {path}: {e}, using builtin"),
+        }
+    }
+    Engine::builtin()
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = args.first().map(String::as_str).unwrap_or("help");
@@ -59,7 +76,13 @@ fn main() {
 fn cmd_build_data(args: &[String]) -> i32 {
     let out_path = arg_value(args, "--out").unwrap_or_else(|| "target/type3arabi.dat".to_string());
     let seed_dir = arg_value(args, "--seed").unwrap_or_else(|| "data/seed".to_string());
-    let in_dir = arg_value(args, "--in");
+    let in_dir = arg_value(args, "--in").or_else(|| {
+        if Path::new("pipeline_data/out").exists() {
+            Some("pipeline_data/out".to_string())
+        } else {
+            None
+        }
+    });
     let mode = arg_value(args, "--mode").unwrap_or_else(|| "internal".to_string());
 
     match build::build_data(
@@ -94,7 +117,7 @@ fn cmd_inspect(args: &[String]) -> i32 {
 }
 
 fn repl(args: &[String]) -> i32 {
-    let engine = Engine::builtin();
+    let engine = load_engine(arg_value(args, "--data"));
     let mut session = Session::new(&engine, EngineSettings::default());
     session.set_dialect(prior_for(arg_value(args, "--dialect")));
     let mut user = MemoryUser::new();
@@ -178,7 +201,7 @@ fn eval(args: &[String]) -> i32 {
         .and_then(|v| v.parse().ok())
         .unwrap_or(5);
     let mode = arg_value(args, "--dialect").unwrap_or_else(|| "oracle".into());
-    let engine = Engine::builtin();
+    let engine = load_engine(arg_value(args, "--data"));
     let mut s = Session::new(&engine, EngineSettings::default());
     let mut per: BTreeMap<String, (u32, u32, u32, f64)> = BTreeMap::new(); // n, top1, hitk, mrr
     let mut misses = Vec::new();
@@ -261,7 +284,7 @@ fn explain(args: &[String]) -> i32 {
         eprintln!("usage: t3a-cli explain <arabizi> [--dialect LEV]");
         return 2;
     };
-    let engine = Engine::builtin();
+    let engine = load_engine(arg_value(args, "--data"));
     let mut s = Session::new(&engine, EngineSettings::default());
     s.set_dialect(prior_for(arg_value(args, "--dialect")));
     for ch in word.chars() {
@@ -286,7 +309,7 @@ fn bench(args: &[String]) -> i32 {
         .and_then(|v| v.parse().ok())
         .unwrap_or(3);
     let rows = load_rows(&path);
-    let engine = Engine::builtin();
+    let engine = load_engine(arg_value(args, "--data"));
     let mut s = Session::new(&engine, EngineSettings::default());
     let mut times = Vec::new();
     for _ in 0..iters {

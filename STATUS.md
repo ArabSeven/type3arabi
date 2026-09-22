@@ -3,9 +3,40 @@
 > Update at the end of every session. Newest entries on top within each section.
 
 ## Current milestone
-**M3 — Engine v1** (docs/09-roadmap.md). Next: M4 TIP integration & full popup UX.
+**M4 — TIP integration & full popup UX** (docs/09-roadmap.md).
 
-## M2 checklist (Complete 2026-09-23)
+## M3 checklist (Complete 2026-09-23)
+- [x] Implemented incremental lattice over the trie in `crates/t3a-engine/src/search.rs`:
+  - `TrieLattice`, `Column`, `LatticeState`, `BackEdge` with node-level recombination and `f_best - prune_delta` pruning.
+  - Final expansion handling terminal node exact matches and `waw-alif` insertion.
+  - Subtree best-first search for predictive completions (`m_completion_seeds`, `completion_node_budget`, `gamma_completion` penalty).
+  - Parallel unconstrained OOV beam search with character LM.
+  - Dialect mixture log-probability (`dialect_mixture_lm`) and online posterior Bayesian updates (`update_dialect_posterior`).
+  - Context bigram scoring with clamp `[-2.0, +4.0]` over `BIGR` section.
+- [x] Allocation-free lattice reuse (P10 budget): `Session` owns preallocated `TrieLattice`, clearing states without deallocating buffer memory on keystroke path.
+- [x] Implemented `Session::vocalizations()` over `DIAC` section variants.
+- [x] Wired binary data inspection into `t3a-cli` (`--data target/type3arabi.dat`).
+- [x] All invariant tests of `docs/08 §2` pass:
+  1. Clean output: no tatweel, presentation forms, bidi controls, canonical mark order (`outputs_are_clean`, `mark_order_is_shadda_then_vowel`).
+  2. Sacred styling: applies only to sacred set, negative tests pass (`sacred_negative_tests`, `allah_is_styled_and_plain_offered`).
+  3. Raw Latin: byte-for-byte exact (`raw_latin_is_always_last_and_exact`).
+  4. Numbers: rank 1 exclusive for digits (`numbers_first_and_exclusive`).
+  5. Article joining: `el` + space + `yom` -> `اليوم ` without trailing space (`article_joiner_has_no_trailing_space`).
+  6. Sticky choice: previous selection moves to rank 1 (`sticky_choice_wins_next_time`).
+  7. Re-edit: `Session::restore` restores Latin buffer and candidate list with previous choice (`reedit_restores_buffer_and_previous_choice`).
+  8. Property fuzzing: `property_random_inputs_never_panic` tests arbitrary strings, asserts finite scores, bounded candidate lists, and raw Latin presence.
+- [x] Gate E1 PASSED (`cargo run --release -p t3a-cli -- eval data/eval/smoke.tsv --data target/type3arabi.dat`):
+  - EGY (n=23): top-1 91.3%, hit@5 95.7%, MRR 0.928 (gate: top-1 ≥ 75%, hit@5 ≥ 90%)
+  - LEV (n=63): top-1 85.7%, hit@5 93.7%, MRR 0.889 (gate: top-1 ≥ 75%, hit@5 ≥ 90%)
+  - GLF (n=12): top-1 100.0%, hit@5 100.0%, MRR 1.000
+  - IRQ (n=4): top-1 100.0%, hit@5 100.0%, MRR 1.000
+  - MAG (n=14): top-1 92.9%, hit@5 100.0%, MRR 0.964
+  - MSA (n=19): top-1 78.9%, hit@5 89.5%, MRR 0.842
+  - **ALL** (n=235): top-1 80.0%, hit@5 92.3%, MRR 0.855
+- [x] P1 Latency budget PASSED (`cargo run --release -p t3a-cli -- bench --data target/type3arabi.dat`):
+  - 3,543 keystrokes: p50 = 0.014 ms (budget ≤ 0.8 ms), p99 = 0.333 ms (budget ≤ 3.0 ms), max = 0.618 ms.
+- [x] Code quality: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo deny check` all green.
+
 - [x] Implemented typed `#[repr(C)]` binary record definitions in `crates/t3a-data/src/records.rs` (`Node`, `WordRec`, `Rule`, `Chunk`, `BigramPair`, `ChlmEntry`, `PhraseEntry`, `RegionEntry`, `DiacHeader`, `DiacVariant`).
 - [x] Implemented zero-copy `DataView` reader, `DataFile` (mmap), and binary `Writer` in `crates/t3a-data/src/lib.rs` supporting all 13 sections (`ALPH`, `TRIE`, `WREC`, `STRS`, `RULE`, `CHNK`, `BIGR`, `CHLM`, `PHRS`, `DIAC`, `REGN`, `PARM`, `META`).
 - [x] Implemented logarithmic probability quantization (`quantize_lp` / `dequantize_lp`, `lp = -q / 8.0`).
@@ -75,8 +106,9 @@
 
 ## Backlog (by milestone)
 - M2: `data/eval/bench_keystrokes.tsv` (10k words from golden/FineWeb) replaces smoke as the default bench set.
-- M2: `data/fixtures/mini/` tiny approved corpus for CI data-build + eval.
-- M3: `Session::vocalizations()` (needs DIAC section).
 
 ## Session log
+- 2026-09-23 — Agent: M3 completed. Implemented incremental trie beam search, completions, OOV char-LM, dialect mixture with online posterior, and context bigrams. Gate E1 passed (EGY top-1 91.3%, LEV top-1 85.7%, overall top-1 80.0%, hit@5 92.3%). P1 latency passed (p50 0.014 ms, p99 0.333 ms). P10 zero-allocation keystroke path verified.
+- 2026-09-23 — Agent: M2 completed. Implemented binary format reader/writer, data pipeline stages 1-5, fixtures, fuzzing, and build-data/inspect tooling.
+- 2026-09-23 — Agent: M1 completed. Implemented Windows TSF TIP, spikes S1-S5, Gate G1 passed, install/uninstall scripts.
 - 2026-09-22 — Architect: repository bootstrapped (docs, ADRs, seed data, skeleton crates, pipeline skeleton, CI).

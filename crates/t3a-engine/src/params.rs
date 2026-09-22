@@ -67,3 +67,131 @@ impl Default for EngineParams {
         }
     }
 }
+
+impl EngineParams {
+    pub fn merge_toml(&mut self, text: &str) {
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((k, v)) = line.split_once('=') {
+                let k = k.trim();
+                let v = v.trim();
+                match k {
+                    "beam" => {
+                        if let Ok(val) = v.parse() {
+                            self.beam = val;
+                        }
+                    }
+                    "beam_oov" => {
+                        if let Ok(val) = v.parse() {
+                            self.beam_oov = val;
+                        }
+                    }
+                    "prune_delta" => {
+                        if let Ok(val) = v.parse() {
+                            self.prune_delta = val;
+                        }
+                    }
+                    "k_exact" => {
+                        if let Ok(val) = v.parse() {
+                            self.k_exact = val;
+                        }
+                    }
+                    "k_completion" => {
+                        if let Ok(val) = v.parse() {
+                            self.k_completion = val;
+                        }
+                    }
+                    "k_oov" => {
+                        if let Ok(val) = v.parse() {
+                            self.k_oov = val;
+                        }
+                    }
+                    "gamma_completion" => {
+                        if let Ok(val) = v.parse() {
+                            self.gamma_completion = val;
+                        }
+                    }
+                    "p_gem" => {
+                        if let Ok(val) = v.parse() {
+                            self.p_gem = val;
+                        }
+                    }
+                    "p_waw_alif" => {
+                        if let Ok(val) = v.parse() {
+                            self.p_waw_alif = val;
+                        }
+                    }
+                    "oov_penalty" => {
+                        if let Ok(val) = v.parse() {
+                            self.oov_penalty = val;
+                        }
+                    }
+                    "custom_bonus" => {
+                        if let Ok(val) = v.parse() {
+                            self.custom_bonus = val;
+                        }
+                    }
+                    "custom_lm" => {
+                        if let Ok(val) = v.parse() {
+                            self.custom_lm = val;
+                        }
+                    }
+                    "unseen_dialect_lp" => {
+                        if let Ok(val) = v.parse() {
+                            self.unseen_dialect_lp = val;
+                        }
+                    }
+                    "dialect_eta" => {
+                        if let Ok(val) = v.parse() {
+                            self.dialect_eta = val;
+                        }
+                    }
+                    "dialect_floor" => {
+                        if let Ok(val) = v.parse() {
+                            self.dialect_floor = val;
+                        }
+                    }
+                    "user_half_life_days" => {
+                        if let Ok(val) = v.parse() {
+                            self.user_half_life_days = val;
+                        }
+                    }
+                    "lambda_tm" => {
+                        if let Ok(val) = v.parse() {
+                            self.lambda_tm = val;
+                        }
+                    }
+                    "lambda_lm" => {
+                        if let Ok(val) = v.parse() {
+                            self.lambda_lm = val;
+                        }
+                    }
+                    "lambda_ctx" => {
+                        if let Ok(val) = v.parse() {
+                            self.lambda_ctx = val;
+                        }
+                    }
+                    "lambda_usr" => {
+                        if let Ok(val) = v.parse() {
+                            self.lambda_usr = val;
+                        }
+                    }
+                    "lambda_chr" => {
+                        if let Ok(val) = v.parse() {
+                            self.lambda_chr = val;
+                        }
+                    }
+                    "max_candidates" => {
+                        if let Ok(val) = v.parse() {
+                            self.max_candidates = val;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
