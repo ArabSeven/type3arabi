@@ -1,0 +1,39 @@
+[package]
+name = "t3a-tip"
+description = "Type3arabi TSF Text Input Processor (in-proc COM DLL, Windows)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "t3a_tip"
+# cdylib = the TIP DLL; rlib lets the portable modules (ids, keyrouter) be unit-tested on any OS.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+t3a-engine = { workspace = true }
+t3a-data = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+t3a-ui = { workspace = true }
+t3a-paths = { workspace = true }
+# ADR-0002: exact pin; add features explicitly as M1 needs them.
+windows = { workspace = true, features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Ole",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_Security",
+  "Win32_UI_TextServices",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
+  "Win32_Globalization",
+] }
+windows-core = { workspace = true }
+
+# M1: add `embed-resource` as a build-dependency for res/t3a.rc (icons, VERSIONINFO) — ledger entry required.

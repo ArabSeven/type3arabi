@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/t3a-engine",
+    "crates/t3a-data",
+    "crates/t3a-cli",
+    "crates/t3a-tip",
+    "crates/t3a-ui",
+    "crates/t3a-hotkey",
+    "crates/t3a-paths",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95"
+# OWNER DECISION PENDING (STATUS.md): open-source license or proprietary. Until decided, all rights reserved.
+license = "LicenseRef-Type3arabi-AllRightsReserved"
+publish = false
+
+[workspace.dependencies]
+t3a-engine = { path = "crates/t3a-engine" }
+t3a-data = { path = "crates/t3a-data" }
+t3a-ui = { path = "crates/t3a-ui" }
+t3a-paths = { path = "crates/t3a-paths" }
+# ADR-0002: pinned exactly. Features are declared per crate, never wildcards.
+windows = { version = "=0.62.2" }
+windows-core = { version = "=0.62.2" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "unwind"   # AGENTS.md R1: NEVER "abort" — the TIP lives inside other apps.
+debug = 1          # line tables for private symbolication; PDBs are never shipped
+
+[profile.dev]
+panic = "unwind"

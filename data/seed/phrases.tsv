@@ -1,0 +1,46 @@
+# Phrase / abbreviation table (docs/03 §6.2). key = normalized Latin (lowercase, no apostrophes).
+# default: 1 = rank 1, 0 = rank 2. Outputs are base forms; sacred-name styling is applied at display time.
+key	output	dialects	default	note
+inshallah	إن شاء الله	*	1	
+inshalla	إن شاء الله	*	1	
+insha2allah	إن شاء الله	*	1	
+inchallah	إن شاء الله	*	1	French spelling
+inshaallah	إن شاء الله	*	1	
+isa	إن شاء الله	*	0	Maren abbreviation; isa is also عيسى so not default
+mashallah	ما شاء الله	*	1	
+masha2allah	ما شاء الله	*	1	
+machallah	ما شاء الله	*	1	
+alhamdulillah	الحمد لله	*	1	
+alhamdolillah	الحمد لله	*	1	
+el7amdella	الحمد لله	*	1	
+hamdella	الحمد لله	*	1	
+hamdellah	الحمد لله	*	1	
+l7amdolilah	الحمد لله	MAG	1	
+bismillah	بسم الله	*	1	
+bsmallah	بسم الله	*	1	
+subhanallah	سبحان الله	*	1	
+sob7anallah	سبحان الله	*	1	
+astaghfirullah	أستغفر الله	*	1	
+astaghfirallah	أستغفر الله	*	1	
+allahuakbar	الله أكبر	*	1	
+allahakbar	الله أكبر	*	1	
+jazakallah	جزاك الله خيراً	*	1	
+jazakallahkhair	جزاك الله خيراً	*	1	
+jzk	جزاك الله خيراً	*	0	
+barakallah	بارك الله فيك	*	1	
+barakallahfik	بارك الله فيك	*	1	
+tabarakallah	تبارك الله	*	1	
+allahyer7amo	الله يرحمه	LEV,EGY	1	
+allahyr7amo	الله يرحمه	LEV,EGY	1	
+pbuh	ﷺ	*	0	U+FDFA
+saw	ﷺ	*	0	collides with English saw; never default
+s3	سلام عليكم	*	0	Maren abbreviation
+slm	سلام	*	0	
+lol	ههههه	*	1	
+thx	شكراً	*	0	
+plz	لو سمحت	LEV,GLF	0	
+plz	من فضلك	MSA,EGY,MAG	0	
+b4	قبل	*	0	
+np	ولا يهمك	*	0	
+brb	ثواني وراجع	LEV,GLF	0	
+brb	ثواني وهرجع	EGY	0	

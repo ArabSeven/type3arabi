@@ -1,0 +1,349 @@
+# Type3arabi seed transliteration rules — human-reviewed prior for EM (docs/03 §4, docs/04 §6).
+# Columns (TAB-separated): latin  arabic  weight  pos  dialects  flags  note
+#   latin    : 1-4 symbols; uppercase T S D Z H are the emphatic symbols (docs/03 §3); ' is a symbol.
+#   arabic   : 0-3 Arabic letters; "ε" = nothing (a short vowel).
+#   weight   : seed estimate of P(arabic | latin, pos, dialect). The loader normalizes each group to sum 1.
+#   pos      : any combination of I (initial), M (medial), F (final), or * (= IMF).
+#   dialects : * or comma list of MSA,LEV,EGY,GLF,IRQ,MAG.
+#   flags    : - or comma list of VOWEL, GEM, TANWEEN, ARTICLE.
+# Resolution ("most specific wins"): for chunk ℓ at position p in dialect d, use rows whose pos lists p
+# explicitly if any exist, else rows with pos *; within those, rows naming d explicitly if any exist, else
+# rows with dialect *. Gemination (bb, ll, 77 ...) is generic in the engine (docs/03 §4.3) — not listed here.
+latin	arabic	weight	pos	dialects	flags	note
+a	أ	0.40	I	*	VOWEL	initial a: hamza-alif, or dropped 3 (ali=علي)
+a	ا	0.30	I	*	VOWEL	initial a: hamza-alif, or dropped 3 (ali=علي)
+a	ع	0.15	I	*	VOWEL	initial a: hamza-alif, or dropped 3 (ali=علي)
+a	إ	0.05	I	*	VOWEL	initial a: hamza-alif, or dropped 3 (ali=علي)
+a	آ	0.05	I	*	VOWEL	initial a: hamza-alif, or dropped 3 (ali=علي)
+a	ε	0.60	M	*	VOWEL	
+a	ا	0.35	M	*	VOWEL	
+a	ع	0.05	M	*	VOWEL	
+a	ا	0.45	F	*	VOWEL	
+a	ة	0.30	F	*	VOWEL	
+a	ى	0.10	F	*	VOWEL	
+a	ه	0.10	F	*	VOWEL	
+a	ε	0.05	F	*	VOWEL	
+aa	آ	0.45	I	*	VOWEL	
+aa	أ	0.25	I	*	VOWEL	
+aa	ا	0.20	I	*	VOWEL	
+aa	عا	0.10	I	*	VOWEL	
+aa	ا	0.90	M	*	VOWEL	
+aa	ع	0.10	M	*	VOWEL	
+aa	ا	0.70	F	*	VOWEL	
+aa	اء	0.15	F	*	VOWEL	
+aa	ى	0.10	F	*	VOWEL	
+aa	ع	0.05	F	*	VOWEL	
+e	إ	0.35	I	*	VOWEL	
+e	ا	0.30	I	*	VOWEL	
+e	أ	0.15	I	*	VOWEL	
+e	ع	0.20	I	*	VOWEL	
+e	ε	0.75	M	*	VOWEL	
+e	ي	0.20	M	*	VOWEL	
+e	ا	0.05	M	*	VOWEL	
+e	ة	0.35	F	*	VOWEL	
+e	ي	0.30	F	*	VOWEL	
+e	ه	0.20	F	*	VOWEL	
+e	ى	0.10	F	*	VOWEL	
+e	ε	0.05	F	*	VOWEL	
+ee	إي	0.50	I	*	VOWEL	
+ee	عي	0.30	I	*	VOWEL	
+ee	أي	0.20	I	*	VOWEL	
+ee	ي	1.00	M	*	VOWEL	
+ee	ي	0.95	F	*	VOWEL	
+ee	ى	0.05	F	*	VOWEL	
+i	إ	0.45	I	*	VOWEL	
+i	ا	0.30	I	*	VOWEL	
+i	ع	0.20	I	*	VOWEL	
+i	ي	0.05	I	*	VOWEL	
+i	ي	0.55	M	*	VOWEL	
+i	ε	0.45	M	*	VOWEL	
+i	ي	0.95	F	*	VOWEL	
+i	ى	0.05	F	*	VOWEL	
+ii	ي	1.00	MF	*	VOWEL	
+o	أ	0.40	I	*	VOWEL	
+o	ع	0.30	I	*	VOWEL	
+o	ا	0.15	I	*	VOWEL	
+o	أو	0.10	I	*	VOWEL	
+o	و	0.05	I	*	VOWEL	
+o	و	0.50	M	*	VOWEL	
+o	ε	0.50	M	*	VOWEL	
+o	ه	0.50	F	*	VOWEL	final o is often the pronoun ه (3ando=عنده)
+o	و	0.45	F	*	VOWEL	final o is often the pronoun ه (3ando=عنده)
+o	ε	0.05	F	*	VOWEL	final o is often the pronoun ه (3ando=عنده)
+oo	أو	0.60	I	*	VOWEL	
+oo	عو	0.40	I	*	VOWEL	
+oo	و	1.00	MF	*	VOWEL	
+ou	أو	0.50	I	*	VOWEL	French-style spelling (MAG/LEV)
+ou	عو	0.30	I	*	VOWEL	French-style spelling (MAG/LEV)
+ou	و	0.10	I	*	VOWEL	French-style spelling (MAG/LEV)
+ou	ا	0.10	I	*	VOWEL	French-style spelling (MAG/LEV)
+ou	و	0.95	M	*	VOWEL	
+ou	ε	0.05	M	*	VOWEL	
+ou	و	0.70	F	*	VOWEL	
+ou	ه	0.30	F	*	VOWEL	
+u	أ	0.45	I	*	VOWEL	
+u	ع	0.25	I	*	VOWEL	
+u	ا	0.20	I	*	VOWEL	
+u	أو	0.10	I	*	VOWEL	
+u	و	0.50	M	*	VOWEL	
+u	ε	0.50	M	*	VOWEL	
+u	و	0.80	F	*	VOWEL	
+u	ه	0.20	F	*	VOWEL	
+uu	و	1.00	MF	*	VOWEL	
+ay	أي	0.50	I	*	VOWEL	
+ay	عي	0.30	I	*	VOWEL	
+ay	اي	0.20	I	*	VOWEL	
+ay	ي	0.70	M	*	VOWEL	
+ay	اي	0.30	M	*	VOWEL	
+ay	اي	0.45	F	*	VOWEL	
+ay	ي	0.35	F	*	VOWEL	
+ay	ى	0.20	F	*	VOWEL	
+ai	أي	0.50	I	*	VOWEL	
+ai	عي	0.30	I	*	VOWEL	
+ai	اي	0.20	I	*	VOWEL	
+ai	ي	0.70	M	*	VOWEL	
+ai	اي	0.30	M	*	VOWEL	
+ai	اي	0.45	F	*	VOWEL	
+ai	ي	0.35	F	*	VOWEL	
+ai	ى	0.20	F	*	VOWEL	
+ei	أي	0.50	I	*	VOWEL	
+ei	عي	0.30	I	*	VOWEL	
+ei	اي	0.20	I	*	VOWEL	
+ei	ي	0.70	M	*	VOWEL	
+ei	اي	0.30	M	*	VOWEL	
+ei	اي	0.45	F	*	VOWEL	
+ei	ي	0.35	F	*	VOWEL	
+ei	ى	0.20	F	*	VOWEL	
+ey	أي	0.50	I	*	VOWEL	
+ey	عي	0.30	I	*	VOWEL	
+ey	اي	0.20	I	*	VOWEL	
+ey	ي	0.70	M	*	VOWEL	
+ey	اي	0.30	M	*	VOWEL	
+ey	اي	0.45	F	*	VOWEL	
+ey	ي	0.35	F	*	VOWEL	
+ey	ى	0.20	F	*	VOWEL	
+aw	أو	0.60	I	*	VOWEL	
+aw	عو	0.40	I	*	VOWEL	
+aw	و	0.60	M	*	VOWEL	
+aw	او	0.40	M	*	VOWEL	
+aw	او	0.50	F	*	VOWEL	
+aw	و	0.50	F	*	VOWEL	
+ow	أو	0.60	I	*	VOWEL	
+ow	عو	0.40	I	*	VOWEL	
+ow	و	0.60	M	*	VOWEL	
+ow	او	0.40	M	*	VOWEL	
+ow	او	0.50	F	*	VOWEL	
+ow	و	0.50	F	*	VOWEL	
+ah	ة	0.50	F	*	-	ta marbuta / allah
+ah	ه	0.20	F	*	-	ta marbuta / allah
+ah	اه	0.15	F	*	-	ta marbuta / allah
+ah	ا	0.10	F	*	-	ta marbuta / allah
+ah	اح	0.05	F	*	-	ta marbuta / allah
+eh	ة	0.45	F	*	-	
+eh	ه	0.30	F	*	-	
+eh	يه	0.20	F	*	-	
+eh	ي	0.05	F	*	-	
+at	ات	0.55	F	*	-	
+at	ة	0.35	F	*	-	
+at	ت	0.10	F	*	-	
+et	ة	0.45	F	*	-	LEV construct state (madraset)
+et	يت	0.30	F	*	-	LEV construct state (madraset)
+et	ت	0.25	F	*	-	LEV construct state (madraset)
+it	يت	0.60	F	*	-	
+it	ت	0.25	F	*	-	
+it	ة	0.15	F	*	-	
+an	ان	0.55	F	*	-	plain reading
+an	ن	0.15	F	*	-	plain reading
+an	ا	0.30	F	*	TANWEEN	adverbial tanween: shukran=شكراً, tab3an=طبعاً
+en	ين	0.55	F	*	-	
+en	ن	0.35	F	*	-	
+en	ان	0.10	F	*	-	
+b	ب	1.00	*	*	-	
+p	ب	0.70	*	*	-	
+p	پ	0.30	*	*	-	
+t	ت	0.85	*	*	-	
+t	ط	0.15	*	*	-	
+T	ط	0.80	*	*	-	emphatic capital (mid-word only, docs/03 §3)
+T	ت	0.20	*	*	-	emphatic capital (mid-word only, docs/03 §3)
+th	ث	0.55	*	*	-	
+th	ذ	0.30	*	*	-	
+th	ت	0.10	*	*	-	
+th	ظ	0.05	*	*	-	
+j	ج	1.00	*	*	-	
+dj	ج	1.00	*	*	-	Algerian/French spelling
+g	ج	0.45	*	*	-	
+g	ق	0.25	*	*	-	
+g	غ	0.20	*	*	-	
+g	ك	0.05	*	*	-	
+g	گ	0.05	*	*	-	
+g	ج	0.85	*	EGY	-	Egyptian g = ج (gamil)
+g	غ	0.10	*	EGY	-	Egyptian g = ج (gamil)
+g	ق	0.05	*	EGY	-	Egyptian g = ج (gamil)
+g	ج	0.40	*	LEV	-	rural/Bedouin Jordanian g = ق
+g	ق	0.30	*	LEV	-	rural/Bedouin Jordanian g = ق
+g	غ	0.25	*	LEV	-	rural/Bedouin Jordanian g = ق
+g	ك	0.05	*	LEV	-	rural/Bedouin Jordanian g = ق
+g	ق	0.45	*	GLF,IRQ	-	gahwa = قهوة
+g	ج	0.30	*	GLF,IRQ	-	gahwa = قهوة
+g	غ	0.15	*	GLF,IRQ	-	gahwa = قهوة
+g	گ	0.10	*	GLF,IRQ	-	gahwa = قهوة
+g	ڭ	0.35	*	MAG	-	Darija ڭ (bogos = بوڭوص)
+g	ج	0.25	*	MAG	-	Darija ڭ (bogos = بوڭوص)
+g	ق	0.20	*	MAG	-	Darija ڭ (bogos = بوڭوص)
+g	غ	0.20	*	MAG	-	Darija ڭ (bogos = بوڭوص)
+d	د	0.85	*	*	-	
+d	ض	0.15	*	*	-	
+D	ض	0.80	*	*	-	
+D	د	0.20	*	*	-	
+dh	ذ	0.55	*	*	-	
+dh	ض	0.25	*	*	-	
+dh	ظ	0.20	*	*	-	
+h	ه	0.55	*	*	-	h often stands for ح (mohammad)
+h	ح	0.45	*	*	-	h often stands for ح (mohammad)
+h	ه	0.75	F	*	-	
+h	ح	0.20	F	*	-	
+h	ة	0.05	F	*	-	
+H	ح	0.80	*	*	-	
+H	ه	0.20	*	*	-	
+7	ح	1.00	*	*	-	
+7'	خ	1.00	*	*	-	Maren convention
+kh	خ	1.00	*	*	-	
+5	خ	1.00	*	*	-	
+k	ك	0.90	*	*	-	
+k	ق	0.10	*	*	-	
+q	ق	0.95	*	*	-	
+q	ك	0.05	*	*	-	
+2	أ	0.45	I	*	-	2 = hamza, or ق in urban LEV/EGY (2alb=قلب)
+2	ق	0.30	I	*	-	2 = hamza, or ق in urban LEV/EGY (2alb=قلب)
+2	إ	0.12	I	*	-	2 = hamza, or ق in urban LEV/EGY (2alb=قلب)
+2	ء	0.08	I	*	-	2 = hamza, or ق in urban LEV/EGY (2alb=قلب)
+2	آ	0.05	I	*	-	2 = hamza, or ق in urban LEV/EGY (2alb=قلب)
+2	ق	0.38	M	*	-	
+2	ء	0.20	M	*	-	
+2	ئ	0.18	M	*	-	
+2	أ	0.12	M	*	-	
+2	ؤ	0.07	M	*	-	
+2	ا	0.05	M	*	-	
+2	ء	0.45	F	*	-	
+2	ق	0.40	F	*	-	
+2	أ	0.10	F	*	-	
+2	ئ	0.05	F	*	-	
+2	أ	0.60	I	GLF,MAG	-	
+2	إ	0.15	I	GLF,MAG	-	
+2	ء	0.10	I	GLF,MAG	-	
+2	ق	0.08	I	GLF,MAG	-	
+2	آ	0.07	I	GLF,MAG	-	
+2	ء	0.30	M	GLF,MAG	-	
+2	ئ	0.25	M	GLF,MAG	-	
+2	أ	0.20	M	GLF,MAG	-	
+2	ؤ	0.10	M	GLF,MAG	-	
+2	ق	0.10	M	GLF,MAG	-	
+2	ا	0.05	M	GLF,MAG	-	
+2	ء	0.75	F	GLF,MAG	-	
+2	أ	0.10	F	GLF,MAG	-	
+2	ق	0.10	F	GLF,MAG	-	
+2	ئ	0.05	F	GLF,MAG	-	
+3	ع	1.00	*	*	-	
+3'	غ	1.00	*	*	-	
+3''	غ	1.00	*	*	-	
+gh	غ	0.92	*	*	-	
+gh	ق	0.08	*	*	-	
+4	غ	0.45	*	*	-	low-confidence convention; EM decides
+4	ش	0.35	*	*	-	low-confidence convention; EM decides
+4	ذ	0.20	*	*	-	low-confidence convention; EM decides
+6	ط	1.00	*	*	-	
+6'	ظ	1.00	*	*	-	
+8	ق	0.55	*	*	-	
+8	غ	0.25	*	*	-	
+8	ه	0.20	*	*	-	
+8	ه	0.60	*	MAG	-	Darija 8 = ه (sa8l = ساهل)
+8	ق	0.25	*	MAG	-	Darija 8 = ه (sa8l = ساهل)
+8	غ	0.15	*	MAG	-	Darija 8 = ه (sa8l = ساهل)
+9	ص	0.60	*	*	-	
+9	ق	0.40	*	*	-	
+9	ص	0.75	*	LEV,EGY	-	
+9	ق	0.25	*	LEV,EGY	-	
+9	ص	0.80	*	GLF,IRQ	-	9ij = صج
+9	ق	0.20	*	GLF,IRQ	-	9ij = صج
+9	ق	0.85	*	MAG	-	Darija 9 = ق (n9ra = نقرا)
+9	ص	0.15	*	MAG	-	Darija 9 = ق (n9ra = نقرا)
+9'	ض	1.00	*	*	-	
+f	ف	1.00	*	*	-	
+v	ف	0.60	*	*	-	
+v	ڤ	0.40	*	*	-	
+l	ل	1.00	*	*	-	
+m	م	1.00	*	*	-	
+n	ن	1.00	*	*	-	
+r	ر	1.00	*	*	-	
+s	س	0.80	*	*	-	
+s	ص	0.15	*	*	-	
+s	ث	0.05	*	*	-	
+S	ص	0.80	*	*	-	
+S	س	0.20	*	*	-	
+sh	ش	1.00	*	*	-	
+ch	ش	0.75	*	*	-	
+ch	چ	0.15	*	*	-	
+ch	تش	0.10	*	*	-	
+ch	ش	0.95	*	MAG	-	
+ch	تش	0.05	*	MAG	-	
+ch	چ	0.50	*	IRQ	-	
+ch	ش	0.35	*	IRQ	-	
+ch	تش	0.15	*	IRQ	-	
+ch	ش	0.55	*	GLF	-	
+ch	چ	0.30	*	GLF	-	
+ch	تش	0.15	*	GLF	-	
+tch	تش	0.60	*	*	-	
+tch	چ	0.40	*	*	-	
+z	ز	0.80	*	*	-	
+z	ظ	0.15	*	*	-	
+z	ذ	0.05	*	*	-	
+Z	ظ	0.80	*	*	-	
+Z	ز	0.20	*	*	-	
+x	كس	0.75	*	*	-	
+x	خ	0.15	*	*	-	
+x	ش	0.10	*	*	-	
+c	ك	0.50	*	*	-	
+c	س	0.30	*	*	-	
+c	ش	0.20	*	*	-	
+w	و	1.00	*	*	-	
+y	ي	1.00	*	*	-	
+'	ء	0.65	*	*	-	bare apostrophe (after 3/7/6/9 it forms its own chunk)
+'	ع	0.35	*	*	-	bare apostrophe (after 3/7/6/9 it forms its own chunk)
+el	ال	0.85	I	*	ARTICLE	
+el	إل	0.15	I	*	ARTICLE	
+al	ال	0.90	I	*	ARTICLE	
+al	أل	0.05	I	*	ARTICLE	
+al	عل	0.05	I	*	ARTICLE	
+il	ال	0.70	I	*	ARTICLE	
+il	إل	0.30	I	*	ARTICLE	
+l	ل	0.55	I	*	ARTICLE	
+l	ال	0.45	I	*	ARTICLE	
+l	ل	0.70	I	MAG	ARTICLE	Darija writes the article as ل often (lktab)
+l	ال	0.30	I	MAG	ARTICLE	Darija writes the article as ل often (lktab)
+att	الت	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+add	الد	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+arr	الر	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+azz	الز	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+ass	الس	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+ann	الن	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+aSS	الص	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+aDD	الض	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+aTT	الط	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+ett	الت	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+edd	الد	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+err	الر	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+ezz	الز	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+ess	الس	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+enn	الن	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+eSS	الص	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+eDD	الض	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+eTT	الط	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+itt	الت	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+idd	الد	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+irr	الر	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+izz	الز	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+iss	الس	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+inn	الن	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+iSS	الص	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+iDD	الض	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)
+iTT	الط	0.60	I	*	ARTICLE,GEM	assimilated article (ennas = الناس)

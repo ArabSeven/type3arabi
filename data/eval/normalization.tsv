@@ -1,0 +1,14 @@
+# Arabic normalization vectors shared by Python pipeline and Rust engine (docs/04 §3).
+input	base	note
+اللّه	الله	shadda removed
+اللَّه	الله	shadda+fatha removed
+شكراً	شكرا	tanween removed
+ٱلله	الله	alef wasla → alef
+مرحـــبا	مرحبا	tatweel removed
+کتاب	كتاب	keheh → kaf
+یوم	يوم	farsi yeh → yeh
+مُحَمَّد	محمد	all marks removed
+إن	إن	hamza kept
+مسؤول	مسؤول	waw-hamza kept
+مدرسة	مدرسة	ta marbuta kept
+على	على	alef maksura kept

@@ -1,0 +1,239 @@
+# Smoke evaluation set — hand-written sanity checks, NOT a benchmark (docs/08 §3).
+# Columns: arabizi<TAB>expected (alternatives separated by |, compared on base forms)<TAB>dialect<TAB>note
+# Every Arabic string was written by the architect; native-speaker review is an M2 task (STATUS.md).
+arabizi	expected	dialect	note
+mar7aba	مرحبا	*	greeting
+marhaba	مرحبا	*	h for ح
+ahlan	أهلا|اهلا	*	tanween display allowed
+salam	سلام	*	
+shukran	شكرا	*	displays شكراً
+shokran	شكرا	*	
+3afwan	عفوا	*	
+7abibi	حبيبي	*	
+habibi	حبيبي	*	
+7abibti	حبيبتي	*	
+7abibiiii	حبيبي	*	elongation
+ana	أنا|انا	*	
+enta	إنت|انت|أنت	LEV	
+inta	إنت|انت|أنت	LEV	
+enti	إنتي|انتي|أنتي	LEV	
+howe	هو|هوه	LEV	
+huwa	هو	MSA	
+heye	هي|هيه	LEV	
+hiya	هي	MSA	
+e7na	إحنا|احنا	EGY	
+ne7na	نحنا	LEV	
+na7nu	نحن	MSA	
+kif	كيف	LEV	
+kifak	كيفك	LEV	
+kifik	كيفك	LEV	
+ezayak	إزيك|ازيك|إزايك|ازايك	EGY	
+shlonak	شلونك	GLF	
+shlonk	شلونك	IRQ	
+kayfa	كيف	MSA	
+7aluk	حالك	MSA	
+shu	شو	LEV	
+shou	شو	LEV	
+eish	إيش|ايش	GLF	
+eh	إيه|ايه	EGY	
+wesh	واش	MAG	
+wach	واش	MAG	
+labas	لاباس|لا باس|لا بأس	MAG	
+bzaf	بزاف	MAG	
+bezzaf	بزاف	MAG	
+barsha	برشا|برشة	MAG	
+yalla	يلا|يالله	*	
+khalas	خلاص	*	
+5alas	خلاص	*	
+tayeb	طيب	*	
+tayyeb	طيب	*	
+ma3lesh	معلش|معليش	EGY	
+ma3lish	معليش|معلش	LEV	
+bade	بدي	LEV	
+baddi	بدي	LEV	
+3ayez	عايز	EGY	
+3ayz	عايز	EGY	
+abi	أبي|ابي	GLF	
+abgha	أبغى|ابغى	GLF	
+ra7	رح|راح	LEV	
+ro7	روح	*	
+yom	يوم	*	
+elyom	اليوم	*	article inside token
+bokra	بكرا|بكرة|بكره	LEV	
+bukra	بكرة|بكرا|بكره	*	
+mbare7	مبارح|امبارح	LEV	
+embare7	امبارح|إمبارح	EGY	
+hala2	هلأ|هلق|هلا	LEV	
+halla2	هلأ|هلق	LEV	
+hassa	هسا|هسه|هسع	LEV	Jordanian
+dilwa2ti	دلوقتي	EGY	
+delwa2ty	دلوقتي	EGY	
+lessa	لسه|لسا|لسة	*	
+mesh	مش	*	
+mish	مش	*	
+ma3	مع	*	
+3ala	على	*	
+fi	في	*	
+min	من	*	
+men	من	*	
+ila	إلى|الى	MSA	
+lesh	ليش	LEV	
+leish	ليش	GLF	
+leh	ليه	EGY	
+wein	وين	LEV	
+wen	وين	LEV	
+fein	فين	EGY	
+emta	امتى|إمتى	EGY	
+imta	امتى|إمتى	LEV	
+mata	متى	MSA	
+kam	كم	*	
+2adesh	قديش|أديش	LEV	
+2addeish	قديش|أديش	LEV	
+kteer	كتير|كثير	LEV	
+ktir	كتير|كثير	LEV	
+shwaya	شوية|شوي|شويه	*	
+shway	شوي|شوية	LEV	
+7elo	حلو	LEV	
+7elwe	حلوة|حلوه	LEV	
+gamil	جميل	EGY	
+jameel	جميل	*	
+kwayes	كويس	EGY	
+mni7	منيح	LEV	
+akl	أكل|اكل	*	
+beit	بيت	*	
+bet	بيت	LEV	
+sayara	سيارة|سياره	*	
+madrase	مدرسة|مدرسه	LEV	
+madrasa	مدرسة|مدرسه	MSA	
+jam3a	جامعة|جامعه	*	
+shoghl	شغل	*	
+walad	ولد	*	
+bent	بنت	*	
+bint	بنت	*	
+2om	أم|ام	LEV	
+abu	أبو|ابو	*	
+a5oi	أخوي|اخوي	GLF	
+ukht	أخت|اخت	*	
+sa7bi	صاحبي	*	
+sadi2i	صديقي	LEV	2 = ق
+2albi	قلبي	LEV	2 = ق
+2alb	قلب	LEV	
+2ahwe	قهوة|قهوه	LEV	
+gahwa	قهوة|قهوه	GLF	g = ق
+9a7	صح	*	
+sa7	صح	*	
+saba7	صباح	*	
+sba7	صباح	LEV	
+Sba7	صباح	LEV	sentence-initial capital is not emphatic
+masa2	مساء|مسا	*	
+5er	خير	*	
+el5er	الخير	*	
+tesba7	تصبح	LEV	
+b7ebak	بحبك	LEV	
+ba7ebak	بحبك	EGY	
+ya3ni	يعني	*	
+ya3ne	يعني	LEV	
+7aga	حاجة|حاجه	EGY	
+7aja	حاجة|حاجه	*	
+fekra	فكرة|فكره	*	
+moshkele	مشكلة|مشكله	LEV	
+mushkila	مشكلة|مشكله	MSA	
+mafi	مافي|ما في	LEV	
+mafish	مافيش|مفيش	EGY	
+bas	بس	*	
+kaman	كمان	*	
+ya	يا	*	
+aywa	أيوة|ايوة|ايوه|أيوه	EGY	
+la2	لأ|لا	*	
+na3am	نعم	MSA	
+tab3an	طبعا	*	displays طبعاً
+abadan	أبدا|ابدا	*	
+jiddan	جدا	MSA	
+tamam	تمام	*	
+mashi	ماشي	*	
+5alini	خليني	*	
+ta3al	تعال	*	
+3ashan	عشان	*	
+la2anno	لأنه|لانه|لأنو|لانو	LEV	
+lamma	لما	*	
+kan	كان	*	
+3arabi	عربي	*	
+arabi	عربي	*	dropped 3
+ali	علي	*	dropped 3
+mo7ammad	محمد	*	
+mohammad	محمد	*	
+a7mad	أحمد|احمد	*	
+fatima	فاطمة|فاطمه	*	
+3omar	عمر	*	
+5aled	خالد	*	
+youssef	يوسف	*	
+maryam	مريم	*	
+3amman	عمان	LEV	
+masr	مصر	EGY	
+beirut	بيروت	LEV	
+dubai	دبي	GLF	
+lubnan	لبنان	LEV	
+falasteen	فلسطين	LEV	
+allah	الله	*	displays اللّه (style)
+wallah	والله	*	
+wallahi	والله|واللهي	*	
+yarab	يارب|يا رب	*	
+3adi	عادي	*	
+wayed	وايد	GLF	
+shaku	شكو	IRQ	
+mako	ماكو	IRQ	
+shinu	شنو	IRQ	
+ga3ed	قاعد	GLF	g = ق
+9ij	صج	GLF	9 = ص
+ba3dain	بعدين	GLF	
+ba3den	بعدين	LEV	
+daba	دابا	MAG	
+chno	شنو	MAG	
+mezyan	مزيان	MAG	
+bghit	بغيت	MAG	
+safi	صافي	MAG	
+3lach	علاش	MAG	
+khouya	خويا	MAG	
+n9ra	نقرا	MAG	9 = ق
+keda	كده	EGY	
+awi	أوي|اوي|قوي	EGY	
+ba2olak	بقولك|باقولك	EGY	
+gamed	جامد	EGY	
+3am	عم	LEV	
+ba3ref	بعرف	LEV	
+7aki	حكي	LEV	
+shabab	شباب	*	
+zalame	زلمة|زلمه	LEV	
+hek	هيك	LEV	
+hayda	هيدا	LEV	
+hada	هدا|هادا|هذا	*	
+hon	هون	LEV	
+tfaddal	تفضل	*	
+3anjad	عنجد|عن جد	LEV	
+2ultello	قلتله|قلتلو	LEV	
+ishi	إشي|اشي	LEV	Jordanian
+kitab	كتاب	*	
+hatha	هذا	MSA	
+haza	هذا	MSA	
+hathihi	هذه	MSA	
+allathi	الذي	MSA	
+3indama	عندما	MSA	
+limatha	لماذا	MSA	
+mathalan	مثلا	MSA	displays مثلاً
+kull	كل	*	
+ba3d	بعد	*	
+2abl	قبل	LEV	
+qabl	قبل	MSA	
+ma3lomat	معلومات	*	
+7ukooma	حكومة|حكومه	*	
+sharika	شركة|شركه	*	
+wizara	وزارة|وزاره	*	
+facebook	فيسبوك|فيس بوك	*	loanword
+whatsapp	واتساب|واتس اب	*	loanword
+london	لندن	*	OOV/name
+paris	باريس	*	OOV/name
+jennifer	جينيفر|جنيفر	*	OOV/name
+ok	اوكي|أوكي|ok	*	code-switch; raw Latin acceptable
+2026	2026	*	number
+15	15	*	number
+hhhhh	ههههه	*	laughter

@@ -1,0 +1,25 @@
+[package]
+name = "t3a-ui"
+description = "Type3arabi candidate popup and tashkeel editor (Direct2D/DirectWrite, RTL)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# docs/01 §7: t3a-ui must NOT depend on t3a-engine. It renders a PopupModel.
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Direct2D",
+  "Win32_Graphics_Direct2D_Common",
+  "Win32_Graphics_DirectWrite",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Accessibility",
+  "Win32_System_LibraryLoader",
+] }

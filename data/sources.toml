@@ -1,0 +1,231 @@
+# Dataset registry — the ONLY place that decides what data may be used and how (AGENTS.md R14).
+#
+# status:
+#   approved        may influence shipped artifacts for the listed roles
+#   eval-only       may be used for evaluation reports only (never training, never tuning)
+#   owner-decision  treated as eval-only until the Owner records a decision in STATUS.md
+#   blocked         must not be downloaded by the pipeline
+# roles: lexicon | lm | charlm | diac | rules | tuning | eval | reference
+#
+# "license = 'unstated'" means we found no license. Default is eval-only; the action is to email the
+# authors asking for CC-BY (or similar) permission, then flip to approved with the evidence path.
+
+[[source]]
+id = "fineweb2"
+name = "FineWeb-2 (HuggingFaceFW/fineweb-2), Arabic-script subsets"
+url = "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2"
+kind = "mono_arabic"
+dialects = ["MSA", "LEV", "EGY", "GLF", "IRQ", "MAG"]
+license = "ODC-By-1.0 (also subject to Common Crawl terms of use)"
+status = "approved"
+roles = ["lexicon", "lm", "charlm", "diac"]
+notes = "Subsets: arb_Arab, arz_Arab, apc_Arab, ajp_Arab, afb_Arab, ars_Arab, acq_Arab, acm_Arab, ary_Arab, arq_Arab, aeb_Arab, ayl_Arab, apd_Arab (use those that exist). Attribution in NOTICE.md."
+
+[[source]]
+id = "golden"
+name = "Type3arabi golden set (native-speaker typing, docs/04 §8)"
+url = "internal"
+kind = "parallel"
+dialects = ["MSA", "LEV", "EGY", "GLF", "IRQ", "MAG"]
+license = "CC0-1.0 (contributor agreement)"
+status = "approved"
+roles = ["rules", "tuning", "eval"]
+notes = "dev split: rules+tuning; *.test.tsv: eval only."
+
+[[source]]
+id = "talafha-jordanian"
+name = "Arabizi-Arabic parallel corpus, Jordanian (Talafha, Abu Ammar, Al-Ayyoub 2021, 'Atar')"
+url = "https://github.com/bashartalafha/Arabizi-Transliteration"
+kind = "parallel"
+dialects = ["LEV"]
+license = "unstated"
+status = "eval-only"
+roles = ["eval"]
+notes = "~25k pairs, native-speaker checked; the single most valuable LEV resource. OWNER ACTION: email authors for permission (CC-BY) to train on it. Then set status=approved, roles=[rules,tuning,eval] with a held-out test split."
+
+[[source]]
+id = "arbml-arabizi"
+name = "arbml/Arabizi_Transliteration"
+url = "https://huggingface.co/datasets/arbml/Arabizi_Transliteration"
+kind = "parallel"
+dialects = ["EGY"]
+license = "unstated (check dataset card and upstream origin)"
+status = "eval-only"
+roles = ["eval"]
+notes = "Fields: Arabize, Arabic. Used as the Egyptian external set by ArabiziKit."
+
+[[source]]
+id = "akhanafer-levantine"
+name = "akhanafer/arabic-to-arabizi"
+url = "https://huggingface.co/datasets/akhanafer/arabic-to-arabizi"
+kind = "parallel"
+dialects = ["LEV"]
+license = "unstated (check dataset card)"
+status = "eval-only"
+roles = ["eval"]
+notes = "Fields: arabizi, arabic."
+
+[[source]]
+id = "elkababi-darija"
+name = "elkababi2/Darija-Text-Ar-Arabizi"
+url = "https://huggingface.co/datasets/elkababi2/Darija-Text-Ar-Arabizi"
+kind = "parallel"
+dialects = ["MAG"]
+license = "unstated (check dataset card)"
+status = "eval-only"
+roles = ["eval"]
+notes = "Fields: darija_Latn, darija_Arab_new."
+
+[[source]]
+id = "atlasia-atam"
+name = "atlasia/ATAM (Arabizi-to-Arabic mapping, derived from DODa)"
+url = "https://huggingface.co/datasets/atlasia/ATAM"
+kind = "parallel"
+dialects = ["MAG"]
+license = "check (inherits Darija Open Dataset license)"
+status = "eval-only"
+roles = ["eval"]
+notes = "Word-level Darija pairs incl. 8=ه, 9=ق, capital emphatics. Great for MAG rules once cleared."
+
+[[source]]
+id = "doda"
+name = "Darija Open Dataset (DODa)"
+url = "https://github.com/darija-open-dataset/dataset"
+kind = "lexicon"
+dialects = ["MAG"]
+license = "check repository LICENSE"
+status = "eval-only"
+roles = ["eval"]
+notes = "Darija lexicon with Latin and Arabic spellings."
+
+[[source]]
+id = "arabizikit"
+name = "ArabiziKit library, rule tables and benchmark code"
+url = "https://github.com/rb2625/arabizi-kit"
+kind = "reference"
+dialects = ["MSA", "LEV", "EGY", "GLF", "MAG"]
+license = "MIT"
+status = "approved"
+roles = ["reference"]
+notes = "Reference for context rules (2 as qaf vs hamza, final a as ة/ا, Maghrebi 9=ق, doubled consonants). Adapt ideas with attribution; its corpus (rabeeeehh/arabizi-kit-corpus) is LLM-annotated and listed separately."
+
+[[source]]
+id = "arabizikit-corpus"
+name = "rabeeeehh/arabizi-kit-corpus (LLM-annotated Arabizi sentences)"
+url = "https://huggingface.co/datasets/rabeeeehh/arabizi-kit-corpus"
+kind = "parallel"
+dialects = ["MSA", "LEV", "EGY", "GLF", "MAG"]
+license = "check dataset card"
+status = "eval-only"
+roles = ["eval"]
+notes = "Small (355 sentences), LLM references with low agreement; secondary eval only."
+
+[[source]]
+id = "nilechat-arabizi-egy"
+name = "UBC-NLP/nilechat-arabizi-egy (synthetic Arabizi)"
+url = "https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-egy"
+kind = "parallel"
+dialects = ["EGY"]
+license = "check dataset card"
+status = "owner-decision"
+roles = ["eval"]
+notes = "LLM-transliterated; if approved, use only as low-weight (0.2) rule augmentation."
+
+[[source]]
+id = "arabizi-dataset-v2"
+name = "Mohamedd123321/Arabizi-dataset-v2 (monolingual Arabizi)"
+url = "https://huggingface.co/datasets/Mohamedd123321/Arabizi-dataset-v2"
+kind = "mono_arabizi"
+dialects = ["EGY", "LEV"]
+license = "check dataset card"
+status = "eval-only"
+roles = ["eval"]
+notes = "Candidate for self-training (docs/04 §6.4) once cleared."
+
+[[source]]
+id = "senzi"
+name = "SenZi — Lebanese Arabizi sentiment lexicon and corpus"
+url = "https://github.com/NNLP-IL/Arabic-Resources"
+kind = "mono_arabizi"
+dialects = ["LEV"]
+license = "unstated"
+status = "eval-only"
+roles = ["eval"]
+notes = "Listed in NNLP-IL/Arabic-Resources; locate primary repo, check license."
+
+[[source]]
+id = "maknuune"
+name = "Maknuune — Palestinian Arabic lexicon (diacritized, phonological transcriptions)"
+url = "https://github.com/NNLP-IL/Arabic-Resources"
+kind = "lexicon"
+dialects = ["LEV"]
+license = "CC-BY-SA-4.0"
+status = "owner-decision"
+roles = ["eval"]
+notes = "Excellent for LEV vocalizations (DIAC). ShareAlike: if approved, the data file (not the code) must be distributed under CC-BY-SA-4.0. Owner decides."
+
+[[source]]
+id = "tashkeela"
+name = "Tashkeela — Arabic vocalized texts (Zerrouki & Balla 2017)"
+url = "https://sourceforge.net/projects/tashkeela/"
+kind = "diacritized"
+dialects = ["MSA"]
+license = "conflicting: article CC-BY-4.0; SourceForge/Kaggle list GPL-2"
+status = "owner-decision"
+roles = ["eval"]
+notes = "75M vocalized words, mostly classical. If approved, use statistics only (DIAC variants), never redistribute text."
+
+[[source]]
+id = "wikipedia-ar"
+name = "Arabic + Egyptian Arabic Wikipedia dumps"
+url = "https://dumps.wikimedia.org/"
+kind = "mono_arabic"
+dialects = ["MSA", "EGY"]
+license = "CC-BY-SA-4.0"
+status = "owner-decision"
+roles = ["eval"]
+notes = "Probably unnecessary given FineWeb-2; word-frequency statistics only if approved."
+
+[[source]]
+id = "bolt-egy"
+name = "BOLT Egyptian Arabic SMS/Chat and Transliteration (LDC2017T07)"
+url = "https://catalog.ldc.upenn.edu/LDC2017T07"
+kind = "parallel"
+dialects = ["EGY"]
+license = "LDC license (paid, non-redistributable)"
+status = "blocked"
+roles = []
+notes = "Used by Al-Badrashiny 2014 / Shazal 2020. Only if the Owner buys a commercial LDC license."
+
+[[source]]
+id = "madar"
+name = "MADAR parallel dialect corpus (25 cities)"
+url = "https://camel.abudhabi.nyu.edu/madar-parallel-corpus/"
+kind = "mono_arabic"
+dialects = ["LEV", "EGY", "GLF", "IRQ", "MAG", "MSA"]
+license = "research license"
+status = "blocked"
+roles = []
+notes = "Research-only; do not use for anything shipped."
+
+[[source]]
+id = "maren-docs"
+name = "Microsoft Maren public usage documentation (digit table, abbreviations)"
+url = "https://www.ujca.cz/resources/ime/maren"
+kind = "reference"
+dialects = ["EGY", "GLF", "LEV"]
+license = "facts from public documentation"
+status = "approved"
+roles = ["reference"]
+notes = "Digit mappings (3'=غ, 6'=ظ, 7'=خ, 8=ق, 9=ص, 4=غ) and abbreviation ideas (ISA→إن شاء الله, S3→سلام عليكم). No code or data copied."
+
+[[source]]
+id = "synthetic-llm"
+name = "Offline LLM-generated Arabizi spellings (docs/04 §9)"
+url = "internal"
+kind = "parallel"
+dialects = ["MSA", "LEV", "EGY", "GLF", "IRQ", "MAG"]
+license = "owned output (verify provider terms at generation time)"
+status = "owner-decision"
+roles = ["rules"]
+notes = "Only after Owner approval + budget; weight 0.3; never used in eval."

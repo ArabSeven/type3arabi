@@ -1,0 +1,16 @@
+[package]
+name = "t3a-cli"
+description = "Type3arabi developer CLI: repl, eval, explain, bench, build-data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "t3a-cli"
+path = "src/main.rs"
+
+[dependencies]
+t3a-engine = { workspace = true }
+t3a-data = { workspace = true }

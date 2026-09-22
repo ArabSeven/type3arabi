@@ -1,0 +1,52 @@
+# Type3arabi user configuration — defaults (docs/13-config-schema.md).
+# Written by the Settings app to %LOCALAPPDATA%\Type3arabi\config.toml. Tests assert the engine's
+# built-in defaults equal this file.
+schema = 1
+
+[general]
+mode_toggle = "Ctrl+Space"
+mode_scope = "global"
+global_hotkey_enabled = true
+global_hotkey = "Ctrl+Alt+A"
+
+[typing]
+latin_layout = "auto"
+inline_preview = "arabic"
+candidates_per_page = 7
+predictive_completions = true
+article_joining = true
+reedit_backspace = true
+commit_on_focus_loss = "preview"
+latin_in_url_email = true
+
+[dialect]
+profile = "auto"
+seed_from_region = true
+
+[style]
+allah_form = "shadda"
+adverbial_tanween = true
+tanween_style = "on_alif"
+hamza = "standard"
+vowel_harakat = "light"
+arabic_punctuation = true
+numerals = "western"
+
+[learning]
+enabled = true
+sticky_last_choice = true
+
+[privacy]
+use_surrounding_text = true
+
+[appearance]
+theme = "system"
+font_family = "Segoe UI"
+font_size = 18
+footer_hints = "auto"
+show_dialect_badge = true
+
+[apps]
+excluded = []
+rtl_assist = false
+rtl_assist_classes = ["Edit", "RichEdit20W", "RICHEDIT50W"]

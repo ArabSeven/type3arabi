@@ -1,0 +1,11 @@
+/target
+/pipeline_data
+/reports
+*.dat
+!data/fixtures/**/*.dat
+.venv/
+__pycache__/
+node_modules/
+*.pdb
+*.user
+.DS_Store

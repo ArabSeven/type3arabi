@@ -1,0 +1,12 @@
+[package]
+name = "t3a-engine"
+description = "Type3arabi prediction engine: Arabizi → Arabic candidates (pure Rust, no platform deps)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# AGENTS.md R12: zero platform dependencies. Allowed later: bytemuck (via t3a-data). Nothing else without an ADR.
+[dependencies]
+t3a-data = { workspace = true }

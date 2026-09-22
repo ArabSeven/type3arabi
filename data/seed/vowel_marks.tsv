@@ -1,0 +1,15 @@
+# Short-vowel mark for a Latin vowel typed after a consonant (docs/03 §10.6). Most specific dialect row wins.
+# mark: fatha U+064E | damma U+064F | kasra U+0650
+latin	dialects	mark
+a	*	fatha
+aa	*	fatha
+e	*	kasra
+e	MSA,GLF	fatha
+i	*	kasra
+ee	*	kasra
+ii	*	kasra
+o	*	damma
+u	*	damma
+ou	*	damma
+oo	*	damma
+uu	*	damma
