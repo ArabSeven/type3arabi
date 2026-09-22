@@ -40,6 +40,9 @@ e	ع	0.20	I	*	VOWEL
 e	ε	0.75	M	*	VOWEL	
 e	ي	0.20	M	*	VOWEL	
 e	ا	0.05	M	*	VOWEL	
+e	ي	0.55	M	LEV	VOWEL	LEV imala/monophthong (bet=بيت)
+e	ε	0.40	M	LEV	VOWEL	
+e	ا	0.05	M	LEV	VOWEL	
 e	ة	0.35	F	*	VOWEL	
 e	ي	0.30	F	*	VOWEL	
 e	ه	0.20	F	*	VOWEL	
@@ -152,9 +155,9 @@ et	ت	0.25	F	*	-	LEV construct state (madraset)
 it	يت	0.60	F	*	-	
 it	ت	0.25	F	*	-	
 it	ة	0.15	F	*	-	
-an	ان	0.55	F	*	-	plain reading
-an	ن	0.15	F	*	-	plain reading
-an	ا	0.30	F	*	TANWEEN	adverbial tanween: shukran=شكراً, tab3an=طبعاً
+an	ان	0.70	F	*	-	plain reading (lubnan, 3amman, kaman)
+an	ا	0.20	F	*	TANWEEN	adverbial tanween: shukran=شكراً, tab3an=طبعاً
+an	ن	0.10	F	*	-	plain reading
 en	ين	0.55	F	*	-	
 en	ن	0.35	F	*	-	
 en	ان	0.10	F	*	-	
@@ -228,6 +231,16 @@ q	ك	0.05	*	*	-
 2	ق	0.40	F	*	-	
 2	أ	0.10	F	*	-	
 2	ئ	0.05	F	*	-	
+2	ق	0.50	I	LEV,EGY	-	2 = ق in urban LEV/EGY (2alb=قلب)
+2	أ	0.35	I	LEV,EGY	-	
+2	إ	0.10	I	LEV,EGY	-	
+2	ء	0.05	I	LEV,EGY	-	
+2	أ	0.50	F	LEV	-	final 2 = أ in LEV (halla2=هلأ)
+2	ق	0.35	F	LEV	-	
+2	ء	0.15	F	LEV	-	
+la2	لأ	0.85	I	*	-	la2 = لأ
+la2	لا	0.10	I	*	-	
+la2	لق	0.05	I	*	-	
 2	أ	0.60	I	GLF,MAG	-	
 2	إ	0.15	I	GLF,MAG	-	
 2	ء	0.10	I	GLF,MAG	-	

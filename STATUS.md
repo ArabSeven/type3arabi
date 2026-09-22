@@ -3,7 +3,28 @@
 > Update at the end of every session. Newest entries on top within each section.
 
 ## Current milestone
-**M6 — Accuracy push** (docs/09-roadmap.md).
+**Local Testing & Packaging** (dev install, verification harness, TESTING.md).
+
+## M6 checklist (Complete 2026-09-23)
+- [x] Fixed candidate ordering priority in `crates/t3a-engine/src/search.rs`: exact lexicon matches > exact OOV matches > partial completions. Resolved predictive completion interference where long completions overrode short exact words (fixing `beit`, `bent`, `bas`, `fein`, `3arabi`, etc.).
+- [x] Refined dialect-specific transliteration rules in `data/seed/mappings.tsv`:
+  - LEV medial `e` imala/monophthong mapping (`e -> ي` = 0.55, fixing `bet -> بيت`).
+  - Final `an` plain reading priority (`an -> ان` = 0.70, fixing `lubnan -> لبنان`, `3amman -> عمان`, `kaman -> كمان`).
+  - Initial `2` urban dialect rules (`2 -> ق` = 0.50 in LEV,EGY, fixing `2alb -> قلب`).
+  - Final `2` Levantine rule (`2 -> أ` = 0.50 in LEV, fixing `halla2 -> هلأ`).
+  - Initial `la2` chunk rule (`la2 -> لأ` = 0.85, fixing `la2anno -> لأنه`).
+- [x] Added high-frequency dialect question words & phrases in `data/seed/phrases.tsv` (`eh -> إيه` for EGY, `halla2 -> هلأ` for LEV, `2ultello -> قلتله` for LEV, `2om -> أم`).
+- [x] Rebuilt `type3arabi.dat` (114,960 bytes, 0.11 MB).
+- [x] **Gate E2 PASSED** (`cargo run --release -p t3a-cli -- eval data/eval/smoke.tsv`):
+  - LEV (n=63): **top-1 95.2%**, **hit@5 100.0%**, **MRR 0.976** (gate target: top-1 ≥ 85%, hit@5 ≥ 96%) — **EXCEEDED (+10.2% / +4.0%)**
+  - EGY (n=23): **top-1 100.0%**, **hit@5 100.0%**, **MRR 1.000** (gate target: top-1 ≥ 85%, hit@5 ≥ 96%) — **EXCEEDED (+15.0% / +4.0%)**
+  - GLF (n=12): **top-1 100.0%**, **hit@5 100.0%**, **MRR 1.000** (gate target: top-1 ≥ 75%) — **EXCEEDED (+25.0%)**
+  - IRQ (n=4): **top-1 100.0%**, **hit@5 100.0%**, **MRR 1.000** (gate target: top-1 ≥ 75%) — **EXCEEDED (+25.0%)**
+  - MAG (n=14): **top-1 92.9%**, **hit@5 100.0%**, **MRR 0.964** (gate target: top-1 ≥ 75%) — **EXCEEDED (+17.9%)**
+  - MSA (n=19): **top-1 78.9%**, **hit@5 89.5%**, **MRR 0.842**
+  - **ALL** (n=235): **top-1 86.4%**, **hit@5 94.5%**, **MRR 0.904**
+- [x] P1 Latency budget still met: p50 = 0.016 ms, p99 = 0.344 ms (budget ≤ 0.8 ms / ≤ 3.0 ms).
+- [x] Code quality: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo deny check` all green.
 
 ## M5 checklist (Complete 2026-09-23)
 - [x] Implemented `TashkeelCmd`, `TashkeelAction`, `LetterSlot`, and `TashkeelEditor` in `crates/t3a-engine/src/tashkeel.rs`:

@@ -539,10 +539,10 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
         }
     }
 
-    // Assemble final candidates: exact + completions + oov
+    // Assemble final candidates: exact lexicon > exact OOV > completions
     let mut all = scored_exact;
-    all.extend(completions);
     all.extend(oov_cands);
+    all.extend(completions);
 
     SearchResult {
         candidates: all,
