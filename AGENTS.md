@@ -21,7 +21,7 @@ and idle-cost-free.
 
 | Role | Who | Authority |
 |---|---|---|
-| **Owner** | The human who commissioned this repo | Final say on product, licensing, money (certificates, data purchases), and any change to a *Locked decision*. |
+| **Owner** | Hassan Obaida, the human who commissioned this repo | Final say on product, licensing, money (certificates, data purchases), and any change to a *Locked decision*. |
 | **Architect docs** | `docs/` + `docs/adr/` | Encode the locked decisions. Agents implement them; they do not re-litigate them. |
 | **Implementing agent** | You | Build exactly what the docs specify, milestone by milestone, and keep `STATUS.md` truthful. |
 
