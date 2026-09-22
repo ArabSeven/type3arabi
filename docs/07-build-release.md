@@ -67,4 +67,5 @@ Trusted Root and Trusted Publishers; never used for public builds.
 4. Soak: 8 h scripted typing across 5 apps, 0 crashes, memory flat.
 5. Signed artifacts verified with `signtool verify /pa /v`.
 6. `NOTICE.md` lists every shipped dependency (cargo-about output) and data attribution (FineWeb-2 ODC-By…).
-7. Tag `vX.Y.Z`, publish MSI + SHA-256 + release notes.
+7. No source with status `internal` in the release data build: each is cleared to `approved` with written permission or an explicit license, or removed and the data rebuilt with `--mode release`. CC BY-SA sources require the data file to be distributed under CC BY-SA.
+8. Tag `vX.Y.Z`, publish MSI + SHA-256 + release notes.

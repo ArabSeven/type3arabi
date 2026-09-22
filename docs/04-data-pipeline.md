@@ -9,6 +9,9 @@ an approved source (R14). The pipeline is offline tooling; nothing here runs on 
 - Heavy counting uses streaming (`datasets` streaming mode) and writes sharded TSVs; merge with `sort`/`numpy`.
 - Final compilation is Rust: `t3a-cli build-data` (so the binary format has exactly one writer and one reader,
   both in `t3a-data`).
+- Build modes: `--mode internal` (default: approved + internal sources; produces `"distribution": "internal-only"`)
+  or `--mode release` (approved sources only). Parallel sources are split 80/10/10 (train/dev/test) deterministically
+  by a stable hash of the row; test splits are never used for training or tuning.
 - Working directory `pipeline_data/` (gitignored). Every run writes `pipeline_data/manifest.lock.json` with
   source ids, revisions/commit hashes, file SHA-256s and dates.
 

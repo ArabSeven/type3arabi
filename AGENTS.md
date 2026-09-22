@@ -110,6 +110,11 @@ Doc map:
 - **R14. Data:** a dataset may enter a *shipped* artifact only if `data/sources.toml` marks it
   `status = "approved"` and `role` includes that use. `eval-only` data must never influence shipped
   weights (not even tuning — tuning uses `dev` splits of approved data). Unknown license ⇒ `blocked`.
+  *Owner amendment (2026-09-22):* Added status `internal`: publicly downloadable data whose license is
+  unstated or restrictive; usable for every listed role in local and internal builds; must be cleared (→ `approved`)
+  or removed, with the data rebuilt, before any public release. The pipeline supports `--mode internal` (approved + internal)
+  and `--mode release` (approved only). Every data file built with internal sources carries `"distribution": "internal-only"`
+  and the list of internal source ids in its `META` section.
 
 ### 3.4 Code quality
 - **R15.** `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and

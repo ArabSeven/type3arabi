@@ -2,6 +2,7 @@
 #
 # status:
 #   approved        may influence shipped artifacts for the listed roles
+#   internal        publicly downloadable data with unstated/restrictive license; usable in local/internal builds
 #   eval-only       may be used for evaluation reports only (never training, never tuning)
 #   owner-decision  treated as eval-only until the Owner records a decision in STATUS.md
 #   blocked         must not be downloaded by the pipeline
@@ -39,9 +40,11 @@ url = "https://github.com/bashartalafha/Arabizi-Transliteration"
 kind = "parallel"
 dialects = ["LEV"]
 license = "unstated"
-status = "eval-only"
-roles = ["eval"]
-notes = "~25k pairs, native-speaker checked; the single most valuable LEV resource. OWNER ACTION: email authors for permission (CC-BY) to train on it. Then set status=approved, roles=[rules,tuning,eval] with a held-out test split."
+status = "internal"
+roles = ["rules", "tuning", "eval"]
+citation = "Bashar Talafha, Analle Abu Ammar and Mahmoud Al-Ayyoub. Atar: Attention-based LSTM for Arabizi Transliteration. International Journal of Electrical and Computer Engineering (IJECE), June 2021."
+attribution = "Bashar Talafha, Analle Abu Ammar, Mahmoud Al-Ayyoub (2021)"
+notes = "~25k pairs, native-speaker checked; single most valuable LEV resource. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "arbml-arabizi"
@@ -50,9 +53,11 @@ url = "https://huggingface.co/datasets/arbml/Arabizi_Transliteration"
 kind = "parallel"
 dialects = ["EGY"]
 license = "unstated (check dataset card and upstream origin)"
-status = "eval-only"
-roles = ["eval"]
-notes = "Fields: Arabize, Arabic. Used as the Egyptian external set by ArabiziKit."
+status = "internal"
+roles = ["rules", "tuning", "eval"]
+citation = "ARBML. Arabizi Transliteration Dataset. Hugging Face Datasets (arbml/Arabizi_Transliteration)."
+attribution = "ARBML Project"
+notes = "Fields: Arabize, Arabic. Used as Egyptian external set by ArabiziKit. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "akhanafer-levantine"
@@ -61,9 +66,11 @@ url = "https://huggingface.co/datasets/akhanafer/arabic-to-arabizi"
 kind = "parallel"
 dialects = ["LEV"]
 license = "unstated (check dataset card)"
-status = "eval-only"
-roles = ["eval"]
-notes = "Fields: arabizi, arabic."
+status = "internal"
+roles = ["rules", "tuning", "eval"]
+citation = "Ali Khanafer. Arabic to Arabizi Dataset. Hugging Face Datasets (akhanafer/arabic-to-arabizi)."
+attribution = "Ali Khanafer"
+notes = "Fields: arabizi, arabic. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "elkababi-darija"
@@ -72,9 +79,11 @@ url = "https://huggingface.co/datasets/elkababi2/Darija-Text-Ar-Arabizi"
 kind = "parallel"
 dialects = ["MAG"]
 license = "unstated (check dataset card)"
-status = "eval-only"
-roles = ["eval"]
-notes = "Fields: darija_Latn, darija_Arab_new."
+status = "internal"
+roles = ["rules", "tuning", "eval"]
+citation = "Elkababi. Darija-Text-Ar-Arabizi Dataset. Hugging Face Datasets (elkababi2/Darija-Text-Ar-Arabizi)."
+attribution = "Elkababi"
+notes = "Fields: darija_Latn, darija_Arab_new. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "atlasia-atam"
@@ -83,9 +92,11 @@ url = "https://huggingface.co/datasets/atlasia/ATAM"
 kind = "parallel"
 dialects = ["MAG"]
 license = "check (inherits Darija Open Dataset license)"
-status = "eval-only"
-roles = ["eval"]
-notes = "Word-level Darija pairs incl. 8=ه, 9=ق, capital emphatics. Great for MAG rules once cleared."
+status = "internal"
+roles = ["rules", "tuning", "eval"]
+citation = "Atlasia. ATAM: Arabizi-to-Arabic Mapping. Hugging Face Datasets (atlasia/ATAM), derived from DODa."
+attribution = "Atlasia / DODa contributors"
+notes = "Word-level Darija pairs incl. 8=ه, 9=ق, capital emphatics. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "doda"
@@ -94,9 +105,11 @@ url = "https://github.com/darija-open-dataset/dataset"
 kind = "lexicon"
 dialects = ["MAG"]
 license = "check repository LICENSE"
-status = "eval-only"
-roles = ["eval"]
-notes = "Darija lexicon with Latin and Arabic spellings."
+status = "internal"
+roles = ["rules", "tuning", "eval"]
+citation = "Darija Open Dataset (DODa). A Collaborative Open-Source Dataset for the Moroccan Darija Dialect."
+attribution = "DODa team"
+notes = "Darija lexicon with Latin and Arabic spellings. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "arabizikit"
@@ -116,9 +129,11 @@ url = "https://huggingface.co/datasets/rabeeeehh/arabizi-kit-corpus"
 kind = "parallel"
 dialects = ["MSA", "LEV", "EGY", "GLF", "MAG"]
 license = "check dataset card"
-status = "eval-only"
-roles = ["eval"]
-notes = "Small (355 sentences), LLM references with low agreement; secondary eval only."
+status = "internal"
+roles = ["rules", "tuning", "eval"]
+citation = "Rabeeh. ArabiziKit Corpus: LLM-Annotated Arabizi Sentences. Hugging Face Datasets (rabeeeehh/arabizi-kit-corpus)."
+attribution = "Rabeeh / ArabiziKit"
+notes = "Small (355 sentences), LLM references with low agreement. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "nilechat-arabizi-egy"
@@ -127,9 +142,11 @@ url = "https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-egy"
 kind = "parallel"
 dialects = ["EGY"]
 license = "check dataset card"
-status = "owner-decision"
-roles = ["eval"]
-notes = "LLM-transliterated; if approved, use only as low-weight (0.2) rule augmentation."
+status = "internal"
+roles = ["rules", "tuning", "eval"]
+citation = "UBC-NLP. NileChat Arabizi-EGY: Synthetic Arabizi Transliterations. Hugging Face Datasets (UBC-NLP/nilechat-arabizi-egy)."
+attribution = "UBC-NLP"
+notes = "Synthetic: weight 0.2 in EM. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "arabizi-dataset-v2"
@@ -138,9 +155,11 @@ url = "https://huggingface.co/datasets/Mohamedd123321/Arabizi-dataset-v2"
 kind = "mono_arabizi"
 dialects = ["EGY", "LEV"]
 license = "check dataset card"
-status = "eval-only"
-roles = ["eval"]
-notes = "Candidate for self-training (docs/04 §6.4) once cleared."
+status = "internal"
+roles = ["rules", "eval"]
+citation = "Mohamedd123321. Arabizi-dataset-v2: Monolingual Arabizi Corpus. Hugging Face Datasets (Mohamedd123321/Arabizi-dataset-v2)."
+attribution = "Mohamedd123321"
+notes = "Candidate for self-training (docs/04 §6.4)."
 
 [[source]]
 id = "senzi"
@@ -151,7 +170,7 @@ dialects = ["LEV"]
 license = "unstated"
 status = "eval-only"
 roles = ["eval"]
-notes = "Listed in NNLP-IL/Arabic-Resources; locate primary repo, check license."
+notes = "Primary download requires request / not openly available on Project RBZ; retained as eval-only."
 
 [[source]]
 id = "maknuune"
@@ -160,9 +179,11 @@ url = "https://github.com/NNLP-IL/Arabic-Resources"
 kind = "lexicon"
 dialects = ["LEV"]
 license = "CC-BY-SA-4.0"
-status = "owner-decision"
-roles = ["eval"]
-notes = "Excellent for LEV vocalizations (DIAC). ShareAlike: if approved, the data file (not the code) must be distributed under CC-BY-SA-4.0. Owner decides."
+status = "internal"
+roles = ["lexicon", "diac", "eval"]
+citation = "Maknuune: Palestinian Arabic Lexicon with Phonological Transcriptions. NNLP-IL / Maknuune Project."
+attribution = "Maknuune Project"
+notes = "Excellent for LEV vocalizations (DIAC). CC BY-SA sources require release data build clearance or CC BY-SA."
 
 [[source]]
 id = "tashkeela"
@@ -171,9 +192,11 @@ url = "https://sourceforge.net/projects/tashkeela/"
 kind = "diacritized"
 dialects = ["MSA"]
 license = "conflicting: article CC-BY-4.0; SourceForge/Kaggle list GPL-2"
-status = "owner-decision"
-roles = ["eval"]
-notes = "75M vocalized words, mostly classical. If approved, use statistics only (DIAC variants), never redistribute text."
+status = "internal"
+roles = ["diac"]
+citation = "Taha Zerrouki and Amar Balla. Tashkeela: Novel Text Corpus for Arabic Vocalization. SourceForge (2017)."
+attribution = "Taha Zerrouki, Amar Balla"
+notes = "75M vocalized words, mostly classical. Statistics only (DIAC variants), never redistribute text."
 
 [[source]]
 id = "wikipedia-ar"
@@ -182,9 +205,11 @@ url = "https://dumps.wikimedia.org/"
 kind = "mono_arabic"
 dialects = ["MSA", "EGY"]
 license = "CC-BY-SA-4.0"
-status = "owner-decision"
-roles = ["eval"]
-notes = "Probably unnecessary given FineWeb-2; word-frequency statistics only if approved."
+status = "internal"
+roles = ["lexicon", "lm", "charlm", "diac"]
+citation = "Wikimedia Foundation. Arabic Wikipedia and Egyptian Arabic Wikipedia Database Dumps."
+attribution = "Wikipedia contributors"
+notes = "Word-frequency statistics only. CC BY-SA sources require release data build clearance or CC BY-SA."
 
 [[source]]
 id = "bolt-egy"

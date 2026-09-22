@@ -20,20 +20,24 @@
 - [ ] `cargo deny check` green.
 - [ ] Record baseline numbers above from CI.
 
+## Owner decisions recorded
+- **2026-09-22 (O3, O4)**: Train on all publicly accessible data now under new status `internal`; clear licenses before public release.
+  Sources set to `internal`: parallel data (`talafha-jordanian`, `arbml-arabizi`, `akhanafer-levantine`, `elkababi-darija`, `atlasia-atam`, `doda`, `arabizikit-corpus`, `nilechat-arabizi-egy`), monolingual Arabizi (`arabizi-dataset-v2`), lexicons/text (`maknuune`, `tashkeela` stats only, `wikipedia-ar`).
+  Parallel data split 80/10/10 (train/dev/test); held-out test splits never used for training or tuning. Pipeline supports `--mode internal` and `--mode release`.
+
 ## Owner decisions needed (defaults applied meanwhile)
 | # | Question | Default applied |
 |---|---|---|
 | O1 | Project license: open source (which) or proprietary? | All rights reserved (`LicenseRef-Type3arabi-AllRightsReserved`) |
 | O2 | Code-signing certificate: buy an OV cloud-signing cert (docs/07 §4) — which CA / budget? | Dev builds use a self-signed test cert |
-| O3 | Email Talafha et al. for permission to train on the Jordanian Arabizi corpus (data/sources.toml `talafha-jordanian`) | eval-only |
-| O4 | Approve/deny: Tashkeela (license conflict), Maknuune & Wikipedia (CC BY-SA ShareAlike on the data file), NileChat synthetic, LLM synthetic augmentation + budget | all treated as eval-only / not used |
 | O5 | Recruit golden-set typists: ≥ 3 per dialect group (docs/04 §8) | M2 starts with LEV (Owner's own dialect) |
 | O6 | Default Allah form: `shadda` (اللّه) vs `shadda_fatha` (اللَّه) vs `shadda_dagger` (اللّٰه) vs plain | `shadda` |
 | O7 | Default global activation hotkey (Ctrl+Alt+A) and in-IME toggle (Ctrl+Space) OK? | as stated |
 | O8 | Native-speaker review of `data/eval/smoke.tsv` and `data/seed/phrases.tsv` | pending (M2 task) |
+| O9 | License clearance before public release: contacts/actions for each `internal` source (`talafha-jordanian`, `arbml-arabizi`, `akhanafer-levantine`, `elkababi-darija`, `atlasia-atam`, `doda`, `arabizikit-corpus`, `nilechat-arabizi-egy`, `arabizi-dataset-v2`, `maknuune`, `tashkeela`, `wikipedia-ar`) | Local test builds are internal only; release builds run `--mode release` until cleared |
 
 ## Agent decisions (one line each: what, why)
-- (none yet)
+- D0: Applied Owner decision (2026-09-22) — added `internal` source status, 80/10/10 deterministic split, pipeline modes, and citations in NOTICE.md.
 
 ## Conflicts found between docs
 - (none yet)

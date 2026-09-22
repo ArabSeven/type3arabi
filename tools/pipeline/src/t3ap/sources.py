@@ -1,10 +1,11 @@
 """Dataset registry access (data/sources.toml). Enforces AGENTS.md R14 in the pipeline."""
+import hashlib
 import tomllib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
 SOURCES = REPO / "data" / "sources.toml"
-VALID_STATUS = {"approved", "eval-only", "owner-decision", "blocked"}
+VALID_STATUS = {"approved", "internal", "eval-only", "owner-decision", "blocked"}
 VALID_ROLES = {"lexicon", "lm", "charlm", "diac", "rules", "tuning", "eval", "reference"}
 
 
@@ -22,11 +23,24 @@ def load():
     return rows
 
 
-def allowed(role: str):
+def allowed(role: str, mode: str = "internal"):
     """Sources that may feed `role` into SHIPPED artifacts."""
-    return [r for r in load() if r["status"] == "approved" and role in r["roles"]]
+    valid = {"approved", "internal"} if mode == "internal" else {"approved"}
+    return [r for r in load() if r["status"] in valid and role in r["roles"]]
 
 
-def fetchable():
-    """Sources the fetch stage may download (approved or eval-only; owner-decision counts as eval-only)."""
-    return [r for r in load() if r["status"] in {"approved", "eval-only", "owner-decision"} and r["url"] != "internal"]
+def fetchable(mode: str = "internal"):
+    """Sources the fetch stage may download."""
+    valid = {"approved", "internal", "eval-only", "owner-decision"} if mode == "internal" else {"approved", "eval-only", "owner-decision"}
+    return [r for r in load() if r["status"] in valid and r["url"] != "internal"]
+
+
+def split_row(key: str) -> str:
+    """Deterministic 80/10/10 train/dev/test split by stable row hash."""
+    h = int.from_bytes(hashlib.sha256(key.strip().encode("utf-8")).digest()[:4], "little") % 100
+    if h < 80:
+        return "train"
+    elif h < 90:
+        return "dev"
+    else:
+        return "test"
