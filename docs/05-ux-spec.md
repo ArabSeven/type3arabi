@@ -77,10 +77,12 @@ Theme: `appearance.theme = "system"` reads `AppsUseLightTheme`; High Contrast vi
 Below the composition, right edges aligned (RTL), flip above near the screen bottom, avoid the touch keyboard
 (`docs/02 §9`). The popup never takes focus and never covers the composition text.
 
-### 3.5 Mouse
-- Hover moves the highlight. Click a row = same as Space (commit + space unless article-join).
-- Click `◌َ` = open the tashkeel editor for that row. Wheel = page.
+### 3.5 Mouse (implemented 2026-09-23, Owner request)
+- The popup never takes focus (`MA_NOACTIVATE`): clicking it keeps the app's caret and composition.
+- Click a row = same as Space on that row (commit + space unless article-join). The raw-Latin row too.
+- Wheel over the list = move the highlight (up = previous, down = next), like ↑/↓.
 - Clicking outside = the app handles it; the composition is finalized as shown (`docs/02 §8`).
+- Backlog: hover highlight; a `◌َ` button per row opening the tashkeel editor for that row.
 
 ### 3.6 Keyboard (user-facing summary; authoritative table in `docs/02 §5.2`)
 | Key | Action |
@@ -91,34 +93,51 @@ Below the composition, right edges aligned (RTL), flip above near the screen bot
 | Tab | diacritics editor for the highlighted word |
 | Ctrl+Enter | insert highlighted **with harakat from your vowels** (`3allam` → عَلَّم) |
 | Esc | insert exactly what you typed in Latin |
+| Shift+Space | insert exactly what you typed in Latin, plus a space (no need to scroll to the Latin row) |
 | Backspace | edit the Latin; right after inserting a word, Backspace brings the word back for re-choosing |
 | , ; ? | insert word, then ، ؛ ؟ |
 | Ctrl+Space | Arabic ⇄ Latin typing |
 | Numpad digits | always numbers |
 
+Tab, Ctrl+Enter, Shift+Space and Ctrl+Space are user-editable (`docs/13 [keys]`, `general.mode_toggle`);
+the footer shows the current keys as keycaps: `Space إدراج · Tab تشكيل · Shift+Space لاتيني`.
+
 ## 4. Tashkeel (diacritics) editor — inside the same popup
 
-### 4.1 Anatomy (example word علم)
+### 4.1 Anatomy (example word شكراً; revised 2026-09-23 per Owner review)
 ```
-┌──────────────────────────────────────────────────────────┐
-│ ① عِلم ✦من كتابتك   ② عِلْم   ③ عَلَم   ④ عَلَّمَ   ⑤ عُلِمَ   │  quick picks (chips, RTL order)
-├──────────────────────────────────────────────────────────┤
-│                         عِلم                             │  the word, 40 DIP; focused letter has
-│                         ‾‾                               │  a rounded highlight + underline caret
-├──────────────────────────────────────────────────────────┤
-│  َ a   ُ u   ِ i   ْ o   ّ w   ً A   ٌ U   ٍ I   ٰ ^   ✕ x   │  mark palette (each on a dotted ◌)
-├──────────────────────────────────────────────────────────┤
-│ Enter: إدراج · Esc: رجوع · ←→: حرف                         │
-└──────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│ [✕ مسح الكل]                           [② شَكَراً]  [① شُكْراً ✦من كتابتك] │  clear-all button (left),
+├────────────────────────────────────────────────────────────────────────┤  quick-pick chips (RTL)
+│                              ش ك را                                    │  the word, 42 DIP; every
+│                              ▔▔ ▔▔                                     │  SELECTED letter has a tinted
+│                                 ‾‾                                     │  box, the FOCUSED one an
+├────────────────────────────────────────────────────────────────────────┤  underline
+│ ┌────┐┌────┐┌────┐┌────┐┌────┐┌────┐┌────┐┌────┐┌────┐┌────┐            │
+│ │ ◌َ  ││ ◌ُ  ││ ◌ِ  ││ ◌ْ  ││ ◌ّ  ││ ◌ً  ││ ◌ٌ  ││ ◌ٍ  ││ ◌ٰ  ││ ✕  │            │  palette cell = 3 rows:
+│ │فتحة││ضمة ││كسرة││سكون││شدة ││تنوين││تنوين││تنوين││ألف ││مسح │            │  mark on ◌ (30 DIP),
+│ │    ││    ││    ││    ││    ││ فتح ││ ضم ││ كسر ││خنجرية│    │            │  Arabic name (wraps),
+│ │ [a]││ [u]││ [i]││ [o]││ [w]││ [A]││ [U]││ [I]││ [^]││ [x]│            │  key as a keycap
+│ └────┘└────┘└────┘└────┘└────┘└────┘└────┘└────┘└────┘└────┘            │  (first cell at the right)
+├────────────────────────────────────────────────────────────────────────┤
+│        [← →] حرف   [Shift+← →] تحديد   [Enter] إدراج   [Esc] رجوع        │  keycap hints, RTL
+└────────────────────────────────────────────────────────────────────────┘
 ```
-Letters in Arabic are joined, so "cells" are highlight rectangles drawn behind each letter's glyph cluster
-(DirectWrite `GetClusterMetrics` + `HitTestTextPosition`), never separated glyphs. Clicks use `HitTestPoint`.
+Letters in Arabic are joined, so letter "cells" are rectangles drawn behind each letter's shaped glyph
+cluster, never separated glyphs. Implementation (GDI): the right edge of letter k is the shaped width of the
+word up to and including k, measured with a trailing ZWJ so the letter keeps its joining form. Mixed
+Arabic/Latin labels are laid out piece by piece (keycap + Arabic label) instead of relying on GDI bidi.
 
-### 4.2 Navigation
-- Focus starts on the **first letter** (rightmost). → moves focus visually right (logically previous),
-  ← visually left (logically next). Home/End = first/last letter.
-- Applying a vowel, sukun, tanween, or clear **auto-advances** to the next letter; shadda and dagger alif stay
-  (so `w` then `a` gives shadda+fatha on the same letter).
+### 4.2 Navigation and selection
+- The editor opens with the **first letter** (rightmost) focused and selected — visibly highlighted.
+  → moves focus visually right (logically previous), ← visually left (logically next); Home/End = first/last.
+- **Selection** (Owner request 2026-09-23): marks apply to *every selected letter*.
+  Shift+← / Shift+→ extend the selection; mouse: click = select that letter, Ctrl+click = add/remove,
+  Shift+click or drag = range. Plain arrows collapse the selection to the focused letter.
+- With one letter selected, a vowel, sukun or tanween **auto-advances** to the next letter; shadda and dagger
+  alif stay (so `w` then `a` gives shadda+fatha on the same letter). With several selected, focus stays.
+- **مسح الكل** (clear all) at the top removes every mark from every letter; `x` clears the selected letters.
+- Mouse: click a palette cell = press its key; click a chip = that quick pick.
 
 ### 4.3 Mark keys (mnemonics shown in the palette)
 | Key | Mark | Why |

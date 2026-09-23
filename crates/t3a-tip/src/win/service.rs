@@ -6,7 +6,7 @@
 //! edit sessions (`DocOp` + `apply`), which read and write state the same way.
 
 use crate::ids::GUID_PRESERVED_TOGGLE;
-use crate::keyrouter::{classify, Action, Decision, Key, Popup, RouterState, Toggle};
+use crate::keyrouter::{classify, Action, Decision, Key, KeyMap, Popup, RouterState, Toggle};
 use crate::win::compose::EditSession;
 use crate::win::context::evaluate_context_mode;
 use crate::win::display::{
@@ -20,8 +20,13 @@ use std::mem::ManuallyDrop;
 use std::sync::{Arc, OnceLock};
 use t3a_engine::normalize::InputChar;
 use t3a_engine::session::{CandidateKind, CommitHow, Session, Trailing};
-use t3a_engine::{Config, Engine, NoUser, TashkeelAction, TashkeelEditor, UserScorer, UserStore};
-use t3a_ui::{Footer, ListModel, PopupModel, PopupWindow, Row, RowMarker, TashkeelModel};
+use t3a_engine::{
+    Config, Engine, NoUser, SelectMode, TashkeelAction, TashkeelCmd, TashkeelEditor, UserScorer,
+    UserStore,
+};
+use t3a_ui::{
+    Footer, ListModel, PopupEvent, PopupModel, PopupWindow, Row, RowMarker, TashkeelModel,
+};
 use windows::core::{implement, Interface, BOOL, GUID};
 use windows::Win32::Foundation::{E_FAIL, E_INVALIDARG, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
@@ -37,7 +42,7 @@ use windows::Win32::UI::TextServices::{
     ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl, ITfThreadFocusSink,
     ITfThreadFocusSink_Impl, ITfThreadMgr, ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl,
     GUID_PROP_ATTRIBUTE, TF_AE_NONE, TF_ANCHOR_END, TF_ES_ASYNCDONTCARE, TF_ES_READWRITE,
-    TF_IAS_QUERYONLY, TF_INVALID_COOKIE, TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION,
+    TF_ES_SYNC, TF_IAS_QUERYONLY, TF_INVALID_COOKIE, TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION,
     TF_SELECTIONSTYLE, TF_TMAE_SECUREMODE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -108,11 +113,22 @@ fn with_scorer<R>(f: impl FnOnce(&dyn UserScorer) -> R) -> R {
     }
 }
 
-fn load_config() -> Config {
-    match std::fs::read_to_string(t3a_paths::config_path()) {
-        Ok(text) => Config::parse(&text).0,
-        Err(_) => Config::default(),
+/// The user config and its modification time (docs/13). Missing or unreadable ⇒ defaults.
+fn load_config() -> (Config, Option<std::time::SystemTime>) {
+    let path = t3a_paths::config_path();
+    let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+    match std::fs::read_to_string(&path) {
+        Ok(text) => (Config::parse(&text).0, mtime),
+        Err(_) => (Config::default(), mtime),
     }
+}
+
+fn keymap(c: &Config) -> KeyMap {
+    KeyMap::from_config(
+        &c.key_commit_latin,
+        &c.key_open_tashkeel,
+        &c.key_commit_harakat,
+    )
 }
 
 fn utf16(s: &str) -> Vec<u16> {
@@ -143,8 +159,12 @@ pub struct State {
     attr_tashkeel: i32,
     session: Session<'static>,
     config: Config,
+    config_mtime: Option<std::time::SystemTime>,
+    keys: KeyMap,
     arabic_mode: bool,
     composition: Option<ITfComposition>,
+    /// Context of the current composition: mouse clicks on the popup arrive outside any key event.
+    context: Option<ITfContext>,
     selected: usize,
     page: usize,
     tashkeel: Option<TashkeelEditor>,
@@ -179,10 +199,7 @@ impl State {
     }
 
     fn preview_op(&self) -> DocOp {
-        DocOp::Preview {
-            text: utf16(&self.preview_text()),
-            tashkeel: self.tashkeel.is_some(),
-        }
+        DocOp::Preview
     }
 
     fn popup_model(&self) -> PopupModel {
@@ -193,6 +210,7 @@ impl State {
                 highlighted_pick: ed.highlighted_pick,
                 word: ed.render(),
                 focused_letter: ed.focused_letter,
+                selected: ed.selection(),
             });
         }
         let list = self.session.candidates();
@@ -242,17 +260,20 @@ impl State {
 
 /// A document change, executed inside an edit session by `apply`.
 enum DocOp {
-    /// Show `text` as the composing word (starts the composition if needed) and place the popup.
-    Preview { text: Vec<u16>, tashkeel: bool },
+    /// Show the *current* composing word (starts the composition if needed) and place the popup.
+    /// The text is read from state when the session runs, never captured at request time: an edit
+    /// session may run asynchronously after a later commit, and a captured preview would then
+    /// reopen a composition with stale text (docs/02 §8).
+    Preview,
     /// Replace the composition (if any) with `text`, end it, then insert `suffix` after it.
     Commit { text: Vec<u16>, suffix: Vec<u16> },
     /// End the composition keeping whatever it shows (focus change, deactivation).
     Finalize,
     /// Insert text at the caret (no composition).
     Insert(Vec<u16>),
-    /// If the text before the caret is `expect`, turn it back into a composition showing `preview`;
-    /// otherwise behave like a plain Backspace.
-    ReEdit { expect: Vec<u16>, preview: Vec<u16> },
+    /// If the text before the caret is `expect`, turn it back into a composition showing the
+    /// restored preview; otherwise behave like a plain Backspace.
+    ReEdit { expect: Vec<u16> },
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -273,7 +294,8 @@ pub struct TextService {
 
 impl TextService {
     pub fn new() -> windows::core::Result<Self> {
-        let config = load_config();
+        let (config, config_mtime) = load_config();
+        let keys = keymap(&config);
         let session = Session::new(engine(), config.to_engine_settings());
         add_object();
         Ok(Self {
@@ -289,8 +311,11 @@ impl TextService {
                 attr_tashkeel: 0,
                 session,
                 config,
+                config_mtime,
+                keys,
                 arabic_mode: true,
                 composition: None,
+                context: None,
                 selected: 0,
                 page: 0,
                 tashkeel: None,
@@ -531,6 +556,9 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
             if !decision.eat {
                 return Ok(BOOL::from(false));
             }
+            if let Ok(mut s) = self.state.try_borrow_mut() {
+                s.context = Some(ctx.clone());
+            }
             let eaten = self.execute(ctx, decision.action);
             if eaten {
                 if let Ok(mut s) = self.state.try_borrow_mut() {
@@ -687,6 +715,7 @@ impl TextService_Impl {
             buffer_is_article: s.config.article_joining
                 && matches!(raw.as_str(), "el" | "al" | "il" | "l"),
             toggle: Toggle::parse(&s.config.mode_toggle),
+            keys: s.keys,
         };
         (classify(&rs, key, mods), key)
     }
@@ -784,12 +813,21 @@ impl TextService_Impl {
                 self.commit(ctx, CommitHow::WithHarakat, None);
                 true
             }
-            Action::CommitRaw => {
+            Action::CommitRaw | Action::CommitRawSpace => {
                 if let Ok(mut s) = self.state.try_borrow_mut() {
                     s.tashkeel = None;
-                    s.selected = s.session.candidates().items.len().saturating_sub(1);
+                    let items = &s.session.candidates().items;
+                    s.selected = items
+                        .iter()
+                        .position(|c| c.kind == CandidateKind::RawLatin)
+                        .unwrap_or(items.len().saturating_sub(1));
                 }
-                self.commit(ctx, CommitHow::Enter, None);
+                let how = if action == Action::CommitRawSpace {
+                    CommitHow::Space
+                } else {
+                    CommitHow::Enter
+                };
+                self.commit(ctx, how, None);
                 true
             }
             Action::CommitThenPunctuation(c) => {
@@ -870,6 +908,76 @@ impl TextService_Impl {
         }
     }
 
+    /// Mouse input on the popup (docs/05 §3.4, §4.4): mapped onto the same actions as the keys.
+    fn on_popup_event(&self, ev: PopupEvent) {
+        let mut select = None;
+        let (ctx, action) = {
+            let Ok(s) = self.state.try_borrow() else {
+                return;
+            };
+            let Some(ctx) = s.context.clone() else {
+                return;
+            };
+            let action = match ev {
+                PopupEvent::WheelUp => Some(Action::PrevCandidate),
+                PopupEvent::WheelDown => Some(Action::NextCandidate),
+                PopupEvent::Row(row) => {
+                    // Row n of the visible page → candidate index; commit it like Space.
+                    let idx = s.page * s.page_size() + row;
+                    if idx < s.session.candidates().items.len() {
+                        select = Some(idx);
+                        Some(Action::CommitSpace)
+                    } else {
+                        None
+                    }
+                }
+                PopupEvent::Letter {
+                    index,
+                    toggle,
+                    range,
+                } => {
+                    let mode = if range {
+                        SelectMode::Range
+                    } else if toggle {
+                        SelectMode::Toggle
+                    } else {
+                        SelectMode::Only
+                    };
+                    Some(Action::Tashkeel(TashkeelCmd::Select(
+                        index.min(u8::MAX as usize) as u8,
+                        mode,
+                    )))
+                }
+                PopupEvent::Mark(i) => {
+                    let cmd = [
+                        TashkeelCmd::Fatha,
+                        TashkeelCmd::Damma,
+                        TashkeelCmd::Kasra,
+                        TashkeelCmd::Sukun,
+                        TashkeelCmd::ShaddaToggle,
+                        TashkeelCmd::Fathatan,
+                        TashkeelCmd::Dammatan,
+                        TashkeelCmd::Kasratan,
+                        TashkeelCmd::DaggerAlif,
+                        TashkeelCmd::Clear,
+                    ];
+                    cmd.get(i).map(|&c| Action::Tashkeel(c))
+                }
+                PopupEvent::ClearAll => Some(Action::Tashkeel(TashkeelCmd::ClearAll)),
+                PopupEvent::Pick(i) => Some(Action::Tashkeel(TashkeelCmd::QuickPick(
+                    (i + 1).min(u8::MAX as usize) as u8,
+                ))),
+            };
+            (ctx, action)
+        };
+        if let (Some(idx), Ok(mut s)) = (select, self.state.try_borrow_mut()) {
+            s.selected = idx;
+        }
+        if let Some(action) = action {
+            self.execute(&ctx, action);
+        }
+    }
+
     fn push_char(&self, ctx: &ITfContext, ch: InputChar) {
         let op = {
             let Ok(mut s) = self.state.try_borrow_mut() else {
@@ -877,6 +985,17 @@ impl TextService_Impl {
             };
             if s.session.is_empty() {
                 s.anchor = None;
+                // Pick up Settings changes (shortcuts, style) at the start of each word.
+                let mtime = std::fs::metadata(t3a_paths::config_path())
+                    .and_then(|m| m.modified())
+                    .ok();
+                if mtime != s.config_mtime {
+                    let (config, mtime) = load_config();
+                    s.keys = keymap(&config);
+                    s.session.set_settings(config.to_engine_settings());
+                    s.config = config;
+                    s.config_mtime = mtime;
+                }
                 let prev = s.recent_words.clone();
                 let refs: Vec<&str> = prev.iter().map(String::as_str).collect();
                 s.session.set_context(&refs);
@@ -997,7 +1116,6 @@ impl TextService_Impl {
             s.tashkeel = None;
             DocOp::ReEdit {
                 expect: utf16(&anchor.word),
-                preview: utf16(&s.preview_text()),
             }
         };
         self.run(ctx, op);
@@ -1054,7 +1172,14 @@ impl TextService_Impl {
             let model = s.popup_model();
             (model, s.text_rect, s.popup.take())
         };
-        let Some(mut popup) = popup.or_else(|| PopupWindow::new().ok()) else {
+        let Some(mut popup) = popup.or_else(|| {
+            let mut p = PopupWindow::new().ok()?;
+            let this = self.to_object();
+            p.set_handler(std::rc::Rc::new(move |ev| {
+                guard((), || this.on_popup_event(ev));
+            }));
+            Some(p)
+        }) else {
             return;
         };
         popup.show(model, (rect.left, rect.top, rect.right, rect.bottom));
@@ -1074,9 +1199,16 @@ impl TextService_Impl {
         let ctx2 = ctx.clone();
         let session: ITfEditSession =
             EditSession::new(move |ec| apply(&this, &ctx2, ec, op)).into();
-        // SAFETY: plain COM call; no state borrow is held (the session may run synchronously).
+        // Synchronous first: engine state already changed, and document edits must happen in the
+        // same order (an async session running after a later commit corrupts the text). TSF refuses
+        // a sync lock outside key events (TF_E_SYNCHRONOUS, e.g. popup clicks): then queue it.
+        // SAFETY: plain COM calls; no state borrow is held (the session may run synchronously).
         unsafe {
-            let _ = ctx.RequestEditSession(tid, &session, TF_ES_READWRITE | TF_ES_ASYNCDONTCARE);
+            let sync = ctx.RequestEditSession(tid, &session, TF_ES_SYNC | TF_ES_READWRITE);
+            if !matches!(sync, Ok(hr) if hr.is_ok()) {
+                let _ =
+                    ctx.RequestEditSession(tid, &session, TF_ES_READWRITE | TF_ES_ASYNCDONTCARE);
+            }
         }
     }
 }
@@ -1093,15 +1225,18 @@ fn apply(
     // SAFETY (whole fn): COM calls on live TSF objects inside a granted read/write edit session.
     unsafe {
         match op {
-            DocOp::Preview { text, tashkeel } => {
-                let (comp, atom) = match this.state.try_borrow() {
+            DocOp::Preview => {
+                let (comp, atom, text) = match this.state.try_borrow() {
+                    // Nothing to show any more (committed or cancelled since the request).
+                    Ok(s) if !s.composing() => return Ok(()),
                     Ok(s) => (
                         s.composition.clone(),
-                        if tashkeel {
+                        if s.tashkeel.is_some() {
                             s.attr_tashkeel
                         } else {
                             s.attr_input
                         },
+                        utf16(&s.preview_text()),
                     ),
                     Err(_) => return Ok(()),
                 };
@@ -1165,7 +1300,7 @@ fn apply(
                 }
             }
             DocOp::Insert(text) => insert_at_caret(ctx, ec, &text)?,
-            DocOp::ReEdit { expect, preview } => {
+            DocOp::ReEdit { expect } => {
                 let Some(sel) = selection_range(ctx, ec) else {
                     return Ok(());
                 };
@@ -1186,15 +1321,7 @@ fn apply(
                     }
                 }
                 if restored {
-                    return apply(
-                        this,
-                        ctx,
-                        ec,
-                        DocOp::Preview {
-                            text: preview,
-                            tashkeel: false,
-                        },
-                    );
+                    return apply(this, ctx, ec, DocOp::Preview);
                 }
                 // The text changed since the commit: undo the restore and act as plain Backspace.
                 if let Ok(mut s) = this.state.try_borrow_mut() {

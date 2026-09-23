@@ -51,7 +51,43 @@ pub struct TashkeelModel {
     pub word: String,
     /// Index (in base letters, logical order) of the focused letter.
     pub focused_letter: usize,
+    /// Selected letters (logical order); the focused letter is always among them.
+    pub selected: Vec<usize>,
 }
+
+/// Mouse input on the popup, delivered to the TIP's handler (docs/05 §3.4, §4.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PopupEvent {
+    /// Click on visible candidate row `n` (0 = top row of the current page).
+    Row(usize),
+    /// Mouse wheel over the list: previous / next candidate.
+    WheelUp,
+    WheelDown,
+    /// Click on letter `index` (logical order) in the tashkeel editor. `toggle` = Ctrl held,
+    /// `range` = Shift held or a drag.
+    Letter {
+        index: usize,
+        toggle: bool,
+        range: bool,
+    },
+    /// Click on palette cell `n` of `MARK_PALETTE`.
+    Mark(usize),
+    /// Click on the "clear all diacritics" button.
+    ClearAll,
+    /// Click on quick-pick chip `n`.
+    Pick(usize),
+}
+
+/// Label of the "clear all diacritics" button at the top of the tashkeel editor (drawn with ✕).
+pub const CLEAR_ALL_AR: &str = "مسح الكل";
+
+/// Footer hints of the tashkeel editor: (key, Arabic label), laid out right-to-left as keycaps.
+pub const TASHKEEL_HINTS: [(&str, &str); 4] = [
+    ("\u{2190} \u{2192}", "حرف"),
+    ("Shift+\u{2190} \u{2192}", "تحديد"),
+    ("Enter", "إدراج"),
+    ("Esc", "رجوع"),
+];
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PopupModel {
@@ -93,7 +129,7 @@ pub mod metrics {
     pub const MAX_WIDTH: f32 = 420.0;
     pub const HEADER_H: f32 = 22.0;
     pub const ROW_H: f32 = 34.0;
-    pub const FOOTER_H: f32 = 20.0;
+    pub const FOOTER_H: f32 = 24.0;
     pub const PAD_X: f32 = 12.0;
     pub const HARAKAT_BTN: f32 = 28.0;
     pub const ACCENT_BAR: f32 = 3.0;
@@ -117,8 +153,13 @@ pub const MARK_PALETTE: [(char, &str, &str); 10] = [
     ('\u{2715}', "x", "مسح"),
 ];
 
-/// Footer hint text (docs/05 §3.1).
-pub const FOOTER_HINTS_AR: &str = "مسافة: إدراج · Tab: تشكيل · Esc: لاتيني";
+/// Footer hints of the candidate list (docs/05 §3.1): (key, Arabic label), laid out right-to-left.
+/// Keys follow the default `[keys]` config (docs/13).
+pub const LIST_HINTS: [(&str, &str); 3] = [
+    ("Space", "إدراج"),
+    ("Tab", "تشكيل"),
+    ("Shift+Space", "لاتيني"),
+];
 
 #[cfg(windows)]
 pub mod win;

@@ -18,12 +18,16 @@ fn main() {
 mod harness {
     use t3a_tip::service::TextService;
     use windows::core::{w, Interface, PCWSTR};
+    use windows::Win32::Foundation::RECT;
     use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
     };
     use windows::Win32::System::LibraryLoader::LoadLibraryW;
-    use windows::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, SetFocus, MAPVK_VK_TO_VSC};
+    use windows::Win32::UI::HiDpi::GetDpiForWindow;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetKeyboardState, MapVirtualKeyW, SetFocus, SetKeyboardState, MAPVK_VK_TO_VSC,
+    };
     use windows::Win32::UI::TextServices::{
         CLSID_TF_ThreadMgr, ITfContext, ITfKeyEventSink, ITfTextInputProcessor, ITfThreadMgr,
     };
@@ -32,6 +36,10 @@ mod harness {
         PeekMessageW, RegisterClassW, SendMessageW, SetWindowTextW, ShowWindow, TranslateMessage,
         MSG, PM_REMOVE, SW_SHOW, WINDOW_EX_STYLE, WNDCLASSW, WS_CHILD, WS_OVERLAPPEDWINDOW,
         WS_VISIBLE,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        FindWindowExW, GetClientRect, GetWindowThreadProcessId, WM_LBUTTONDOWN, WM_LBUTTONUP,
+        WM_MOUSEWHEEL,
     };
 
     const EM_SETEDITSTYLE: u32 = 0x0400 + 204;
@@ -85,13 +93,119 @@ mod harness {
             '\x1B' => 0x1B,
             ',' => 0xBC,
             '\t' => 0x09,
+            '\u{E006}' => 0x28, // VK_DOWN
             _ => panic!("no vk for {c:?}"),
         }
     }
 
+    // Pseudo-keys for scenarios (Private Use Area characters):
+    const CLICK_ROW_1: char = '\u{E001}'; // click the 2nd candidate row
+    const WHEEL_DOWN: char = '\u{E002}'; // mouse wheel down over the list
+    const SHIFT_SPACE: char = '\u{E003}'; // Shift+Space
+    const CLICK_CLEAR_ALL: char = '\u{E004}'; // tashkeel editor: "clear all" button
+    const CLICK_DAMMA: char = '\u{E005}'; // tashkeel editor: 2nd palette cell (damma)
+
+    /// Our own popup: another process (e.g. an app using the installed Type3arabi) may have a
+    /// window of the same class, so match the owning process too.
+    fn popup() -> Option<HWND> {
+        unsafe {
+            let me = std::process::id();
+            let mut after: Option<HWND> = None;
+            loop {
+                let h = FindWindowExW(
+                    None,
+                    after,
+                    w!("Type3arabi_CandidateWindow"),
+                    PCWSTR::null(),
+                )
+                .ok()?;
+                let mut pid = 0u32;
+                GetWindowThreadProcessId(h, Some(&mut pid));
+                if pid == me {
+                    return Some(h);
+                }
+                after = Some(h);
+            }
+        }
+    }
+
+    /// Send a mouse message to the popup at client coordinates computed from its painted layout.
+    fn mouse(msg: u32, wparam: usize, at: impl Fn(i32, i32, f32) -> (i32, i32)) -> bool {
+        let Some(h) = popup() else {
+            println!("  popup window not found");
+            return false;
+        };
+        unsafe {
+            let mut rc = RECT::default();
+            let _ = GetClientRect(h, &mut rc);
+            let scale = GetDpiForWindow(h).max(96) as f32 / 96.0;
+            let (x, y) = at(rc.right, rc.bottom, scale);
+            let lp = LPARAM((((y as u32 & 0xFFFF) << 16) | (x as u32 & 0xFFFF)) as isize);
+            SendMessageW(h, msg, Some(WPARAM(wparam)), Some(lp));
+            if msg == WM_LBUTTONDOWN {
+                SendMessageW(h, WM_LBUTTONUP, Some(WPARAM(0)), Some(lp));
+            }
+        }
+        pump();
+        true
+    }
+
     fn type_keys(sink: &ITfKeyEventSink, ctx: &ITfContext, keys: &str) -> bool {
         for c in keys.chars() {
-            let (w, l) = key(vk_for(c));
+            let px = |v: f32, s: f32| (v * s).round() as i32;
+            match c {
+                CLICK_ROW_1 => {
+                    // header 22 + one row of 34, then the middle of the 2nd row
+                    if !mouse(WM_LBUTTONDOWN, 0x1, |w, _, s| {
+                        (w / 2, px(22.0 + 34.0 + 17.0, s))
+                    }) {
+                        return false;
+                    }
+                    continue;
+                }
+                WHEEL_DOWN => {
+                    let delta = (-120i16 as u16 as usize) << 16;
+                    if !mouse(WM_MOUSEWHEEL, delta, |w, _, s| (w / 2, px(40.0, s))) {
+                        return false;
+                    }
+                    continue;
+                }
+                CLICK_CLEAR_ALL => {
+                    if !mouse(WM_LBUTTONDOWN, 0x1, |_, _, s| (px(24.0, s), px(20.0, s))) {
+                        return false;
+                    }
+                    continue;
+                }
+                CLICK_DAMMA => {
+                    // palette cells run right-to-left: cell 1 is the second from the right edge
+                    let ok = mouse(WM_LBUTTONDOWN, 0x1, |w, _, s| {
+                        let pad = px(12.0, s);
+                        let gap = px(4.0, s);
+                        let cell = (w - 2 * pad - 9 * gap) / 10;
+                        (
+                            w - pad - cell - gap - cell / 2,
+                            px(40.0 + 84.0 + 30.0, s) + 1,
+                        )
+                    });
+                    if !ok {
+                        return false;
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+            let shift = c == SHIFT_SPACE;
+            let (w, l) = key(if shift { 0x20 } else { vk_for(c) });
+            let mut saved = [0u8; 256];
+            if shift {
+                unsafe {
+                    let _ = GetKeyboardState(&mut saved);
+                    let mut st = saved;
+                    st[0x10] = 0x80; // VK_SHIFT down
+                    st[0xA0] = 0x80; // VK_LSHIFT
+                    let _ = SetKeyboardState(&st);
+                }
+            }
             let trace = std::env::var_os("T3A_TRACE").is_some();
             unsafe {
                 if trace {
@@ -115,6 +229,11 @@ mod harness {
                 if test.is_err() || down.is_err() {
                     println!("  key {c:?}: sink returned an error");
                     return false;
+                }
+            }
+            if shift {
+                unsafe {
+                    let _ = SetKeyboardState(&saved);
                 }
             }
             pump();
@@ -154,7 +273,12 @@ mod harness {
         }
         // Never touch the real user's learning store: point %LOCALAPPDATA% at a fresh temp dir.
         let sandbox = std::env::temp_dir().join(format!("t3a-harness-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&sandbox);
+        let _ = std::fs::create_dir_all(sandbox.join("Type3arabi"));
+        // Learning off: scenarios must not depend on each other's commits (sticky choices).
+        let _ = std::fs::write(
+            sandbox.join("Type3arabi").join("config.toml"),
+            "[learning]\nenabled = false\n",
+        );
         std::env::set_var("LOCALAPPDATA", &sandbox);
         let code = run_in_sandbox();
         let _ = std::fs::remove_dir_all(&sandbox);
@@ -254,9 +378,25 @@ mod harness {
                 // Tab opens the tashkeel editor; 'a' puts fatha on the first letter; Enter commits.
                 // (Not mar7aba: the Esc above taught "raw Latin first" for it — sticky choice.)
                 ("shukran\ta\n", "شَكراً"), // U+0634 U+064E U+0643 U+0631 U+0627 U+064B
+                // Owner requests 2026-09-23: Shift+Space commits the Latin word; mouse selection.
+                ("hello\u{E003}", "hello "),
+                // 2nd candidate three ways: ↓ + Space, click on row 2, wheel down + Space.
+                // مرحبة = U+0645 U+0631 U+062D U+0628 U+0629 (the list's 2nd row with learning off)
+                ("mar7aba\u{E006} ", "مرحبة "),
+                ("mar7aba\u{E001}", "مرحبة "),
+                ("mar7aba\u{E002} ", "مرحبة "),
+                ("shukran\t\u{E004}\n", "شكرا"), // clear all diacritics (drops the tanween)
+                ("shukran\t\u{E005}\n", "شُكراً"), // U+0634 U+064F ...: damma on the 1st letter
             ];
             let mut failures = 0;
-            for (keys, expected) in scenarios {
+            // Every scenario runs several times in one process: edit-session ordering bugs are
+            // intermittent (T3A_ROUNDS overrides; default 3).
+            let rounds: usize = std::env::var("T3A_ROUNDS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3);
+            let all: Vec<&(&str, &str)> = (0..rounds).flat_map(|_| scenarios.iter()).collect();
+            for (keys, expected) in all {
                 let _ = SetWindowTextW(edit, w!(""));
                 pump();
                 let ok = type_keys(&sink, &ctx, keys);

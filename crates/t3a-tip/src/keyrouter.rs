@@ -96,6 +96,87 @@ impl Toggle {
     }
 }
 
+/// A configurable key chord (docs/13 `[keys]`): exact modifier match.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Chord {
+    pub key: Key,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+}
+
+impl Chord {
+    /// `None` for `"none"` or an unparsable string.
+    pub fn parse(s: &str) -> Option<Chord> {
+        if s.eq_ignore_ascii_case("none") {
+            return None;
+        }
+        let parts: Vec<&str> = s.split('+').map(str::trim).collect();
+        let (key, mods) = parts.split_last()?;
+        let key = match key.to_ascii_lowercase().as_str() {
+            "space" => Key::Space,
+            "enter" => Key::Enter,
+            "tab" => Key::Tab,
+            "esc" | "escape" => Key::Escape,
+            "backspace" => Key::Backspace,
+            k if k.len() == 1 && k.chars().all(|c| c.is_ascii_alphanumeric()) => {
+                Key::Char(k.chars().next()?)
+            }
+            _ => return None,
+        };
+        let mut c = Chord {
+            key,
+            ctrl: false,
+            alt: false,
+            shift: false,
+        };
+        for m in mods {
+            match m.to_ascii_lowercase().as_str() {
+                "ctrl" => c.ctrl = true,
+                "alt" => c.alt = true,
+                "shift" => c.shift = true,
+                _ => return None,
+            }
+        }
+        Some(c)
+    }
+
+    fn matches(self, key: Key, m: Mods) -> bool {
+        let key_eq = match (self.key, key) {
+            (Key::Char(a), Key::Char(b)) => a.eq_ignore_ascii_case(&b),
+            (a, b) => a == b,
+        };
+        key_eq && self.ctrl == m.ctrl && self.alt == m.alt && self.shift == m.shift && !m.win
+    }
+}
+
+/// Configurable in-composition shortcuts (docs/13 `[keys]`); `None` = unbound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyMap {
+    /// Commit the typed Latin as is, plus a space (default Shift+Space).
+    pub commit_latin: Option<Chord>,
+    /// Open the tashkeel editor on the highlighted candidate (default Tab).
+    pub open_tashkeel: Option<Chord>,
+    /// Commit with harakat derived from the typed vowels (default Ctrl+Enter).
+    pub commit_harakat: Option<Chord>,
+}
+
+impl KeyMap {
+    pub fn from_config(commit_latin: &str, open_tashkeel: &str, commit_harakat: &str) -> Self {
+        Self {
+            commit_latin: Chord::parse(commit_latin),
+            open_tashkeel: Chord::parse(open_tashkeel),
+            commit_harakat: Chord::parse(commit_harakat),
+        }
+    }
+}
+
+impl Default for KeyMap {
+    fn default() -> Self {
+        Self::from_config("Shift+Space", "Tab", "Ctrl+Enter")
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RouterState {
     pub context: ContextMode,
@@ -106,6 +187,7 @@ pub struct RouterState {
     /// The current buffer is an article (`el`, `al`, `il`, `l`) — a following `-` is swallowed.
     pub buffer_is_article: bool,
     pub toggle: Toggle,
+    pub keys: KeyMap,
 }
 
 /// Commands inside the tashkeel editor (docs/05 §4.3).
@@ -125,6 +207,8 @@ pub enum Action {
     CommitNoSpace,
     CommitWithHarakat,
     CommitRaw,
+    /// Commit the typed Latin as is, plus a space (keys.commit_latin).
+    CommitRawSpace,
     CommitThenPunctuation(char),
     CommitAndReinject,
     OpenTashkeel,
@@ -171,8 +255,10 @@ pub fn classify(s: &RouterState, key: Key, m: Mods) -> Decision {
         };
     }
     // Arabic mode
+    let bound = |c: Option<Chord>| c.is_some_and(|c| c.matches(key, m));
     if s.composing && s.popup == Popup::Tashkeel {
         return eat(match key {
+            _ if bound(s.keys.commit_latin) => Action::CommitRawSpace,
             _ if m.command() && key != Key::Enter => Action::CommitAndReinject,
             Key::Char(c) => match c {
                 'a' => Action::Tashkeel(TashkeelCmd::Fatha),
@@ -192,7 +278,10 @@ pub fn classify(s: &RouterState, key: Key, m: Mods) -> Decision {
             Key::NumpadDigit(_) => Action::Tashkeel(TashkeelCmd::Ignore),
             Key::Backspace => Action::Tashkeel(TashkeelCmd::ClearOrBack),
             Key::Delete => Action::Tashkeel(TashkeelCmd::Clear),
-            Key::Left => Action::Tashkeel(TashkeelCmd::LetterNext), // visual left = logical next (RTL)
+            // visual left = logical next (RTL); Shift extends the selection
+            Key::Left if m.shift => Action::Tashkeel(TashkeelCmd::ExtendNext),
+            Key::Right if m.shift => Action::Tashkeel(TashkeelCmd::ExtendPrev),
+            Key::Left => Action::Tashkeel(TashkeelCmd::LetterNext),
             Key::Right => Action::Tashkeel(TashkeelCmd::LetterPrev),
             Key::Home => Action::Tashkeel(TashkeelCmd::LetterFirst),
             Key::End => Action::Tashkeel(TashkeelCmd::LetterLast),
@@ -209,7 +298,9 @@ pub fn classify(s: &RouterState, key: Key, m: Mods) -> Decision {
     }
     if s.composing {
         return eat(match key {
-            Key::Enter if m.ctrl && !m.alt && !m.win => Action::CommitWithHarakat,
+            _ if bound(s.keys.commit_harakat) => Action::CommitWithHarakat,
+            _ if bound(s.keys.commit_latin) => Action::CommitRawSpace,
+            _ if bound(s.keys.open_tashkeel) => Action::OpenTashkeel,
             _ if m.command() => Action::CommitAndReinject,
             Key::Char('-') if s.buffer_is_article => Action::ArticleHyphen,
             Key::Char(c) if is_token_char(c) => Action::AppendChar(c),
@@ -219,7 +310,7 @@ pub fn classify(s: &RouterState, key: Key, m: Mods) -> Decision {
             Key::Space => Action::CommitSpace,
             Key::Enter => Action::CommitNoSpace,
             Key::Tab if m.shift => Action::PrevCandidate,
-            Key::Tab => Action::OpenTashkeel,
+            Key::Tab => Action::CommitAndReinject, // Tab rebound elsewhere: behaves like any other key
             Key::Down => Action::NextCandidate,
             Key::Up => Action::PrevCandidate,
             Key::PageDown => Action::NextPage,
@@ -256,6 +347,7 @@ mod tests {
             reedit_anchor: false,
             buffer_is_article: false,
             toggle: Toggle::CtrlSpace,
+            keys: KeyMap::default(),
         }
     }
     const NONE: Mods = Mods {
@@ -399,6 +491,58 @@ mod tests {
         let off = st(ContextMode::Off, false, Popup::Hidden);
         assert_eq!(classify(&off, Key::Char('a'), NONE), PASS);
         assert_eq!(classify(&off, Key::Space, CTRL), PASS);
+    }
+
+    /// Owner request 2026-09-23: Shift+Space commits the typed Latin word without scrolling to it.
+    #[test]
+    fn shift_space_commits_latin() {
+        let s = st(ContextMode::Arabic, true, Popup::List);
+        assert_eq!(classify(&s, Key::Space, SHIFT), eat(Action::CommitRawSpace));
+        let t = st(ContextMode::Arabic, true, Popup::Tashkeel);
+        assert_eq!(classify(&t, Key::Space, SHIFT), eat(Action::CommitRawSpace));
+        // idle Shift+Space is an ordinary space
+        let idle = st(ContextMode::Arabic, false, Popup::Hidden);
+        assert_eq!(classify(&idle, Key::Space, SHIFT), PASS);
+    }
+
+    #[test]
+    fn shortcuts_follow_the_key_map() {
+        let s = RouterState {
+            keys: KeyMap::from_config("Ctrl+L", "Ctrl+T", "none"),
+            ..st(ContextMode::Arabic, true, Popup::List)
+        };
+        let ctrl_l = Mods { ctrl: true, ..NONE };
+        assert_eq!(
+            classify(&s, Key::Char('l'), ctrl_l),
+            eat(Action::CommitRawSpace)
+        );
+        assert_eq!(
+            classify(&s, Key::Char('t'), ctrl_l),
+            eat(Action::OpenTashkeel)
+        );
+        // Ctrl+Enter unbound: behaves like any Ctrl combo
+        assert_eq!(
+            classify(&s, Key::Enter, CTRL),
+            eat(Action::CommitAndReinject)
+        );
+        // Tab no longer opens the editor
+        assert_eq!(classify(&s, Key::Tab, NONE), eat(Action::CommitAndReinject));
+        // Shift+Space unbound: commits the candidate with a space like Space
+        assert_eq!(classify(&s, Key::Space, SHIFT), eat(Action::CommitSpace));
+        assert_eq!(Chord::parse("Hyper+Q"), None);
+    }
+
+    #[test]
+    fn shift_arrows_extend_tashkeel_selection() {
+        let s = st(ContextMode::Arabic, true, Popup::Tashkeel);
+        assert_eq!(
+            classify(&s, Key::Left, SHIFT),
+            eat(Action::Tashkeel(TashkeelCmd::ExtendNext))
+        );
+        assert_eq!(
+            classify(&s, Key::Right, SHIFT),
+            eat(Action::Tashkeel(TashkeelCmd::ExtendPrev))
+        );
     }
 
     #[test]

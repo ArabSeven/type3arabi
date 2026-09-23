@@ -21,5 +21,15 @@ windows = { workspace = true, features = [
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_HiDpi",
   "Win32_UI_Accessibility",
+  "Win32_UI_Input_KeyboardAndMouse",
   "Win32_System_LibraryLoader",
+] }
+
+# Examples only (popup_paint screenshots); not linked into the TIP.
+[target.'cfg(windows)'.dev-dependencies]
+windows = { workspace = true, features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Storage_Xps",
+  "Win32_UI_WindowsAndMessaging",
 ] }

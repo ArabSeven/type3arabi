@@ -48,5 +48,12 @@ back to defaults with one error-log line. The canonical defaults file is `config
 | `excluded` | array of string | `[]` | exe names where the TIP stays passive |
 | `rtl_assist` | bool | `false` | `docs/02 §13` |
 | `rtl_assist_classes` | array of string | `["Edit", "RichEdit20W", "RICHEDIT50W"]` | |
+| **[keys]** | | | In-composition shortcuts. Chord = `Mod+…+Key`: modifiers `Ctrl`, `Alt`, `Shift`; key `Space`, `Enter`, `Tab`, `Esc`, `Backspace`, `a`–`z`, `0`–`9`; or `none` (unbound). Invalid ⇒ default. The mode toggle is `general.mode_toggle`, the global hotkey `general.global_hotkey`. |
+| `commit_latin` | string | `"Shift+Space"` | commit the typed Latin word as is, plus a space (no scrolling to the Latin row) |
+| `open_tashkeel` | string | `"Tab"` | open the tashkeel editor on the highlighted candidate |
+| `commit_harakat` | string | `"Ctrl+Enter"` | commit with harakat derived from the typed vowels |
+
+If a `[keys]` chord equals the mode toggle, the toggle wins. Every shortcut is editable in Settings →
+Keyboard (M7) or by editing this file; the TIP re-reads it when a new composition starts.
 
 `state.toml` (same folder, written by `t3a-hotkey`/TIP, read by Settings): `hotkey_conflict`, `last_error`, `data_version_seen`.
