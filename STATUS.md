@@ -270,7 +270,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - D8: Rule training (`train-rules`) and tuning (`tune`) are Rust subcommands of t3a-cli, not Python: they reuse the engine's normalization/alphabet/scorer so training cannot drift from runtime.
 - D9: The MSI registers the DLLs with regsvr32 (= our DllRegisterServer) and enables the profile through `t3a-hotkey --enable-profile`; no separate register helper binary.
 - D10: Hamza-on-alef spelling variants lead with the MSA-register spelling (Arabizi carries no hamza information; dialect text and gold data drop it). `hamza = "relaxed"` still displays hamza-less forms.
-- D11: Edit sessions are requested TF_ES_SYNC first, async only when TSF refuses (popup clicks): async sessions after a later commit corrupted text in the 3-round harness.
+- D11: Edit sessions stay FIFO: TF_ES_SYNC when nothing is queued; once TSF refuses sync (popup clicks) every later session is queued with TF_ES_ASYNC (never ASYNCDONTCARE) until the queue drains. Evidence: 96 parallel harness runs (4 processes at once) without a garbled word; before, `mar7aba` became `مرحةrبه`. Residual under parallel load: RichEdit sometimes ends a composition on focus loss (text kept, per docs/02 §8) — a harness artifact, not seen in 10 sequential x64/x86 runs.
 - D12: Settings UI is plain HTML/JS (no npm build step) instead of the planned vanilla TypeScript.
 - D13: Popup hints/chips are laid out piece by piece (Latin keycap + Arabic label): GDI DrawText ignored RTL order for mixed labels even with DT_RTLREADING + ARABIC_CHARSET + RLE.
 - D0: Applied Owner decision (2026-09-22) — added `internal` source status, 80/10/10 deterministic split, pipeline modes, and citations in NOTICE.md.

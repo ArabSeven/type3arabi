@@ -41,8 +41,8 @@ use windows::Win32::UI::TextServices::{
     ITfKeystrokeMgr, ITfRange, ITfSource, ITfTextInputProcessor, ITfTextInputProcessorEx,
     ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl, ITfThreadFocusSink,
     ITfThreadFocusSink_Impl, ITfThreadMgr, ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl,
-    GUID_PROP_ATTRIBUTE, TF_AE_NONE, TF_ANCHOR_END, TF_ES_ASYNCDONTCARE, TF_ES_READWRITE,
-    TF_ES_SYNC, TF_IAS_QUERYONLY, TF_INVALID_COOKIE, TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION,
+    GUID_PROP_ATTRIBUTE, TF_AE_NONE, TF_ANCHOR_END, TF_ES_ASYNC, TF_ES_READWRITE, TF_ES_SYNC,
+    TF_IAS_QUERYONLY, TF_INVALID_COOKIE, TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION,
     TF_SELECTIONSTYLE, TF_TMAE_SECUREMODE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -173,6 +173,9 @@ pub struct State {
     eaten: [bool; 256],
     popup: Option<PopupWindow>,
     text_rect: RECT,
+    /// Edit sessions queued asynchronously and not yet run. While > 0, new sessions are queued too,
+    /// so document edits always apply in request order (docs/02 §8).
+    pending_async: u32,
 }
 
 impl State {
@@ -324,6 +327,7 @@ impl TextService {
                 eaten: [false; 256],
                 popup: None,
                 text_rect: RECT::default(),
+                pending_async: 0,
             }),
         })
     }
@@ -1192,22 +1196,49 @@ impl TextService_Impl {
     // Edit sessions
 
     fn run(&self, ctx: &ITfContext, op: DocOp) {
-        let Ok(tid) = self.state.try_borrow().map(|s| s.client_id) else {
+        let Ok((tid, pending)) = self
+            .state
+            .try_borrow()
+            .map(|s| (s.client_id, s.pending_async))
+        else {
             return;
         };
         let this = self.to_object();
         let ctx2 = ctx.clone();
-        let session: ITfEditSession =
-            EditSession::new(move |ec| apply(&this, &ctx2, ec, op)).into();
-        // Synchronous first: engine state already changed, and document edits must happen in the
-        // same order (an async session running after a later commit corrupts the text). TSF refuses
-        // a sync lock outside key events (TF_E_SYNCHRONOUS, e.g. popup clicks): then queue it.
+        let queued = std::rc::Rc::new(std::cell::Cell::new(false));
+        let queued2 = queued.clone();
+        let session: ITfEditSession = EditSession::new(move |ec| {
+            if queued2.get() {
+                if let Ok(mut s) = this.state.try_borrow_mut() {
+                    s.pending_async = s.pending_async.saturating_sub(1);
+                }
+            }
+            apply(&this, &ctx2, ec, op)
+        })
+        .into();
+        // Order is everything: engine state already changed, and each edit must land in request
+        // order (a late session applying after a later commit corrupts text — reproduced under load).
+        // So: synchronous when nothing is queued; otherwise, or when TSF refuses a sync lock
+        // (TF_E_SYNCHRONOUS, e.g. popup clicks), queue with TF_ES_ASYNC — never ASYNCDONTCARE,
+        // which may run at once and overtake the sessions already queued. TSF runs its queue FIFO.
         // SAFETY: plain COM calls; no state borrow is held (the session may run synchronously).
         unsafe {
-            let sync = ctx.RequestEditSession(tid, &session, TF_ES_SYNC | TF_ES_READWRITE);
-            if !matches!(sync, Ok(hr) if hr.is_ok()) {
-                let _ =
-                    ctx.RequestEditSession(tid, &session, TF_ES_READWRITE | TF_ES_ASYNCDONTCARE);
+            if pending == 0 {
+                let sync = ctx.RequestEditSession(tid, &session, TF_ES_SYNC | TF_ES_READWRITE);
+                if matches!(sync, Ok(hr) if hr.is_ok()) {
+                    return;
+                }
+            }
+            queued.set(true);
+            if let Ok(mut s) = self.state.try_borrow_mut() {
+                s.pending_async += 1;
+            }
+            let hr = ctx.RequestEditSession(tid, &session, TF_ES_ASYNC | TF_ES_READWRITE);
+            if !matches!(hr, Ok(h) if h.is_ok()) {
+                queued.set(false);
+                if let Ok(mut s) = self.state.try_borrow_mut() {
+                    s.pending_async = s.pending_async.saturating_sub(1);
+                }
             }
         }
     }
