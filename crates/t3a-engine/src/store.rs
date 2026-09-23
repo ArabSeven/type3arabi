@@ -7,10 +7,9 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const MAX_JOURNAL_SIZE_BEFORE_COMPACT: u64 = 256 * 1024; // 256 KB
 const SNAPSHOT_MAGIC: u32 = 0x54335501; // 'T3U' ver 1
 
 /// Persistent user store managing learning, journal append, and cross-process tailing.
@@ -20,7 +19,6 @@ pub struct UserStore {
     model: Arc<RwLock<MemoryUser>>,
     tx: Option<Sender<JournalRecord>>,
     last_journal_offset: Arc<AtomicU64>,
-    _compact_lock: Arc<Mutex<()>>,
 }
 
 fn current_timestamp() -> u32 {
@@ -59,16 +57,12 @@ impl UserStore {
 
         let model = Arc::new(RwLock::new(user));
         let last_journal_offset = Arc::new(AtomicU64::new(last_offset));
-        let compact_lock = Arc::new(Mutex::new(()));
 
         // 3. Spawn background writer thread if writable
         let tx = if !read_only {
             let (sender, receiver) = channel::<JournalRecord>();
             let j_path = journal_path.clone();
             let offset_clone = Arc::clone(&last_journal_offset);
-            let model_clone = Arc::clone(&model);
-            let dir_clone = dir.to_path_buf();
-            let lock_clone = Arc::clone(&compact_lock);
 
             std::thread::Builder::new()
                 .name("t3a-user-writer".into())
@@ -80,16 +74,10 @@ impl UserStore {
                         {
                             if f.write_all(&bytes).is_ok() {
                                 let _ = f.flush();
-                                let new_off = offset_clone
-                                    .fetch_add(RECORD_SIZE as u64, Ordering::SeqCst)
-                                    + RECORD_SIZE as u64;
-
-                                // Trigger compaction if over budget
-                                if new_off > MAX_JOURNAL_SIZE_BEFORE_COMPACT {
-                                    if let Ok(_guard) = lock_clone.try_lock() {
-                                        let _ = compact(&dir_clone, &model_clone, &offset_clone);
-                                    }
-                                }
+                                // Compaction stays off until the snapshot format stores the
+                                // model: the placeholder snapshot erased all learning
+                                // (STATUS.md backlog). The journal grows 128 B per commit.
+                                offset_clone.fetch_add(RECORD_SIZE as u64, Ordering::SeqCst);
                             }
                         }
                     }
@@ -107,7 +95,6 @@ impl UserStore {
             model,
             tx,
             last_journal_offset,
-            _compact_lock: compact_lock,
         })
     }
 
@@ -220,7 +207,7 @@ fn replay_journal(f: &mut File, start_offset: u64, user: &mut MemoryUser) -> std
                 }
                 KIND_NEGATIVE => {
                     if let (Some(l), Some(a)) = (rec.latin_str(), rec.arabic_str()) {
-                        user.record(l, "", 1, true, Some(a));
+                        user.record_negative(l, a);
                     }
                 }
                 KIND_WIPE => {
@@ -233,37 +220,6 @@ fn replay_journal(f: &mut File, start_offset: u64, user: &mut MemoryUser) -> std
     }
 
     Ok(current_offset)
-}
-
-/// Compact memory model into `snapshot.t3u` and truncate `journal.t3j`.
-fn compact(
-    dir: &Path,
-    model: &Arc<RwLock<MemoryUser>>,
-    offset: &Arc<AtomicU64>,
-) -> std::io::Result<()> {
-    let snapshot_tmp = dir.join("snapshot.tmp");
-    let snapshot_final = dir.join("snapshot.t3u");
-    let journal_path = dir.join("journal.t3j");
-
-    // Write snapshot binary format
-    {
-        let _user = model
-            .read()
-            .map_err(|_| std::io::Error::other("lock error"))?;
-        let mut f = File::create(&snapshot_tmp)?;
-        f.write_all(&SNAPSHOT_MAGIC.to_le_bytes())?;
-        // Snapshot format placeholder: header + size
-        f.write_all(&(0u32).to_le_bytes())?;
-        f.flush()?;
-    }
-
-    // Atomic rename
-    std::fs::rename(&snapshot_tmp, &snapshot_final)?;
-
-    // Truncate journal
-    let _ = File::create(&journal_path)?;
-    offset.store(0, Ordering::Release);
-    Ok(())
 }
 
 fn load_snapshot(_bytes: &[u8], _user: &mut MemoryUser) -> Result<(), ()> {
@@ -301,6 +257,28 @@ mod tests {
         let store2 = UserStore::open(&temp, false).unwrap();
         assert_eq!(store2.sticky("7abibi"), Some("حبيبي".to_string()));
 
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    /// Regression: a NEGATIVE journal record replayed as "user chose the empty string", which
+    /// surfaced as a blank candidate that crashed the popup (DrawTextW on an empty buffer).
+    #[test]
+    fn navigated_choice_survives_reopen_without_empty_word() {
+        let temp = std::env::temp_dir().join("t3a_test_store_negative");
+        let _ = std::fs::remove_dir_all(&temp);
+        let store = UserStore::open(&temp, false).unwrap();
+        // User navigated to rank 2 (raw Latin) past the rank-1 word.
+        store.record("hello", crate::user::RAW_LATIN, 2, true, Some("هله"));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        drop(store);
+
+        let reopened = UserStore::open(&temp, true).unwrap();
+        assert_eq!(
+            reopened.sticky("hello").as_deref(),
+            Some(crate::user::RAW_LATIN)
+        );
+        assert!(reopened.usr("hello", "هله") < 0.0); // negative evidence kept
+        assert_eq!(reopened.usr("hello", ""), 0.0); // no empty word learned
         let _ = std::fs::remove_dir_all(&temp);
     }
 }

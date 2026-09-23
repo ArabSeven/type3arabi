@@ -646,7 +646,7 @@ impl<'e> Session<'e> {
             .is_some_and(|c| c.kind == CandidateKind::Number);
         let mut raw_first = false;
         if self.settings.sticky_last_choice && !pinned_number {
-            if let Some(w) = user.sticky(&key) {
+            if let Some(w) = user.sticky(&key).filter(|w| !w.is_empty()) {
                 if w == RAW_LATIN {
                     raw_first = true;
                 } else if let Some(pos) = styled.iter().position(|c| c.base == w) {
@@ -775,6 +775,24 @@ mod tests {
         u.record(&c.key, &c.base, c.rank, true, Some(&l.items[0].base));
         type_word(&mut s, "hala2", &u);
         assert_eq!(s.candidates().items[0].base, want);
+    }
+
+    /// Regression: an empty sticky word (from a corrupted store) must never become a candidate.
+    #[test]
+    fn empty_sticky_word_is_ignored() {
+        struct EmptySticky;
+        impl UserScorer for EmptySticky {
+            fn usr(&self, _: &str, _: &str) -> f32 {
+                0.0
+            }
+            fn sticky(&self, _: &str) -> Option<String> {
+                Some(String::new())
+            }
+        }
+        let e = Engine::builtin();
+        let mut s = Session::new(&e, EngineSettings::default());
+        type_word(&mut s, "hello", &EmptySticky);
+        assert!(s.candidates().items.iter().all(|c| !c.text.is_empty()));
     }
 
     #[test]

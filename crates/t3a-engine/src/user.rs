@@ -90,6 +90,20 @@ impl MemoryUser {
     }
 }
 
+impl MemoryUser {
+    /// Replay of a journal NEGATIVE record: `word` was rank 1 for `key` and the user navigated
+    /// past it. Only the negative evidence is recorded — never a choice (docs/03 §9.3).
+    pub fn record_negative(&mut self, key: &str, word: &str) {
+        if key.len() > 32 || word.is_empty() {
+            return;
+        }
+        *self
+            .neg
+            .entry((key.to_string(), word.to_string()))
+            .or_default() += 1;
+    }
+}
+
 impl UserScorer for MemoryUser {
     fn usr(&self, key: &str, word: &str) -> f32 {
         let c = self
