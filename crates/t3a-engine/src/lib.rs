@@ -41,5 +41,5 @@ pub use session::{
     EngineSettings, Session, Trailing,
 };
 pub use store::UserStore;
-pub use tashkeel::{LetterSlot, TashkeelAction, TashkeelCmd, TashkeelEditor};
+pub use tashkeel::{LetterSlot, SelectMode, TashkeelAction, TashkeelCmd, TashkeelEditor};
 pub use user::{MemoryUser, NoUser, UserScorer};

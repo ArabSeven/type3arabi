@@ -193,6 +193,24 @@ pub enum TashkeelCmd {
     PickDown,
     Back,
     Ignore,
+    /// Shift+→/← (visual): move the focus and add the new letter to the selection.
+    ExtendNext,
+    ExtendPrev,
+    /// Remove every mark from every letter.
+    ClearAll,
+    /// Mouse selection of letter `index` (logical order).
+    Select(u8, SelectMode),
+}
+
+/// How a mouse click on a letter changes the selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectMode {
+    /// Plain click: select only this letter.
+    Only,
+    /// Ctrl+click: add or remove this letter.
+    Toggle,
+    /// Shift+click (or drag): select the range from the focused letter to this one.
+    Range,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -210,10 +228,14 @@ pub struct LetterSlot {
     pub vowel: Option<char>,
 }
 
+/// The in-popup tashkeel editor (docs/05 §4). Marks apply to every *selected* letter; the focused
+/// letter is always selected. Entering the editor selects the first letter.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TashkeelEditor {
     pub slots: Vec<LetterSlot>,
     pub focused_letter: usize,
+    /// Selected letters (logical order), parallel to `slots`.
+    pub selected: Vec<bool>,
     pub picks: Vec<String>,
     pub from_typing: bool,
     pub highlighted_pick: Option<usize>,
@@ -224,6 +246,7 @@ impl TashkeelEditor {
         let mut editor = Self {
             slots: Vec::new(),
             focused_letter: 0,
+            selected: Vec::new(),
             picks,
             from_typing,
             highlighted_pick: None,
@@ -265,6 +288,58 @@ impl TashkeelEditor {
         if self.focused_letter >= self.slots.len() {
             self.focused_letter = self.slots.len().saturating_sub(1);
         }
+        self.select_only(self.focused_letter);
+    }
+
+    /// Indices of the selected letters, in logical order (never empty for a non-empty word).
+    pub fn selection(&self) -> Vec<usize> {
+        let v: Vec<usize> = (0..self.slots.len())
+            .filter(|&i| self.selected[i])
+            .collect();
+        if v.is_empty() && !self.slots.is_empty() {
+            vec![self.focused_letter]
+        } else {
+            v
+        }
+    }
+
+    fn select_only(&mut self, i: usize) {
+        self.selected = vec![false; self.slots.len()];
+        if i < self.selected.len() {
+            self.selected[i] = true;
+        }
+    }
+
+    fn move_focus(&mut self, to: usize, extend: bool) {
+        if self.slots.is_empty() {
+            return;
+        }
+        self.focused_letter = to.min(self.slots.len() - 1);
+        if extend {
+            self.selected[self.focused_letter] = true;
+        } else {
+            self.select_only(self.focused_letter);
+        }
+    }
+
+    fn clear_marks(&mut self, i: usize) {
+        let slot = &mut self.slots[i];
+        slot.shadda = false;
+        slot.dagger_alif = false;
+        slot.vowel = None;
+    }
+
+    fn has_marks(&self, i: usize) -> bool {
+        let s = &self.slots[i];
+        s.shadda || s.dagger_alif || s.vowel.is_some()
+    }
+
+    /// After a vowel/tanween/sukun on a single selected letter, focus moves to the next letter.
+    fn advance_if_single(&mut self) {
+        if self.selection().len() == 1 && self.focused_letter + 1 < self.slots.len() {
+            let next = self.focused_letter + 1;
+            self.move_focus(next, false);
+        }
     }
 
     /// Render the current editor slots into a canonical marked string.
@@ -286,104 +361,142 @@ impl TashkeelEditor {
     }
 
     pub fn apply_cmd(&mut self, cmd: TashkeelCmd) -> TashkeelAction {
+        use crate::arabic::{DAMMA, DAMMATAN, FATHA, FATHATAN, KASRA, KASRATAN, SUKUN};
+        let n = self.slots.len();
         match cmd {
             TashkeelCmd::Back => TashkeelAction::BackToList,
+            TashkeelCmd::Ignore => TashkeelAction::Continue,
             TashkeelCmd::LetterNext => {
-                if self.focused_letter + 1 < self.slots.len() {
-                    self.focused_letter += 1;
-                }
+                self.move_focus(self.focused_letter + 1, false);
                 TashkeelAction::Continue
             }
             TashkeelCmd::LetterPrev => {
-                self.focused_letter = self.focused_letter.saturating_sub(1);
+                self.move_focus(self.focused_letter.saturating_sub(1), false);
+                TashkeelAction::Continue
+            }
+            TashkeelCmd::ExtendNext => {
+                self.move_focus(self.focused_letter + 1, true);
+                TashkeelAction::Continue
+            }
+            TashkeelCmd::ExtendPrev => {
+                self.move_focus(self.focused_letter.saturating_sub(1), true);
                 TashkeelAction::Continue
             }
             TashkeelCmd::LetterFirst => {
-                self.focused_letter = 0;
+                self.move_focus(0, false);
                 TashkeelAction::Continue
             }
             TashkeelCmd::LetterLast => {
-                self.focused_letter = self.slots.len().saturating_sub(1);
+                self.move_focus(n.saturating_sub(1), false);
+                TashkeelAction::Continue
+            }
+            TashkeelCmd::Select(index, mode) => {
+                let i = index as usize;
+                if i < n {
+                    match mode {
+                        SelectMode::Only => self.move_focus(i, false),
+                        SelectMode::Toggle => {
+                            self.selected[i] = !self.selected[i];
+                            if self.selected[i] {
+                                self.focused_letter = i;
+                            } else if self.selection().is_empty()
+                                || !self.selected.iter().any(|&b| b)
+                            {
+                                self.move_focus(i, false);
+                            } else if self.focused_letter == i {
+                                self.focused_letter = self.selection()[0];
+                            }
+                        }
+                        SelectMode::Range => {
+                            let (a, b) = if i < self.focused_letter {
+                                (i, self.focused_letter)
+                            } else {
+                                (self.focused_letter, i)
+                            };
+                            self.selected = (0..n).map(|k| k >= a && k <= b).collect();
+                            self.focused_letter = i;
+                        }
+                    }
+                }
+                TashkeelAction::Continue
+            }
+            TashkeelCmd::ClearAll => {
+                for i in 0..n {
+                    self.clear_marks(i);
+                }
                 TashkeelAction::Continue
             }
             TashkeelCmd::Clear => {
-                if self.focused_letter < self.slots.len() {
-                    let slot = &mut self.slots[self.focused_letter];
-                    slot.shadda = false;
-                    slot.dagger_alif = false;
-                    slot.vowel = None;
+                for i in self.selection() {
+                    self.clear_marks(i);
                 }
                 TashkeelAction::Continue
             }
             TashkeelCmd::ClearOrBack => {
-                if self.focused_letter < self.slots.len() {
-                    let slot = &mut self.slots[self.focused_letter];
-                    if slot.shadda || slot.dagger_alif || slot.vowel.is_some() {
-                        slot.shadda = false;
-                        slot.dagger_alif = false;
-                        slot.vowel = None;
-                        TashkeelAction::Continue
-                    } else {
-                        TashkeelAction::BackToList
+                let sel = self.selection();
+                if sel.iter().any(|&i| self.has_marks(i)) {
+                    for i in sel {
+                        self.clear_marks(i);
                     }
+                    TashkeelAction::Continue
                 } else {
                     TashkeelAction::BackToList
                 }
             }
             TashkeelCmd::ShaddaToggle => {
-                if self.focused_letter < self.slots.len() {
-                    let base = self.slots[self.focused_letter].base;
-                    if base != 'ا' && base != 'ى' {
-                        self.slots[self.focused_letter].shadda =
-                            !self.slots[self.focused_letter].shadda;
+                let sel = self.selection();
+                // With several letters selected, the toggle is "all on" unless all already have it.
+                let target = !sel
+                    .iter()
+                    .filter(|&&i| !matches!(self.slots[i].base, 'ا' | 'ى'))
+                    .all(|&i| self.slots[i].shadda);
+                for i in sel {
+                    if !matches!(self.slots[i].base, 'ا' | 'ى') {
+                        self.slots[i].shadda = target;
                     }
                 }
                 TashkeelAction::Continue
             }
             TashkeelCmd::DaggerAlif => {
-                if self.focused_letter < self.slots.len() {
-                    self.slots[self.focused_letter].dagger_alif =
-                        !self.slots[self.focused_letter].dagger_alif;
+                let sel = self.selection();
+                let target = !sel.iter().all(|&i| self.slots[i].dagger_alif);
+                for i in sel {
+                    self.slots[i].dagger_alif = target;
                 }
                 TashkeelAction::Continue
             }
-            TashkeelCmd::Fatha | TashkeelCmd::Damma | TashkeelCmd::Kasra | TashkeelCmd::Sukun => {
-                if self.focused_letter < self.slots.len() {
-                    let base = self.slots[self.focused_letter].base;
-                    if base != 'ا' && base != 'ى' {
-                        let v = match cmd {
-                            TashkeelCmd::Fatha => crate::arabic::FATHA,
-                            TashkeelCmd::Damma => crate::arabic::DAMMA,
-                            TashkeelCmd::Kasra => crate::arabic::KASRA,
-                            _ => crate::arabic::SUKUN,
-                        };
-                        self.slots[self.focused_letter].vowel = Some(v);
-                        if self.focused_letter + 1 < self.slots.len() {
-                            self.focused_letter += 1;
-                        }
+            TashkeelCmd::Fatha
+            | TashkeelCmd::Damma
+            | TashkeelCmd::Kasra
+            | TashkeelCmd::Sukun
+            | TashkeelCmd::Fathatan
+            | TashkeelCmd::Dammatan
+            | TashkeelCmd::Kasratan => {
+                let v = match cmd {
+                    TashkeelCmd::Fatha => FATHA,
+                    TashkeelCmd::Damma => DAMMA,
+                    TashkeelCmd::Kasra => KASRA,
+                    TashkeelCmd::Sukun => SUKUN,
+                    TashkeelCmd::Fathatan => FATHATAN,
+                    TashkeelCmd::Dammatan => DAMMATAN,
+                    _ => KASRATAN,
+                };
+                let mut applied = false;
+                for i in self.selection() {
+                    // A bare alif / alif maqsura takes no vowel; fathatan on alif is tanween.
+                    let bare = matches!(self.slots[i].base, 'ا' | 'ى');
+                    if !bare || v == FATHATAN {
+                        self.slots[i].vowel = Some(v);
+                        applied = true;
                     }
                 }
-                TashkeelAction::Continue
-            }
-            TashkeelCmd::Fathatan | TashkeelCmd::Dammatan | TashkeelCmd::Kasratan => {
-                if self.focused_letter < self.slots.len() {
-                    let base = self.slots[self.focused_letter].base;
-                    if cmd == TashkeelCmd::Fathatan || (base != 'ا' && base != 'ى') {
-                        let v = match cmd {
-                            TashkeelCmd::Fathatan => crate::arabic::FATHATAN,
-                            TashkeelCmd::Dammatan => crate::arabic::DAMMATAN,
-                            _ => crate::arabic::KASRATAN,
-                        };
-                        self.slots[self.focused_letter].vowel = Some(v);
-                        if self.focused_letter + 1 < self.slots.len() {
-                            self.focused_letter += 1;
-                        }
-                    }
+                if applied {
+                    self.advance_if_single();
                 }
                 TashkeelAction::Continue
             }
-            TashkeelCmd::QuickPick(n) => {
-                let idx = (n as usize).saturating_sub(1);
+            TashkeelCmd::QuickPick(k) => {
+                let idx = (k as usize).saturating_sub(1);
                 if idx < self.picks.len() {
                     let word = self.picks[idx].clone();
                     self.load_word(&word);
@@ -393,17 +506,11 @@ impl TashkeelEditor {
             }
             TashkeelCmd::PickDown | TashkeelCmd::PickUp => {
                 if !self.picks.is_empty() {
-                    let next_idx = match self.highlighted_pick {
-                        None => 0,
-                        Some(cur) => {
-                            if cmd == TashkeelCmd::PickDown {
-                                (cur + 1) % self.picks.len()
-                            } else if cur == 0 {
-                                self.picks.len() - 1
-                            } else {
-                                cur - 1
-                            }
-                        }
+                    let len = self.picks.len();
+                    let next_idx = match (self.highlighted_pick, cmd) {
+                        (None, _) => 0,
+                        (Some(cur), TashkeelCmd::PickDown) => (cur + 1) % len,
+                        (Some(cur), _) => (cur + len - 1) % len,
                     };
                     self.highlighted_pick = Some(next_idx);
                     let word = self.picks[next_idx].clone();
@@ -411,7 +518,6 @@ impl TashkeelEditor {
                 }
                 TashkeelAction::Continue
             }
-            TashkeelCmd::Ignore => TashkeelAction::Continue,
         }
     }
 }
@@ -540,6 +646,12 @@ mod tests {
             TashkeelCmd::LetterPrev,
             TashkeelCmd::LetterFirst,
             TashkeelCmd::LetterLast,
+            TashkeelCmd::ExtendNext,
+            TashkeelCmd::ExtendPrev,
+            TashkeelCmd::ClearAll,
+            TashkeelCmd::Select(1, SelectMode::Toggle),
+            TashkeelCmd::Select(0, SelectMode::Range),
+            TashkeelCmd::Select(3, SelectMode::Only),
         ];
         let test_words = ["علم", "مرحبا", "كتاب", "شكرا", "الله", "معلم"];
         let mut rng_state: u64 = 0x12345678;
@@ -562,5 +674,46 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn first_letter_selected_on_entry() {
+        let e = TashkeelEditor::new("علم", vec![], false);
+        assert_eq!(e.focused_letter, 0);
+        assert_eq!(e.selection(), vec![0]);
+    }
+
+    /// Owner request 2026-09-23: select several letters and apply one mark to all of them.
+    #[test]
+    fn marks_apply_to_every_selected_letter() {
+        let mut e = TashkeelEditor::new("علم", vec![], false);
+        e.apply_cmd(TashkeelCmd::ExtendNext);
+        e.apply_cmd(TashkeelCmd::ExtendNext);
+        assert_eq!(e.selection(), vec![0, 1, 2]);
+        e.apply_cmd(TashkeelCmd::Fatha);
+        assert_eq!(e.render(), "عَلَمَ"); // U+0639 U+064E U+0644 U+064E U+0645 U+064E
+                                       // several letters selected: focus does not auto-advance
+        assert_eq!(e.selection(), vec![0, 1, 2]);
+        e.apply_cmd(TashkeelCmd::Select(1, SelectMode::Only));
+        e.apply_cmd(TashkeelCmd::ShaddaToggle);
+        // عَلَّمَ = U+0639 U+064E U+0644 U+0651 U+064E U+0645 U+064E (shadda before the vowel)
+        assert_eq!(
+            e.render(),
+            "\u{0639}\u{064E}\u{0644}\u{0651}\u{064E}\u{0645}\u{064E}"
+        );
+        e.apply_cmd(TashkeelCmd::ClearAll);
+        assert_eq!(e.render(), "علم");
+    }
+
+    #[test]
+    fn mouse_range_and_toggle_selection() {
+        let mut e = TashkeelEditor::new("كتاب", vec![], false);
+        e.apply_cmd(TashkeelCmd::Select(2, SelectMode::Range));
+        assert_eq!(e.selection(), vec![0, 1, 2]);
+        e.apply_cmd(TashkeelCmd::Select(1, SelectMode::Toggle));
+        assert_eq!(e.selection(), vec![0, 2]);
+        e.apply_cmd(TashkeelCmd::Select(3, SelectMode::Only));
+        assert_eq!(e.selection(), vec![3]);
+        assert_eq!(e.focused_letter, 3);
     }
 }

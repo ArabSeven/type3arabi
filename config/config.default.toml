@@ -50,3 +50,9 @@ show_dialect_badge = true
 excluded = []
 rtl_assist = false
 rtl_assist_classes = ["Edit", "RichEdit20W", "RICHEDIT50W"]
+
+[keys]
+# In-composition shortcuts: "Mod+Key" (Ctrl/Alt/Shift + Space/Enter/Tab/Esc/Backspace/a-z/0-9) or "none".
+commit_latin = "Shift+Space"
+open_tashkeel = "Tab"
+commit_harakat = "Ctrl+Enter"

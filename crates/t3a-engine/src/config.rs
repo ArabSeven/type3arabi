@@ -122,6 +122,10 @@ pub struct Config {
     pub excluded_apps: Vec<String>,
     pub rtl_assist: bool,
     pub rtl_assist_classes: Vec<String>,
+    /// `[keys]` — in-composition shortcuts (docs/13). Chord strings like `"Shift+Space"`, or `"none"`.
+    pub key_commit_latin: String,
+    pub key_open_tashkeel: String,
+    pub key_commit_harakat: String,
 }
 
 impl Default for Config {
@@ -160,6 +164,9 @@ impl Default for Config {
             excluded_apps: Vec::new(),
             rtl_assist: false,
             rtl_assist_classes: vec!["Edit".into(), "RichEdit20W".into(), "RICHEDIT50W".into()],
+            key_commit_latin: "Shift+Space".into(),
+            key_open_tashkeel: "Tab".into(),
+            key_commit_harakat: "Ctrl+Enter".into(),
         }
     }
 }
@@ -224,6 +231,15 @@ impl Config {
                 ("apps.excluded", Value::List(l)) => set(&mut c.excluded_apps, l),
                 ("apps.rtl_assist", Value::Bool(b)) => set(&mut c.rtl_assist, b),
                 ("apps.rtl_assist_classes", Value::List(l)) => set(&mut c.rtl_assist_classes, l),
+                ("keys.commit_latin", Value::Str(s)) if is_chord(&s) => {
+                    set(&mut c.key_commit_latin, s)
+                }
+                ("keys.open_tashkeel", Value::Str(s)) if is_chord(&s) => {
+                    set(&mut c.key_open_tashkeel, s)
+                }
+                ("keys.commit_harakat", Value::Str(s)) if is_chord(&s) => {
+                    set(&mut c.key_commit_harakat, s)
+                }
                 (other, _) if KNOWN.contains(&other) => false,
                 _ => true, // unknown keys are ignored silently (forward compatibility)
             };
@@ -257,12 +273,32 @@ impl Config {
     }
 }
 
+/// Syntax check for `[keys]` chords: `none`, or `Mod+…+Key` with modifiers Ctrl/Alt/Shift and a key
+/// name (Space, Enter, Tab, Esc, Backspace, a–z, 0–9). The TIP's key router interprets them.
+pub fn is_chord(s: &str) -> bool {
+    if s.eq_ignore_ascii_case("none") {
+        return true;
+    }
+    let parts: Vec<&str> = s.split('+').map(str::trim).collect();
+    let Some((key, mods)) = parts.split_last() else {
+        return false;
+    };
+    let key_ok = matches!(
+        key.to_ascii_lowercase().as_str(),
+        "space" | "enter" | "tab" | "esc" | "escape" | "backspace"
+    ) || (key.len() == 1 && key.chars().all(|c| c.is_ascii_alphanumeric()));
+    key_ok
+        && mods
+            .iter()
+            .all(|m| matches!(m.to_ascii_lowercase().as_str(), "ctrl" | "alt" | "shift"))
+}
+
 fn set<T>(slot: &mut T, v: T) -> bool {
     *slot = v;
     true
 }
 
-const KNOWN: [&str; 33] = [
+const KNOWN: [&str; 36] = [
     "schema",
     "general.mode_toggle",
     "general.mode_scope",
@@ -296,6 +332,9 @@ const KNOWN: [&str; 33] = [
     "apps.excluded",
     "apps.rtl_assist",
     "apps.rtl_assist_classes",
+    "keys.commit_latin",
+    "keys.open_tashkeel",
+    "keys.commit_harakat",
 ];
 
 #[cfg(test)]
@@ -307,6 +346,17 @@ mod tests {
         let (c, w) = Config::parse(include_str!("../../../config/config.default.toml"));
         assert!(w.is_empty(), "warnings: {w:?}");
         assert_eq!(c, Config::default());
+    }
+
+    #[test]
+    fn key_chords_are_validated() {
+        let (c, w) = Config::parse(
+            "[keys]\ncommit_latin = \"Ctrl+Shift+L\"\nopen_tashkeel = \"Hyper+Q\"\ncommit_harakat = \"none\"\n",
+        );
+        assert_eq!(c.key_commit_latin, "Ctrl+Shift+L");
+        assert_eq!(c.key_open_tashkeel, "Tab"); // invalid -> default
+        assert_eq!(c.key_commit_harakat, "none");
+        assert_eq!(w.len(), 1);
     }
 
     #[test]
