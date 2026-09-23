@@ -28,6 +28,27 @@ pub fn strip_marks(s: &str) -> String {
 
 /// Normalize arbitrary Arabic text to its **base form** exactly as the pipeline does (docs/04 §3),
 /// minus Unicode NFC (the pipeline applies NFC before calling its equivalent).
+/// Orthographic fold for *evaluation only*: hamza seat on alef (أ إ آ → ا), final ة → ه, final ى → ي.
+/// Dialect gold data spells these inconsistently, and Arabizi does not encode them, so lenient
+/// accuracy compares words modulo these conventions (docs/08 §3).
+pub fn orth_fold(s: &str) -> String {
+    let mut chars: Vec<char> = strip_marks(s)
+        .chars()
+        .map(|c| match c {
+            '\u{0623}' | '\u{0625}' | '\u{0622}' => '\u{0627}',
+            c => c,
+        })
+        .collect();
+    if let Some(last) = chars.last_mut() {
+        *last = match *last {
+            '\u{0629}' => '\u{0647}',
+            '\u{0649}' => '\u{064A}',
+            c => c,
+        };
+    }
+    chars.into_iter().collect()
+}
+
 pub fn normalize_word(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {

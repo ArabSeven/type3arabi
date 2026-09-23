@@ -435,6 +435,7 @@ mod tests {
             &fixed_profile(d),
             b.syms(),
             10,
+            None,
         );
         let h = hyps
             .iter()

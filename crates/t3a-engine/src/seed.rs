@@ -195,6 +195,59 @@ impl SeedTables {
         Ok(t)
     }
 
+    /// Replace the transliteration rules with the compiled `RULE`/`CHNK` sections of a data file
+    /// (trained rules, docs/04 §6). Rows with the same probability for all six dialects become `*`
+    /// rows; otherwise one row per dialect that has its own probability. A row is position-explicit
+    /// unless it applies to all positions. Phrases, vowel marks and region priors are kept.
+    pub fn load_binary_rules(&mut self, chunks: &[t3a_data::Chunk], rules: &[t3a_data::Rule]) {
+        let mut rows = Vec::with_capacity(rules.len());
+        for ch in chunks {
+            let latin: Vec<char> = ch.latin[..(ch.len as usize).min(4)]
+                .iter()
+                .map(|&b| b as char)
+                .collect();
+            if latin.is_empty() {
+                continue;
+            }
+            let first = ch.first_rule as usize;
+            let end = (first + ch.rule_count as usize).min(rules.len());
+            for r in &rules[first.min(end)..end] {
+                let arabic = r.arabic[..(r.arabic_len as usize).min(3)].to_vec();
+                let pos = if r.pos_mask == 0 { POS_ANY } else { r.pos_mask };
+                let base = RuleRow {
+                    latin: latin.clone(),
+                    arabic,
+                    weight: 0.0,
+                    pos,
+                    explicit_pos: pos != POS_ANY,
+                    dialects: 0,
+                    flags: r.flags,
+                };
+                if r.q.iter().all(|&q| q == r.q_any) {
+                    rows.push(RuleRow {
+                        weight: t3a_data::dequantize_lp(r.q_any).exp(),
+                        ..base
+                    });
+                } else {
+                    for d in dialect::ALL {
+                        let q = r.q[d as usize];
+                        if q != 255 {
+                            rows.push(RuleRow {
+                                weight: t3a_data::dequantize_lp(q).exp(),
+                                dialects: d.bit(),
+                                ..base.clone()
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        if !rows.is_empty() {
+            self.rules = rows;
+            self.index();
+        }
+    }
+
     /// The seed files compiled into the binary (for tests, CLI seed-only mode and the TIP bootstrap).
     pub fn builtin() -> Self {
         Self::parse(

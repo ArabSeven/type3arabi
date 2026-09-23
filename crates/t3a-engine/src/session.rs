@@ -39,7 +39,10 @@ pub struct Engine {
 impl Engine {
     /// Engine over a compiled data file (docs/12).
     pub fn new(data: t3a_data::DataView<'static>) -> Result<Self, EngineError> {
-        let seed = SeedTables::builtin();
+        let mut seed = SeedTables::builtin();
+        if let (Ok(chunks), Ok(rules)) = (data.chunks(), data.rules()) {
+            seed.load_binary_rules(chunks, rules);
+        }
         let mut params = EngineParams::default();
         if let Ok(parm_str) = data.parm() {
             params.merge_toml(parm_str);
@@ -73,6 +76,11 @@ impl Engine {
 
     pub fn params(&self) -> &EngineParams {
         &self.params
+    }
+
+    /// Replace the engine parameters (offline tuning, docs/04 §7).
+    pub fn set_params(&mut self, params: EngineParams) {
+        self.params = params;
     }
 
     pub fn seed(&self) -> &SeedTables {
@@ -531,6 +539,7 @@ impl<'e> Session<'e> {
                     &self.pi,
                     self.buf.syms(),
                     p.k_oov_seed_only,
+                    None,
                 );
                 let mut s: Vec<Candidate> = self
                     .hyps

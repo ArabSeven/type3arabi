@@ -1,2 +1,13 @@
 # Every fixed accuracy bug adds a row here (AGENTS.md R18). Same columns as smoke.tsv.
 arabizi	expected	dialect	note
+oktob	أكتب	LEV	2026-09-23 Owner: hamza spelling from MSA orthography (was أكتوب, then اكتب)
+ekhtibar	اختبار	LEV	2026-09-23 Owner: word was missing (963-word fixture lexicon)
+ikhtibar	اختبار	LEV	2026-09-23 lexicon coverage
+ana	أنا	LEV	2026-09-23 final-position rules were bypassed (was أن)
+7ilo	حلو	LEV	2026-09-23 final o
+yalla	يلا	LEV	2026-09-23 gemination in the lexicon lattice (was يالله)
+3allam	علم	MSA	2026-09-23 gemination in the lexicon lattice
+sallam	سلم|سلام	LEV	2026-09-23 gemination in the lexicon lattice (both readings are common)
+a7mad	أحمد	LEV	2026-09-23 hamza spelling from MSA orthography
+ahlan	أهلا	LEV	2026-09-23 hamza + tanween
+allah	الله	*	sacred word styling (compared on base form)

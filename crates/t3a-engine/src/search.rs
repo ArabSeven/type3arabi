@@ -5,7 +5,7 @@ use crate::dialect::Posterior;
 use crate::display;
 use crate::oov::{self, Hyp};
 use crate::params::EngineParams;
-use crate::seed::{EffRule, SeedTables, F_GEM, POS_F, POS_I, POS_M};
+use crate::seed::{EffRule, SeedTables, F_GEM, POS_ANY, POS_F, POS_I, POS_M};
 use crate::session::{Candidate, CandidateKind, EngineSettings};
 use crate::user::UserScorer;
 use t3a_data::{dequantize_lp, Chunk, DataView, Node};
@@ -111,6 +111,157 @@ pub fn dialect_mixture_lm(q: [u8; 6], pi: &Posterior, unseen_lp: f32) -> f32 {
         sum.ln()
     } else {
         unseen_lp
+    }
+}
+
+/// Effective rules for `chunk_syms` at position set `pos`: from the compiled `RULE`/`CHNK` sections
+/// when the chunk is there, else from the seed tables.
+fn chunk_rules(
+    chunks: &[t3a_data::Chunk],
+    rules: &[t3a_data::Rule],
+    seed: &SeedTables,
+    chunk_syms: &[char],
+    pos: u8,
+    pi: &Posterior,
+) -> Vec<EffRule> {
+    let latin_bytes: Vec<u8> = chunk_syms
+        .iter()
+        .map(|&c| crate::normalize::emphatic_symbol(c).unwrap_or(c) as u8)
+        .collect();
+    let Some(ch_entry) = find_chunk(chunks, &latin_bytes) else {
+        return seed.effective(chunk_syms, pos, pi);
+    };
+    let r_start = ch_entry.first_rule as usize;
+    let r_end = (r_start + ch_entry.rule_count as usize).min(rules.len());
+    // "Most specific wins" (mappings.tsv header): position-explicit rows before position-any rows.
+    let applicable: Vec<&t3a_data::Rule> = rules[r_start.min(r_end)..r_end]
+        .iter()
+        .filter(|r| (r.pos_mask & pos) != 0)
+        .collect();
+    let explicit: Vec<&t3a_data::Rule> = applicable
+        .iter()
+        .copied()
+        .filter(|r| r.pos_mask != POS_ANY)
+        .collect();
+    let chosen = if explicit.is_empty() {
+        applicable
+    } else {
+        explicit
+    };
+    chosen
+        .into_iter()
+        .map(|r| EffRule {
+            arabic: r.arabic[..r.arabic_len as usize].to_vec(),
+            lp: if r.q == [255; 6] {
+                dequantize_lp(r.q_any)
+            } else {
+                dialect_mixture_lm(r.q, pi, dequantize_lp(r.q_any))
+            },
+            flags: r.flags,
+        })
+        .collect()
+}
+
+/// Generic gemination (docs/03 §4.3): a doubled consonant (`ll`, `bb`, `77`) may be one Arabic
+/// letter (written once, optionally with shadda), with probability `p_gem`.
+fn gemination_rules(
+    chunks: &[t3a_data::Chunk],
+    rules: &[t3a_data::Rule],
+    seed: &SeedTables,
+    chunk_syms: &[char],
+    pos: u8,
+    pi: &Posterior,
+    params: &EngineParams,
+) -> Vec<EffRule> {
+    if chunk_syms.len() != 2
+        || chunk_syms[0] != chunk_syms[1]
+        || matches!(chunk_syms[0], 'a' | 'e' | 'i' | 'o' | 'u' | '\'')
+    {
+        return Vec::new();
+    }
+    chunk_rules(chunks, rules, seed, &chunk_syms[..1], pos, pi)
+        .into_iter()
+        .filter(|r| r.arabic.len() == 1 && r.flags & crate::seed::F_VOWEL == 0)
+        .map(|r| EffRule {
+            arabic: r.arabic,
+            lp: r.lp + params.p_gem.ln(),
+            flags: r.flags | F_GEM,
+        })
+        .collect()
+}
+
+/// Reading a doubled consonant as two separate letters pays `ln(1 − p_gem)` (docs/03 §4.3): applied
+/// when this single-symbol step repeats the previous step's Latin and Arabic.
+fn double_penalty(
+    arena: &[BackEdge],
+    back: u32,
+    chunk_syms: &[char],
+    r: &EffRule,
+    params: &EngineParams,
+) -> f32 {
+    let Some(prev) = arena.get(back as usize) else {
+        return 0.0;
+    };
+    if chunk_syms.len() == 1
+        && prev.latin == chunk_syms
+        && prev.arabic == r.arabic
+        && r.flags & crate::seed::F_VOWEL == 0
+        && !matches!(chunk_syms[0], 'a' | 'e' | 'i' | 'o' | 'u')
+    {
+        (1.0 - params.p_gem).max(1e-6).ln()
+    } else {
+        0.0
+    }
+}
+
+/// Spelling key that ignores the hamza seat on alef (أ إ آ → ا). Arabizi never encodes it.
+pub fn hamza_key(word: &str) -> String {
+    word.chars()
+        .map(|c| match c {
+            '\u{0623}' | '\u{0625}' | '\u{0622}' => '\u{0627}',
+            c => c,
+        })
+        .collect()
+}
+
+/// Among exact candidates that differ only in hamza-on-alef spelling (اكتب / أكتب), the lead
+/// spelling is the one most frequent in MSA-register text: Arabizi does not encode the hamza seat,
+/// and dialect web text (and dialect parallel data) drops it, so neither the transliteration score
+/// nor dialect frequencies should decide it (docs/03 §8, Owner feedback 2026-09-23). The lead
+/// spelling takes the group's best score; the other spellings stay directly after it.
+fn order_hamza_variants(cands: &mut [Candidate], orth: &[(f32, f32)]) {
+    let keys: Vec<String> = cands.iter().map(|c| hamza_key(&c.base)).collect();
+    let mut done = vec![false; cands.len()];
+    for i in 0..cands.len() {
+        if done[i] {
+            continue;
+        }
+        let group: Vec<usize> = (i..cands.len()).filter(|&j| keys[j] == keys[i]).collect();
+        for &j in &group {
+            done[j] = true;
+        }
+        if group.len() < 2 {
+            continue;
+        }
+        let orth_score = |j: usize| orth[j].1 + 1e-3 * orth[j].0;
+        let lead = *group
+            .iter()
+            .max_by(|&&a, &&b| {
+                orth_score(a)
+                    .total_cmp(&orth_score(b))
+                    .then_with(|| cands[b].base.cmp(&cands[a].base))
+            })
+            .unwrap_or(&i);
+        let best = group
+            .iter()
+            .map(|&j| cands[j].score)
+            .fold(f32::NEG_INFINITY, f32::max);
+        cands[lead].score = best;
+        for &j in &group {
+            if j != lead && cands[j].score >= best {
+                cands[j].score = best - 1e-3;
+            }
+        }
     }
 }
 
@@ -229,41 +380,10 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
             let chunk_syms = &syms[start..col_idx];
             let pos = if start == 0 { POS_I } else { POS_M };
 
-            // Convert chunk to Latin bytes
-            let mut latin_bytes = Vec::with_capacity(k);
-            for &c in chunk_syms {
-                if let Some(code) = crate::normalize::emphatic_symbol(c) {
-                    latin_bytes.push(code as u8);
-                } else {
-                    latin_bytes.push(c as u8);
-                }
-            }
-
-            // Get effective rules for chunk: from binary data if present, or fallback to seed
-            let eff_rules: Vec<EffRule> = if let Some(ch_entry) = find_chunk(chunks, &latin_bytes) {
-                let r_start = ch_entry.first_rule as usize;
-                let r_end = r_start + ch_entry.rule_count as usize;
-                rules[r_start..r_end.min(rules.len())]
-                    .iter()
-                    .filter(|r| (r.pos_mask & pos) != 0)
-                    .map(|r| {
-                        let arabic_len = r.arabic_len as usize;
-                        let arabic = r.arabic[..arabic_len].to_vec();
-                        let lp_eff = if r.q == [255; 6] {
-                            dequantize_lp(r.q_any)
-                        } else {
-                            dialect_mixture_lm(r.q, pi, dequantize_lp(r.q_any))
-                        };
-                        EffRule {
-                            arabic,
-                            lp: lp_eff,
-                            flags: r.flags,
-                        }
-                    })
-                    .collect()
-            } else {
-                seed.effective(chunk_syms, pos, pi)
-            };
+            let mut eff_rules = chunk_rules(chunks, rules, seed, chunk_syms, pos, pi);
+            eff_rules.extend(gemination_rules(
+                chunks, rules, seed, chunk_syms, pos, pi, params,
+            ));
 
             for state in &lattice.columns[start].states {
                 for r in &eff_rules {
@@ -271,7 +391,16 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
                     if let Some(next_node) = walk_codes(nodes, state.node, &r.arabic) {
                         let node_ref = &nodes[next_node as usize];
                         let last_letter = r.arabic.last().copied().unwrap_or(state.last_letter);
-                        let g = state.g + params.lambda_tm * r.lp;
+                        let g = state.g
+                            + params.lambda_tm
+                                * (r.lp
+                                    + double_penalty(
+                                        &lattice.arena,
+                                        state.back,
+                                        chunk_syms,
+                                        r,
+                                        params,
+                                    ));
                         let h = params.lambda_lm * dequantize_lp(node_ref.max_q);
 
                         // Back edge
@@ -323,30 +452,34 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
     // Final expansion
     let mut exact_candidates: Vec<(f32, u32, u32)> = Vec::new(); // (g, word_idx, back_idx)
 
-    // Carry over states in column n that are terminal
-    if let Some(col_n) = lattice.columns.get(n) {
-        for s in &col_n.states {
-            let node_ref = &nodes[s.node as usize];
-            if node_ref.word > 0 {
-                exact_candidates.push((s.g, node_ref.word - 1, s.back));
-            }
-        }
-    }
-
-    // Apply final rules (F / IF) from columns n-k
+    // A word ends only through a final-position rule (F; I|F when one chunk is the whole word).
+    // States of column n were built with medial rules and must not be accepted as complete words:
+    // that let e.g. the final `a` of `ana` use the medial a → ε probability (ana → أن).
     for k in 1..=4.min(n) {
         let start = n - k;
         let chunk_syms = &syms[start..n];
-        let pos = POS_F;
+        let pos = if start == 0 { POS_I | POS_F } else { POS_F };
 
-        let eff_rules: Vec<EffRule> = seed.effective(chunk_syms, pos, pi);
+        let mut eff_rules = chunk_rules(chunks, rules, seed, chunk_syms, pos, pi);
+        eff_rules.extend(gemination_rules(
+            chunks, rules, seed, chunk_syms, pos, pi, params,
+        ));
         if let Some(col_start) = lattice.columns.get(start) {
             for state in &col_start.states {
                 for r in &eff_rules {
                     if let Some(next_node) = walk_codes(nodes, state.node, &r.arabic) {
                         let node_ref = &nodes[next_node as usize];
                         if node_ref.word > 0 {
-                            let g = state.g + params.lambda_tm * r.lp;
+                            let g = state.g
+                                + params.lambda_tm
+                                    * (r.lp
+                                        + double_penalty(
+                                            &lattice.arena,
+                                            state.back,
+                                            chunk_syms,
+                                            r,
+                                            params,
+                                        ));
                             let back_idx = lattice.arena.len() as u32;
                             lattice.arena.push(BackEdge {
                                 prev_back: state.back,
@@ -392,6 +525,8 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
 
     let mut scored_exact: Vec<Candidate> = Vec::new();
     let mut hyps: Vec<Hyp> = Vec::new();
+    // Per exact candidate: (transliteration score g, MSA log-prob) for hamza-variant ordering.
+    let mut orth: Vec<(f32, f32)> = Vec::new();
 
     for (&word_idx, &(g, back_idx)) in &best_exact {
         let w_rec = &words[word_idx as usize];
@@ -412,7 +547,8 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
         }
 
         let usr_score = user.usr(key, &base);
-        let total_score = params.lambda_tm * g
+        // `g` already carries λ_tm (applied per rule in the lattice).
+        let total_score = g
             + params.lambda_lm * lm
             + params.lambda_ctx * ctx_score
             + params.lambda_usr * usr_score;
@@ -435,6 +571,7 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
         hyps.push(Hyp {
             letters: alphabet::encode(&base).unwrap_or_default(),
             score: g,
+            chr: 0.0,
             steps,
         });
 
@@ -448,6 +585,12 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
             text = display::relax_hamza(&text);
         }
 
+        let msa_lp = if w_rec.q[0] == 255 {
+            params.unseen_dialect_lp
+        } else {
+            dequantize_lp(w_rec.q[0])
+        };
+        orth.push((g, msa_lp));
         scored_exact.push(Candidate {
             text,
             base,
@@ -457,7 +600,13 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
         });
     }
 
-    scored_exact.sort_by(|a, b| b.score.total_cmp(&a.score));
+    order_hamza_variants(&mut scored_exact, &orth);
+    scored_exact.sort_by(|a, b| {
+        b.score
+            .total_cmp(&a.score)
+            .then_with(|| a.text.chars().count().cmp(&b.text.chars().count()))
+            .then_with(|| a.text.cmp(&b.text))
+    });
     scored_exact.truncate(params.k_exact);
 
     // Completions (docs/03 §5.6.2)
@@ -485,7 +634,7 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
                         // Don't duplicate exact words
                         if !scored_exact.iter().any(|c| c.base == base) {
                             let lm = dialect_mixture_lm(w_rec.q, pi, params.unseen_dialect_lp);
-                            let score = params.lambda_tm * state.g + params.lambda_lm * lm
+                            let score = state.g + params.lambda_lm * lm
                                 - params.gamma_completion * (extra_depth as f32);
 
                             let mut text = surf.to_string();
@@ -516,7 +665,8 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
     completions.truncate(params.k_completion);
 
     // OOV candidates (unconstrained beam)
-    let oov_hyps = oov::search(seed, params, pi, syms, params.k_oov + 2);
+    let chlm = data.chlm().ok().and_then(crate::charlm::CharLm::new);
+    let oov_hyps = oov::search(seed, params, pi, syms, params.k_oov + 2, chlm.as_ref());
     let mut oov_cands = Vec::new();
     for h in oov_hyps {
         let base = alphabet::decode(&h.letters);
@@ -524,7 +674,7 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
         {
             continue;
         }
-        let score = params.lambda_tm * h.score - params.oov_penalty;
+        let score = params.lambda_tm * h.score + params.lambda_chr * h.chr - params.oov_penalty;
         let hyp_idx = hyps.len();
         hyps.push(h);
         oov_cands.push(Candidate {
@@ -547,5 +697,45 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
     SearchResult {
         candidates: all,
         hyps,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cand(base: &str, score: f32) -> Candidate {
+        Candidate {
+            text: base.to_string(),
+            base: base.to_string(),
+            kind: CandidateKind::Word,
+            score,
+            hyp: None,
+        }
+    }
+
+    #[test]
+    fn hamza_key_folds_alef_seats_only() {
+        assert_eq!(hamza_key("أكتب"), "اكتب"); // U+0623 → U+0627
+        assert_eq!(hamza_key("إن"), "ان");
+        assert_eq!(hamza_key("آسف"), "اسف");
+        assert_eq!(hamza_key("سؤال"), "سؤال"); // hamza on waw is not folded
+    }
+
+    /// Regression (Owner 2026-09-23): `oktob` must lead with أكتب although dialect text (and the
+    /// transliteration score) prefer the hamza-less اكتب. MSA frequency decides the lead spelling.
+    #[test]
+    fn hamza_group_lead_is_msa_spelling() {
+        // اكتب scores higher, but أكتب is more frequent in MSA text.
+        let mut c = vec![
+            cand("اكتب", -12.5),
+            cand("أكتب", -13.0),
+            cand("وكتب", -14.0),
+        ];
+        let orth = vec![(-3.0, -11.4), (-5.0, -11.2), (-4.0, -10.0)];
+        order_hamza_variants(&mut c, &orth);
+        c.sort_by(|a, b| b.score.total_cmp(&a.score));
+        let order: Vec<&str> = c.iter().map(|x| x.base.as_str()).collect();
+        assert_eq!(order, ["أكتب", "اكتب", "وكتب"]);
     }
 }

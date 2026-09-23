@@ -5,6 +5,7 @@
 //! must be incremental and allocation-free (docs/03 §5.1, §5.7). Keep this module's *behavior* as the
 //! reference for the OOV path's tests.
 
+use crate::charlm::{CharLm, BOS, EOS};
 use crate::dialect::Posterior;
 use crate::params::EngineParams;
 use crate::seed::{EffRule, SeedTables, F_GEM, F_VOWEL, POS_F, POS_I, POS_M};
@@ -23,12 +24,35 @@ pub struct Step {
     pub flags: u8,
 }
 
-/// A hypothesis: Arabic letters (T3A codes), score (Σ lp), and its alignment.
+/// A hypothesis: Arabic letters (T3A codes), transliteration score (Σ rule lp), char-LM log-prob of
+/// the letters (0 without a char LM; includes end-of-word once complete), and its alignment.
 #[derive(Clone, Debug)]
 pub struct Hyp {
     pub letters: Vec<u8>,
     pub score: f32,
+    pub chr: f32,
     pub steps: Vec<Step>,
+}
+
+impl Hyp {
+    /// Beam ordering key: `score + λ_chr · chr`.
+    fn rank(&self, lambda_chr: f32) -> f32 {
+        self.score + lambda_chr * self.chr
+    }
+}
+
+/// Char-LM log-prob of appending `new` to `letters` (BOS context).
+fn chr_delta(lm: Option<&CharLm>, letters: &[u8], new: &[u8]) -> f32 {
+    let Some(lm) = lm else { return 0.0 };
+    let mut ctx = Vec::with_capacity(letters.len() + new.len() + 1);
+    ctx.push(BOS);
+    ctx.extend_from_slice(letters);
+    let mut total = 0.0;
+    for &c in new {
+        total += lm.lp(&ctx, c);
+        ctx.push(c);
+    }
+    total
 }
 
 fn is_vowel_sym(c: char) -> bool {
@@ -85,14 +109,17 @@ fn rules_for(
     rules
 }
 
-/// Best `k` distinct Arabic readings of `syms`.
+/// Best `k` distinct Arabic readings of `syms`, ranked by transliteration score plus
+/// `λ_chr ·` char-LM log-prob when a char LM is available (docs/03 §5.6.3).
 pub fn search(
     seed: &SeedTables,
     params: &EngineParams,
     pi: &Posterior,
     syms: &[char],
     k: usize,
+    lm: Option<&CharLm>,
 ) -> Vec<Hyp> {
+    let lc = if lm.is_some() { params.lambda_chr } else { 0.0 };
     let n = syms.len();
     if n == 0 {
         return Vec::new();
@@ -104,12 +131,13 @@ pub fn search(
     cols[0].push(Hyp {
         letters: Vec::new(),
         score: 0.0,
+        chr: 0.0,
         steps: Vec::new(),
     });
     let double_penalty = (1.0 - params.p_gem).max(1e-6).ln();
 
     for j in 0..n {
-        prune(&mut cols[j], beam);
+        prune(&mut cols[j], beam, lc);
         let current = std::mem::take(&mut cols[j]);
         for len in 1..=max_chunk.min(n - j) {
             let end = j + len;
@@ -135,6 +163,7 @@ pub fn search(
                             score += double_penalty;
                         }
                     }
+                    let chr = h.chr + chr_delta(lm, &h.letters, &r.arabic);
                     let mut letters = h.letters.clone();
                     letters.extend_from_slice(&r.arabic);
                     let mut steps = h.steps.clone();
@@ -146,6 +175,7 @@ pub fn search(
                     cols[end].push(Hyp {
                         letters,
                         score,
+                        chr,
                         steps,
                     });
                 }
@@ -164,6 +194,7 @@ pub fn search(
         })
         .map(|h| {
             let mut h2 = h.clone();
+            h2.chr += chr_delta(lm, &h.letters, &[CODE_ALEF]);
             h2.letters.push(CODE_ALEF);
             h2.score += params.p_waw_alif.ln();
             h2.steps.push(Step {
@@ -175,14 +206,28 @@ pub fn search(
         })
         .collect();
     finals.extend(extra);
-    prune(&mut finals, k);
+    if let Some(lm) = lm {
+        for h in &mut finals {
+            let mut ctx = Vec::with_capacity(h.letters.len() + 1);
+            ctx.push(BOS);
+            ctx.extend_from_slice(&h.letters);
+            h.chr += lm.lp(&ctx, EOS);
+        }
+    }
+    prune(&mut finals, k, lc);
     finals.retain(|h| !h.letters.is_empty());
     finals
 }
 
-/// Sort by score, keep the best hypothesis per letter sequence (Viterbi recombination), truncate.
-fn prune(col: &mut Vec<Hyp>, beam: usize) {
-    col.sort_by(|a, b| b.score.total_cmp(&a.score));
+/// Sort by rank (ties: fewer letters, then code order — deterministic), keep the best hypothesis per
+/// letter sequence (Viterbi recombination), truncate.
+fn prune(col: &mut Vec<Hyp>, beam: usize, lambda_chr: f32) {
+    col.sort_by(|a, b| {
+        b.rank(lambda_chr)
+            .total_cmp(&a.rank(lambda_chr))
+            .then(a.letters.len().cmp(&b.letters.len()))
+            .then(a.letters.cmp(&b.letters))
+    });
     let mut seen: HashSet<Vec<u8>> = HashSet::new();
     col.retain(|h| seen.insert(h.letters.clone()));
     col.truncate(beam);
@@ -205,6 +250,7 @@ mod tests {
             &fixed_profile(d),
             b.syms(),
             k,
+            None,
         )
         .iter()
         .map(|h| decode(&h.letters))

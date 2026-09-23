@@ -16,6 +16,7 @@
 
 pub mod alphabet;
 pub mod arabic;
+pub mod charlm;
 pub mod config;
 pub mod dialect;
 pub mod display;
