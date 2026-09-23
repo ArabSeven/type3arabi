@@ -5,15 +5,17 @@
 //!   t3a-cli explain <arabizi> [--dialect LEV]
 //!   t3a-cli bench [<file.tsv>] [--iters 3]
 //!   t3a-cli build-data ...        (M2)
+//!   t3a-cli train-rules [--pairs pipeline_data/align/train.tsv] [--out pipeline_data/out/rules.tsv]
 
 mod build;
 mod inspect;
+mod train;
 
 use std::collections::BTreeMap;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::time::Instant;
-use t3a_engine::arabic::strip_marks;
+use t3a_engine::arabic::{normalize_word, orth_fold, strip_marks};
 use t3a_engine::dialect::{fixed_profile, Dialect, DEFAULT_PRIOR};
 use t3a_engine::{
     CommitHow, Engine, EngineSettings, InputChar, MemoryUser, NoUser, Posterior, Session,
@@ -58,6 +60,8 @@ fn main() {
         "explain" => explain(&args[1..]),
         "bench" => bench(&args[1..]),
         "build-data" => cmd_build_data(&args[1..]),
+        "train-rules" => train::train_rules(&args[1..]),
+        "tune" => tune(&args[1..]),
         "inspect" => cmd_inspect(&args[1..]),
         _ => {
             eprintln!(
@@ -184,17 +188,145 @@ fn load_rows(path: &str) -> Vec<Row> {
             let c: Vec<&str> = l.split('\t').collect();
             (c.len() >= 3).then(|| Row {
                 arabizi: c[0].to_string(),
-                expected: c[1].split('|').map(|s| strip_marks(s.trim())).collect(),
+                expected: c[1].split('|').map(|s| normalize_word(s.trim())).collect(),
                 dialect: c[2].trim().to_string(),
             })
         })
         .collect()
 }
 
+/// (n, top-1 hits, hit@k, reciprocal-rank sum) of `engine` on `rows`, dialect prior per `mode`.
+fn score_rows(
+    engine: &Engine,
+    rows: &[Row],
+    mode: &str,
+    k: usize,
+    lenient: bool,
+) -> (u32, u32, u32, f64) {
+    let fold = |s: &str| {
+        if lenient {
+            orth_fold(s)
+        } else {
+            strip_marks(s)
+        }
+    };
+    let mut s = Session::new(engine, EngineSettings::default());
+    let mut acc = (0u32, 0u32, 0u32, 0f64);
+    for r in rows {
+        let pi = match mode {
+            "oracle" => Dialect::parse(&r.dialect)
+                .map(fixed_profile)
+                .unwrap_or(DEFAULT_PRIOR),
+            other => prior_for(Some(other.to_string())),
+        };
+        s.reset();
+        s.set_dialect(pi);
+        for ch in r.arabizi.chars() {
+            s.push(InputChar::new(ch), &NoUser);
+        }
+        let expected: Vec<String> = r.expected.iter().map(|e| fold(e)).collect();
+        let rank = s
+            .candidates()
+            .items
+            .iter()
+            .position(|c| expected.contains(&fold(&c.text)));
+        acc.0 += 1;
+        if rank == Some(0) {
+            acc.1 += 1;
+        }
+        if rank.is_some_and(|x| x < k) {
+            acc.2 += 1;
+        }
+        if let Some(x) = rank {
+            acc.3 += 1.0 / (x as f64 + 1.0);
+        }
+    }
+    acc
+}
+
+/// `t3a-cli tune <dev.tsv>... --data F [--out pipeline_data/out/params.toml]`: coordinate ascent of
+/// the scoring weights on dev splits (docs/04 §7). Objective = top1 + 0.25 · hit@5 (dialect = oracle:
+/// the steady state after the online posterior has converged on the user's dialect),
+/// lenient matching (hamza seat / final ة,ى folded) so tuning never learns to drop hamza to match
+/// dialect gold spellings.
+fn tune(args: &[String]) -> i32 {
+    let files: Vec<&String> = args.iter().take_while(|a| !a.starts_with("--")).collect();
+    let out = arg_value(args, "--out").unwrap_or_else(|| "pipeline_data/out/params.toml".into());
+    let mut engine = load_engine(arg_value(args, "--data"));
+    let rows: Vec<Row> = files.iter().flat_map(|f| load_rows(f)).collect();
+    if rows.is_empty() {
+        eprintln!("usage: t3a-cli tune <dev.tsv>... --data target/type3arabi.dat");
+        return 2;
+    }
+    let objective = |e: &Engine| {
+        let (n, t1, h5, _) = score_rows(e, &rows, "oracle", 5, true);
+        (t1 as f64 + 0.25 * h5 as f64) / n as f64
+    };
+    type Knob = (&'static str, fn(&mut t3a_engine::EngineParams) -> &mut f32);
+    let knobs: [Knob; 6] = [
+        ("lambda_tm", |p| &mut p.lambda_tm),
+        ("lambda_lm", |p| &mut p.lambda_lm),
+        ("lambda_chr", |p| &mut p.lambda_chr),
+        ("oov_penalty", |p| &mut p.oov_penalty),
+        ("gamma_completion", |p| &mut p.gamma_completion),
+        ("unseen_dialect_lp", |p| &mut p.unseen_dialect_lp),
+    ];
+    let mut best_p = engine.params().clone();
+    let mut best = objective(&engine);
+    println!("start: objective {best:.4}");
+    for round in 0..3 {
+        let mut improved = false;
+        for (name, get) in &knobs {
+            let base = *get(&mut best_p.clone());
+            for f in [0.5f32, 0.7, 0.85, 1.15, 1.4, 2.0] {
+                let mut p = best_p.clone();
+                *get(&mut p) = base * f;
+                engine.set_params(p.clone());
+                let o = objective(&engine);
+                if o > best + 1e-4 {
+                    best = o;
+                    best_p = p;
+                    improved = true;
+                    println!(
+                        "  round {round} {name} = {:.3}: objective {best:.4}",
+                        base * f
+                    );
+                }
+            }
+        }
+        if !improved {
+            break;
+        }
+    }
+    let text = format!(
+        "# Tuned on dev splits by t3a-cli tune (docs/04 §7). Objective top1 + 0.25*hit@5 = {best:.4}\n\
+         lambda_tm = {}\nlambda_lm = {}\nlambda_chr = {}\noov_penalty = {}\ngamma_completion = {}\n\
+         unseen_dialect_lp = {}\nlambda_ctx = {}\nlambda_usr = {}\n",
+        best_p.lambda_tm,
+        best_p.lambda_lm,
+        best_p.lambda_chr,
+        best_p.oov_penalty,
+        best_p.gamma_completion,
+        best_p.unseen_dialect_lp,
+        best_p.lambda_ctx,
+        best_p.lambda_usr
+    );
+    match std::fs::write(&out, text) {
+        Ok(()) => {
+            println!("wrote {out}");
+            0
+        }
+        Err(e) => {
+            eprintln!("{out}: {e}");
+            1
+        }
+    }
+}
+
 fn eval(args: &[String]) -> i32 {
     let files: Vec<&String> = args.iter().take_while(|a| !a.starts_with("--")).collect();
     if files.is_empty() {
-        eprintln!("usage: t3a-cli eval <file.tsv>... [--dialect oracle|auto|LEV...] [--k 5]");
+        eprintln!("usage: t3a-cli eval <file.tsv>... [--dialect oracle|auto|LEV...] [--k 5] [--lenient] [--misses]");
         return 2;
     }
     let k: usize = arg_value(args, "--k")
@@ -202,6 +334,14 @@ fn eval(args: &[String]) -> i32 {
         .unwrap_or(5);
     let mode = arg_value(args, "--dialect").unwrap_or_else(|| "oracle".into());
     let engine = load_engine(arg_value(args, "--data"));
+    let lenient = args.iter().any(|a| a == "--lenient");
+    let fold = |s: &str| {
+        if lenient {
+            orth_fold(s)
+        } else {
+            strip_marks(s)
+        }
+    };
     let mut s = Session::new(&engine, EngineSettings::default());
     let mut per: BTreeMap<String, (u32, u32, u32, f64)> = BTreeMap::new(); // n, top1, hitk, mrr
     let mut misses = Vec::new();
@@ -218,13 +358,9 @@ fn eval(args: &[String]) -> i32 {
             for ch in r.arabizi.chars() {
                 s.push(InputChar::new(ch), &NoUser);
             }
-            let bases: Vec<String> = s
-                .candidates()
-                .items
-                .iter()
-                .map(|c| strip_marks(&c.text))
-                .collect();
-            let rank = bases.iter().position(|b| r.expected.contains(b));
+            let bases: Vec<String> = s.candidates().items.iter().map(|c| fold(&c.text)).collect();
+            let expected: Vec<String> = r.expected.iter().map(|e| fold(e)).collect();
+            let rank = bases.iter().position(|b| expected.contains(b));
             let e = per.entry(r.dialect.clone()).or_default();
             e.0 += 1;
             if rank == Some(0) {

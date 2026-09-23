@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 use t3a_data::{
-    quantize_lp, BigramPair, ChlmEntry, Chunk, DiacHeader, DiacVariant, Node, PhraseEntry,
-    RegionEntry, Rule, StringPool, WordRec, Writer,
+    quantize_lp, BigramPair, Chunk, DiacHeader, DiacVariant, Node, PhraseEntry, RegionEntry, Rule,
+    StringPool, WordRec, Writer,
 };
 use t3a_engine::alphabet::{t3a_code, T3A_ALPHABET};
 use t3a_engine::arabic::normalize_word;
@@ -253,40 +253,35 @@ pub fn build_data(
     writer.add_regions(&regions);
     println!("  [REGN] {} regions compiled", regions.len());
 
-    // 6. Character LM (CHLM)
-    let mut chlm_entries = vec![
-        ChlmEntry {
-            fp: 0,
-            q: 255,
-            order: 0,
-            pad: 0,
-        };
-        4096
-    ];
-    // Seed some frequent character n-grams from alphabet
-    for c in T3A_ALPHABET {
-        let code = t3a_code(c).unwrap_or(0);
-        if code > 0 {
-            let fp = (code as u32) * 16777619;
-            let idx = (fp as usize) % chlm_entries.len();
-            chlm_entries[idx] = ChlmEntry {
-                fp,
-                q: 16,
-                order: 1,
-                pad: 0,
-            };
+    // 6. Character LM (CHLM, docs/03 §7.4, docs/12 §7)
+    let chlm_file = in_dir.map(|d| d.join("charlm.tsv"));
+    let chlm_rows = match chlm_file {
+        Some(ref f) if f.exists() => {
+            println!("  [CHLM] Loading char n-grams from {}", f.display());
+            load_charlm_tsv(f)?
         }
-    }
+        _ => Vec::new(),
+    };
+    let chlm_entries = t3a_engine::charlm::build_table(&chlm_rows);
     writer.add_chlm(&chlm_entries);
-    println!("  [CHLM] {} table slots allocated", chlm_entries.len());
+    println!(
+        "  [CHLM] {} n-grams in {} slots",
+        chlm_rows.len(),
+        chlm_entries.len()
+    );
 
     // 7. String pool (STRS)
     writer.add_strs(strs.finish());
     println!("  [STRS] Packed string pool");
 
     // 8. PARM
-    let parm_content = "lambda_tm = 1.0\nlambda_lm = 1.0\nlambda_ctx = 0.5\nlambda_chr = 0.3\n";
-    writer.add_parm(parm_content);
+    // Tuned parameters (docs/04 §7) when present; otherwise the engine defaults apply.
+    let parm_content = in_dir
+        .map(|d| d.join("params.toml"))
+        .filter(|p| p.exists())
+        .and_then(|p| fs::read_to_string(p).ok())
+        .unwrap_or_default();
+    writer.add_parm(&parm_content);
     println!("  [PARM] Engine parameters stored");
 
     // 9. META
@@ -477,21 +472,6 @@ fn collect_seed_lexicon(
         }
     }
 
-    // Smoke eval file
-    let smoke_file = seed_dir.parent().unwrap().join("eval/smoke.tsv");
-    if smoke_file.exists() {
-        let content = fs::read_to_string(&smoke_file)?;
-        for line in content.lines().filter(|l| !l.starts_with('#')) {
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() >= 2 {
-                let norm = normalize_word(parts[1].trim());
-                if !norm.is_empty() {
-                    word_set.insert(norm);
-                }
-            }
-        }
-    }
-
     // Core Arabic common words
     let core_words = [
         "الله",
@@ -616,6 +596,37 @@ fn load_bigrams_tsv(path: &Path) -> Result<BigramMap, Box<dyn std::error::Error>
         }
     }
     Ok(m)
+}
+
+/// `charlm.tsv` rows (`ngram \t order \t lp`, `^`/`$` boundaries) as (T3A codes, lp).
+/// N-grams with a character outside the alphabet are skipped.
+type CharLmRows = Vec<(Vec<u8>, f32)>;
+
+fn load_charlm_tsv(path: &Path) -> Result<CharLmRows, Box<dyn std::error::Error>> {
+    let content = fs::read_to_string(path)?;
+    let mut out = Vec::new();
+    for line in content
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+    {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let codes: Option<Vec<u8>> = parts[0]
+            .chars()
+            .map(|c| match c {
+                '^' => Some(t3a_engine::charlm::BOS),
+                '$' => Some(t3a_engine::charlm::EOS),
+                c => t3a_code(c),
+            })
+            .collect();
+        let (Some(codes), Ok(lp)) = (codes, parts[2].trim().parse::<f32>()) else {
+            continue;
+        };
+        out.push((codes, lp));
+    }
+    Ok(out)
 }
 
 fn load_lexicon_tsv(path: &Path) -> Result<Vec<RawLexiconEntry>, Box<dyn std::error::Error>> {

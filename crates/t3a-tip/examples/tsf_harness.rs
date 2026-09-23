@@ -140,6 +140,18 @@ mod harness {
     }
 
     pub fn run() -> i32 {
+        // Use this checkout's data build: the TIP looks for type3arabi.dat next to its module (here,
+        // this exe) before the installed copy.
+        let repo_dat =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/type3arabi.dat");
+        if let Some(dir) = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        {
+            if repo_dat.exists() {
+                let _ = std::fs::copy(&repo_dat, dir.join("type3arabi.dat"));
+            }
+        }
         // Never touch the real user's learning store: point %LOCALAPPDATA% at a fresh temp dir.
         let sandbox = std::env::temp_dir().join(format!("t3a-harness-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&sandbox);
@@ -229,7 +241,7 @@ mod harness {
 
             // (typed keys, expected text). "\x08" = Backspace, "\x1B" = Esc, "\n" = Enter.
             let scenarios: &[(&str, &str)] = &[
-                ("mar7aba ", "مرحبا "), // U+0645 U+0631 U+062D U+0628 U+0627
+                ("mar7aba ", "مرحباً "), // U+0645 U+0631 U+062D U+0628 U+0627 U+064B
                 ("shukran ", "شكراً "),  // U+0634 U+0643 U+0631 U+0627 U+064B
                 ("allah ", "اللّه "),    // U+0627 U+0644 U+0644 U+0651 U+0647
                 ("mar7\x08\x08\x08\x08", ""),
