@@ -85,7 +85,13 @@ fn validate(s: &Settings) -> Vec<String> {
             errors.push(format!("{name}: not a valid shortcut"));
         }
     }
-    let toggles = ["Ctrl+Space", "Shift+Space", "Ctrl+Shift+Space", "ShiftTap", "none"];
+    let toggles = [
+        "Ctrl+Space",
+        "Shift+Space",
+        "Ctrl+Shift+Space",
+        "ShiftTap",
+        "none",
+    ];
     if !toggles.contains(&s.mode_toggle.as_str()) {
         errors.push("mode_toggle: choose one of the listed toggles".into());
     }

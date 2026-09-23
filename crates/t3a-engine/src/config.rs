@@ -464,12 +464,14 @@ mod tests {
         let (back, w) = Config::parse(&d.to_toml());
         assert!(w.is_empty(), "warnings: {w:?}");
         assert_eq!(back, d);
-        let mut c = Config::default();
-        c.key_commit_latin = "Ctrl+Shift+L".into();
-        c.global_hotkey = "Ctrl+Alt+Q".into();
-        c.learning_enabled = false;
-        c.excluded_apps = vec!["game.exe".into(), "vim.exe".into()];
-        c.candidates_per_page = 9;
+        let c = Config {
+            key_commit_latin: "Ctrl+Shift+L".into(),
+            global_hotkey: "Ctrl+Alt+Q".into(),
+            learning_enabled: false,
+            excluded_apps: vec!["game.exe".into(), "vim.exe".into()],
+            candidates_per_page: 9,
+            ..Default::default()
+        };
         let (back, w) = Config::parse(&c.to_toml());
         assert!(w.is_empty(), "warnings: {w:?}");
         assert_eq!(back, c);
