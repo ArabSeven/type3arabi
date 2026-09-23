@@ -4,11 +4,11 @@
 
 pub mod compose;
 pub mod context;
+pub mod display;
 pub mod dll;
 pub mod factory;
 pub mod guard;
 pub mod keys;
-pub mod mode;
 pub mod service;
 
 pub use dll::*;

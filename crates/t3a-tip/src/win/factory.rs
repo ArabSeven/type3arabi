@@ -1,6 +1,7 @@
 //! COM class factory for TextService (docs/02 §3).
 
 use crate::win::dll;
+use crate::win::guard::guard;
 use crate::win::service::TextService;
 use core::ffi::c_void;
 use windows::core::{implement, Interface, BOOL, GUID};
@@ -24,12 +25,13 @@ impl IClassFactory_Impl for ClassFactory_Impl {
             return Err(windows::core::Error::from(E_POINTER));
         }
 
-        unsafe {
+        guard(Err(windows::Win32::Foundation::E_FAIL.into()), || unsafe {
+            // SAFETY: out-pointers checked non-null above.
             *ppvobject = std::ptr::null_mut();
             let service = TextService::new()?;
             let unk: windows::core::IUnknown = service.into();
             unk.query(riid, ppvobject).ok()
-        }
+        })
     }
 
     fn LockServer(&self, flock: BOOL) -> windows::core::Result<()> {

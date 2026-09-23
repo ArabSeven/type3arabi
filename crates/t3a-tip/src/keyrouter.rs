@@ -24,6 +24,8 @@ pub enum Key {
     Delete,
     PageUp,
     PageDown,
+    /// A modifier pressed on its own (Shift, Ctrl, Alt, Win, Caps Lock): never eaten, never commits.
+    Modifier,
     /// Anything else (F-keys, media keys, …).
     Other,
 }
@@ -151,7 +153,7 @@ const PASS: Decision = Decision {
 
 /// The routing table of docs/02 §5.2.
 pub fn classify(s: &RouterState, key: Key, m: Mods) -> Decision {
-    if s.context == ContextMode::Off {
+    if s.context == ContextMode::Off || key == Key::Modifier {
         return PASS;
     }
     if s.toggle.matches(key, m) {
@@ -202,7 +204,7 @@ pub fn classify(s: &RouterState, key: Key, m: Mods) -> Decision {
             Key::Space => Action::CommitSpace,
             Key::Escape => Action::Tashkeel(TashkeelCmd::Back),
             Key::PageUp | Key::PageDown => Action::Tashkeel(TashkeelCmd::Ignore),
-            Key::Other => Action::CommitAndReinject,
+            Key::Other | Key::Modifier => Action::CommitAndReinject,
         });
     }
     if s.composing {
@@ -223,9 +225,13 @@ pub fn classify(s: &RouterState, key: Key, m: Mods) -> Decision {
             Key::PageDown => Action::NextPage,
             Key::PageUp => Action::PrevPage,
             Key::Escape => Action::CommitRaw,
-            Key::Left | Key::Right | Key::Home | Key::End | Key::Delete | Key::Other => {
-                Action::CommitAndReinject
-            }
+            Key::Left
+            | Key::Right
+            | Key::Home
+            | Key::End
+            | Key::Delete
+            | Key::Other
+            | Key::Modifier => Action::CommitAndReinject,
         });
     }
     // Idle
@@ -393,6 +399,20 @@ mod tests {
         let off = st(ContextMode::Off, false, Popup::Hidden);
         assert_eq!(classify(&off, Key::Char('a'), NONE), PASS);
         assert_eq!(classify(&off, Key::Space, CTRL), PASS);
+    }
+
+    #[test]
+    fn lone_modifiers_never_commit() {
+        // Regression: Shift pressed mid-word (to type a capital) used to commit the word.
+        for s in [
+            st(ContextMode::Arabic, true, Popup::List),
+            st(ContextMode::Arabic, true, Popup::Tashkeel),
+            st(ContextMode::Arabic, false, Popup::Hidden),
+            st(ContextMode::Latin, false, Popup::Hidden),
+        ] {
+            assert_eq!(classify(&s, Key::Modifier, SHIFT), PASS);
+            assert_eq!(classify(&s, Key::Modifier, CTRL), PASS);
+        }
     }
 
     #[test]

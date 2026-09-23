@@ -1,35 +1,90 @@
-//! Windows candidate popup window implementation.
+//! Windows candidate popup window implementation (docs/02 §9).
+//!
+//! Ownership: `PopupWindow` owns the HWND and a heap-allocated `RefCell<PopupState>` whose address
+//! is stable for the window's whole life; the window procedure reaches the state only through that
+//! pointer and only with `try_borrow`, so it can never observe freed or aliased memory.
 
 use crate::{metrics, Footer, PopupModel, RowMarker, Theme};
+use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{
+    COLORREF, HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreateSolidBrush,
     DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, GetMonitorInfoW,
-    MonitorFromPoint, SelectObject, SetBkMode, SetTextColor, DT_CALCRECT, DT_CENTER, DT_LEFT,
-    DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, FONT_CHARSET, FONT_CLIP_PRECISION,
-    FONT_OUTPUT_PRECISION, FONT_QUALITY, FW_NORMAL, FW_SEMIBOLD, HDC, MONITORINFO,
-    MONITOR_DEFAULTTONEAREST, PAINTSTRUCT, SRCCOPY, TRANSPARENT,
+    InvalidateRect, MonitorFromPoint, SelectObject, SetBkMode, SetTextColor, DT_CALCRECT,
+    DT_CENTER, DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, FONT_CHARSET,
+    FONT_CLIP_PRECISION, FONT_OUTPUT_PRECISION, FONT_QUALITY, FW_NORMAL, FW_SEMIBOLD, HDC,
+    MONITORINFO, MONITOR_DEFAULTTONEAREST, PAINTSTRUCT, SRCCOPY, TRANSPARENT,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::LibraryLoader::{
+    GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW,
-    RegisterClassExW, SetWindowLongPtrW, SetWindowPos, ShowWindow, CS_DROPSHADOW, CS_HREDRAW,
-    CS_VREDRAW, GWLP_USERDATA, MA_NOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE,
-    SW_SHOWNOACTIVATE, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_MOUSEACTIVATE, WM_PAINT, WNDCLASSEXW,
+    RegisterClassExW, SetWindowLongPtrW, SetWindowPos, ShowWindow, UnregisterClassW, CS_DROPSHADOW,
+    CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST, MA_NOACTIVATE, SWP_NOACTIVATE,
+    SWP_SHOWWINDOW, SW_HIDE, WM_ERASEBKGND, WM_MOUSEACTIVATE, WM_PAINT, WNDCLASSEXW,
     WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
 const WINDOW_CLASS: PCWSTR = w!("Type3arabi_CandidateWindow");
 
-pub struct PopupWindow {
-    hwnd: HWND,
+/// The module (DLL) this code lives in — NOT the host exe. Window classes must be registered
+/// against the module that contains the window procedure.
+fn this_module() -> HINSTANCE {
+    let mut hmod = HMODULE::default();
+    // SAFETY: FROM_ADDRESS with the address of a function in this module; UNCHANGED_REFCOUNT means
+    // no reference is taken, so nothing needs releasing.
+    unsafe {
+        let _ = GetModuleHandleExW(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            PCWSTR(wndproc as *const () as *const u16),
+            &mut hmod,
+        );
+    }
+    HINSTANCE(hmod.0)
+}
+
+/// Unregister the popup window class. Call when the DLL is about to unload (`DllCanUnloadNow`),
+/// after every `PopupWindow` has been dropped.
+pub fn unregister_class() {
+    if CLASS_REGISTERED.swap(false, Ordering::AcqRel) {
+        // SAFETY: class name is a static wide string; failure (a window still alive) is harmless.
+        unsafe {
+            let _ = UnregisterClassW(WINDOW_CLASS, Some(this_module()));
+        }
+    }
+}
+
+struct PopupState {
     model: PopupModel,
     theme: Theme,
     dpi: u32,
-    on_candidate_clicked: Option<Box<dyn Fn(usize) + 'static>>,
+}
+
+pub struct PopupWindow {
+    hwnd: HWND,
+    state: Box<RefCell<PopupState>>,
+}
+
+/// `DrawTextW` that is safe for empty strings: an empty Rust slice has a dangling pointer, and
+/// user32 dereferences it even with a zero count (host crash 0xC000041D, found by tsf_harness).
+unsafe fn draw_text(
+    hdc: HDC,
+    text: &mut [u16],
+    rect: *mut RECT,
+    format: windows::Win32::Graphics::Gdi::DRAW_TEXT_FORMAT,
+) -> i32 {
+    if text.is_empty() {
+        return 0;
+    }
+    DrawTextW(hdc, text, rect, format)
 }
 
 // Convert 0xRRGGBB to GDI COLORREF (0x00BBGGRR)
@@ -42,24 +97,20 @@ fn to_colorref(rgb: u32) -> COLORREF {
 
 impl PopupWindow {
     pub fn new() -> windows::core::Result<Self> {
+        // SAFETY: plain Win32 window creation on the calling (UI) thread; the state pointer stored
+        // in GWLP_USERDATA points into a Box that outlives the window (cleared in Drop first).
         unsafe {
-            let hinst = GetModuleHandleW(None)?;
-            let hinstance = HINSTANCE(hinst.0);
+            let hinstance = this_module();
             if !CLASS_REGISTERED.load(Ordering::Acquire) {
                 let wc = WNDCLASSEXW {
                     cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
                     style: CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW,
                     lpfnWndProc: Some(wndproc),
-                    cbClsExtra: 0,
-                    cbWndExtra: 0,
                     hInstance: hinstance,
-                    hIcon: Default::default(),
-                    hCursor: Default::default(),
-                    hbrBackground: Default::default(),
-                    lpszMenuName: PCWSTR::null(),
                     lpszClassName: WINDOW_CLASS,
-                    hIconSm: Default::default(),
+                    ..Default::default()
                 };
+                // Fails harmlessly with ERROR_CLASS_ALREADY_EXISTS if another thread won the race.
                 let _ = RegisterClassExW(&wc);
                 CLASS_REGISTERED.store(true, Ordering::Release);
             }
@@ -79,57 +130,50 @@ impl PopupWindow {
                 None,
             )?;
 
-            let mut popup = Self {
-                hwnd,
+            let state = Box::new(RefCell::new(PopupState {
                 model: PopupModel::Hidden,
                 theme: Theme::LIGHT,
-                dpi: 96,
-                on_candidate_clicked: None,
-            };
-
-            SetWindowLongPtrW(
-                hwnd,
-                GWLP_USERDATA,
-                (&mut popup as *mut _ as usize as isize) as _,
-            );
-            Ok(popup)
+                dpi: GetDpiForWindow(hwnd).max(96),
+            }));
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, &*state as *const _ as _);
+            Ok(Self { hwnd, state })
         }
     }
 
-    pub fn set_on_click<F: Fn(usize) + 'static>(&mut self, f: F) {
-        self.on_candidate_clicked = Some(Box::new(f));
-    }
-
     pub fn is_visible(&self) -> bool {
-        !matches!(self.model, PopupModel::Hidden)
+        self.state
+            .try_borrow()
+            .map(|s| !matches!(s.model, PopupModel::Hidden))
+            .unwrap_or(false)
     }
 
     pub fn hide(&mut self) {
-        self.model = PopupModel::Hidden;
+        if let Ok(mut s) = self.state.try_borrow_mut() {
+            s.model = PopupModel::Hidden;
+        }
+        // SAFETY: hwnd is owned by self and alive until Drop.
         unsafe {
             let _ = ShowWindow(self.hwnd, SW_HIDE);
         }
     }
 
+    /// Show `model` next to `anchor` = (left, top, right, bottom) of the composition, screen coords.
     pub fn show(&mut self, model: PopupModel, anchor: (i32, i32, i32, i32)) {
         if let PopupModel::Hidden = model {
             self.hide();
             return;
         }
+        let (width, height) = {
+            let Ok(mut s) = self.state.try_borrow_mut() else {
+                return;
+            };
+            s.model = model;
+            s.calculate_size()
+        };
+        let (_anchor_left, anchor_top, anchor_right, anchor_bottom) = anchor;
 
-        self.model = model;
+        // SAFETY: Win32 calls on our own window; no borrow of `state` is held across them.
         unsafe {
-            // Update userdata pointer before painting
-            SetWindowLongPtrW(
-                self.hwnd,
-                GWLP_USERDATA,
-                (self as *mut _ as usize as isize) as _,
-            );
-
-            let (_anchor_left, anchor_top, anchor_right, anchor_bottom) = anchor;
-            let (width, height) = self.calculate_size();
-
-            // Screen/Monitor bounds
             let pt = POINT {
                 x: anchor_right,
                 y: anchor_bottom,
@@ -144,37 +188,39 @@ impl PopupWindow {
 
             // RTL alignment: right edge of popup aligns with right edge of composition
             let mut x = anchor_right - width;
-            if x < work.left {
-                x = work.left;
-            }
             if x + width > work.right {
                 x = work.right - width;
             }
+            if x < work.left {
+                x = work.left;
+            }
 
             // Place below composition by default; flip above if not enough room
-            let mut y = anchor_bottom + 4;
+            let mut y = anchor_bottom + 2;
             if y + height > work.bottom {
-                let y_above = anchor_top - height - 4;
-                if y_above >= work.top {
-                    y = y_above;
+                let y_above = anchor_top - height - 2;
+                y = if y_above >= work.top {
+                    y_above
                 } else {
-                    y = work.bottom - height;
-                }
+                    work.bottom - height
+                };
             }
 
             let _ = SetWindowPos(
                 self.hwnd,
-                None,
+                Some(HWND_TOPMOST),
                 x,
                 y,
                 width,
                 height,
                 SWP_NOACTIVATE | SWP_SHOWWINDOW,
             );
-            let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+            let _ = InvalidateRect(Some(self.hwnd), None, false);
         }
     }
+}
 
+impl PopupState {
     fn calculate_size(&self) -> (i32, i32) {
         let dpi = self.dpi;
         let scale = |v: f32| metrics::scale(v, dpi) as i32;
@@ -197,9 +243,9 @@ impl PopupWindow {
         }
     }
 
-    unsafe fn paint(&self, hdc: HDC) {
+    unsafe fn paint(&self, hwnd: HWND, hdc: HDC) {
         let mut rc = RECT::default();
-        let _ = GetClientRect(self.hwnd, &mut rc);
+        let _ = GetClientRect(hwnd, &mut rc);
         let width = rc.right - rc.left;
         let height = rc.bottom - rc.top;
 
@@ -286,7 +332,7 @@ impl PopupWindow {
             let old_font = SelectObject(mem_dc, font_header.into());
 
             let mut latin_utf16: Vec<u16> = list.latin.encode_utf16().collect();
-            let _ = DrawTextW(
+            let _ = draw_text(
                 mem_dc,
                 &mut latin_utf16,
                 &mut latin_rc,
@@ -301,7 +347,7 @@ impl PopupWindow {
                     bottom: header_h,
                 };
                 let mut badge_utf16: Vec<u16> = format!("[ {badge} ]").encode_utf16().collect();
-                let _ = DrawTextW(
+                let _ = draw_text(
                     mem_dc,
                     &mut badge_utf16,
                     &mut badge_rc,
@@ -351,7 +397,7 @@ impl PopupWindow {
                             bottom: y + row_h,
                         };
                         let mut m_utf16 = vec![0x22EF]; // ⋯
-                        let _ = DrawTextW(
+                        let _ = draw_text(
                             mem_dc,
                             &mut m_utf16,
                             &mut marker_rc,
@@ -368,7 +414,7 @@ impl PopupWindow {
                             bottom: y + row_h,
                         };
                         let mut m_utf16: Vec<u16> = "EN".encode_utf16().collect();
-                        let _ = DrawTextW(
+                        let _ = draw_text(
                             mem_dc,
                             &mut m_utf16,
                             &mut marker_rc,
@@ -394,7 +440,7 @@ impl PopupWindow {
                 } else {
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX
                 };
-                let _ = DrawTextW(mem_dc, &mut text_utf16, &mut text_rc, flags);
+                let _ = draw_text(mem_dc, &mut text_utf16, &mut text_rc, flags);
 
                 y += row_h;
             }
@@ -410,7 +456,7 @@ impl PopupWindow {
                     bottom: y + scale(metrics::FOOTER_H),
                 };
                 let mut f_utf16: Vec<u16> = crate::FOOTER_HINTS_AR.encode_utf16().collect();
-                let _ = DrawTextW(
+                let _ = draw_text(
                     mem_dc,
                     &mut f_utf16,
                     &mut footer_rc,
@@ -519,7 +565,7 @@ impl PopupWindow {
                 let mut chip_utf16: Vec<u16> = chip_text.encode_utf16().collect();
 
                 let mut calc_rc = RECT::default();
-                let _ = DrawTextW(
+                let _ = draw_text(
                     mem_dc,
                     &mut chip_utf16,
                     &mut calc_rc,
@@ -547,7 +593,7 @@ impl PopupWindow {
                 }
 
                 let mut text_rc = chip_rc;
-                let _ = DrawTextW(
+                let _ = draw_text(
                     mem_dc,
                     &mut chip_utf16,
                     &mut text_rc,
@@ -577,7 +623,7 @@ impl PopupWindow {
             let _ = SelectObject(mem_dc, font_word.into());
             SetTextColor(mem_dc, to_colorref(self.theme.text));
             let mut word_utf16: Vec<u16> = tashkeel.word.encode_utf16().collect();
-            let _ = DrawTextW(
+            let _ = draw_text(
                 mem_dc,
                 &mut word_utf16,
                 &mut word_rc,
@@ -619,7 +665,7 @@ impl PopupWindow {
                 let mut mark_utf16: Vec<u16> = mark_str.encode_utf16().collect();
                 SetTextColor(mem_dc, to_colorref(self.theme.text));
                 let mut text_rc = item_rc;
-                let _ = DrawTextW(
+                let _ = draw_text(
                     mem_dc,
                     &mut mark_utf16,
                     &mut text_rc,
@@ -649,7 +695,7 @@ impl PopupWindow {
             SetTextColor(mem_dc, to_colorref(self.theme.secondary));
             let footer_text = "Enter: إدراج · Esc: رجوع · ←→: حرف";
             let mut f_utf16: Vec<u16> = footer_text.encode_utf16().collect();
-            let _ = DrawTextW(
+            let _ = draw_text(
                 mem_dc,
                 &mut f_utf16,
                 &mut footer_rc,
@@ -677,8 +723,10 @@ impl PopupWindow {
 
 impl Drop for PopupWindow {
     fn drop(&mut self) {
+        // SAFETY: we own the window; clear the state pointer first so no late message can read it.
         unsafe {
             if !self.hwnd.is_invalid() {
+                SetWindowLongPtrW(self.hwnd, GWLP_USERDATA, 0);
                 let _ = DestroyWindow(self.hwnd);
             }
         }
@@ -686,54 +734,23 @@ impl Drop for PopupWindow {
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut PopupWindow;
-
     match msg {
-        WM_MOUSEACTIVATE => LRESULT((MA_NOACTIVATE as isize) as _),
+        WM_MOUSEACTIVATE => LRESULT(MA_NOACTIVATE as isize),
         WM_ERASEBKGND => LRESULT(1),
         WM_PAINT => {
             let mut ps = PAINTSTRUCT::default();
             let hdc = BeginPaint(hwnd, &mut ps);
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const RefCell<PopupState>;
+            // SAFETY: the pointer is 0 or points into the owning PopupWindow's Box, and it is
+            // cleared before that Box is freed (see Drop). Panics must not unwind into user32.
             if !ptr.is_null() {
-                (*ptr).paint(hdc);
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if let Ok(state) = (*ptr).try_borrow() {
+                        state.paint(hwnd, hdc);
+                    }
+                }));
             }
             let _ = EndPaint(hwnd, &ps);
-            LRESULT(0)
-        }
-        WM_LBUTTONDOWN => {
-            if !ptr.is_null() {
-                let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
-                let dpi = (*ptr).dpi;
-                let scale = |v: f32| metrics::scale(v, dpi) as i32;
-                match &(*ptr).model {
-                    PopupModel::List(_) => {
-                        let header_h = scale(metrics::HEADER_H);
-                        let row_h = scale(metrics::ROW_H);
-                        if y >= header_h {
-                            let row_idx = ((y - header_h) / row_h) as usize;
-                            if let Some(cb) = &(*ptr).on_candidate_clicked {
-                                cb(row_idx);
-                            }
-                        }
-                    }
-                    PopupModel::Tashkeel(_) => {
-                        let chip_bar_h = scale(32.0);
-                        if y < chip_bar_h {
-                            let x = (lparam.0 & 0xFFFF) as i16 as i32;
-                            let pad_x = scale(metrics::PAD_X);
-                            let width = scale(380.0);
-                            let rel_x = (width - pad_x) - x;
-                            if rel_x > 0 {
-                                let chip_idx = (rel_x / scale(60.0)) as usize;
-                                if let Some(cb) = &(*ptr).on_candidate_clicked {
-                                    cb(chip_idx);
-                                }
-                            }
-                        }
-                    }
-                    PopupModel::Hidden => {}
-                }
-            }
             LRESULT(0)
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),

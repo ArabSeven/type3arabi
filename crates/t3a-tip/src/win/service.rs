@@ -1,220 +1,304 @@
-//! The main TSF TextService implementing ITfTextInputProcessorEx and all sinks (docs/02 §3, §4).
+//! The TSF text service (docs/02 §3–§12).
+//!
+//! Re-entrancy rule (docs/02 §3): all state lives in one `RefCell<State>` that is borrowed only for
+//! short stretches containing no TSF calls. Every borrow is a `try_borrow*`, so an unexpected
+//! re-entry degrades to "key not eaten" instead of a panic. Document changes happen only inside
+//! edit sessions (`DocOp` + `apply`), which read and write state the same way.
 
 use crate::ids::GUID_PRESERVED_TOGGLE;
-use crate::keyrouter::{classify, Action, Popup, RouterState, Toggle};
+use crate::keyrouter::{classify, Action, Decision, Key, Popup, RouterState, Toggle};
 use crate::win::compose::EditSession;
 use crate::win::context::evaluate_context_mode;
-use crate::win::dll::{add_object, release_object, CLSID_TYPE3ARABI_TIP};
+use crate::win::display::{
+    DisplayAttributeInfo, EnumDisplayAttributeInfo, GUID_ATTR_INPUT, GUID_ATTR_TASHKEEL,
+};
+use crate::win::dll::{self, add_object, release_object};
 use crate::win::guard::guard;
 use crate::win::keys::translate_key;
 use std::cell::RefCell;
+use std::mem::ManuallyDrop;
 use std::sync::{Arc, OnceLock};
 use t3a_engine::normalize::InputChar;
-use t3a_engine::session::{CommitHow, Session};
-use t3a_engine::{Config, Engine, UserStore};
-use t3a_ui::{Footer, ListModel, PopupModel, Row, RowMarker};
-use windows::core::{implement, Interface, BOOL, BSTR, GUID};
-use windows::Win32::Foundation::{E_POINTER, HWND, LPARAM, WPARAM};
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, VIRTUAL_KEY,
-};
+use t3a_engine::session::{CandidateKind, CommitHow, Session, Trailing};
+use t3a_engine::{Config, Engine, NoUser, TashkeelAction, TashkeelEditor, UserScorer, UserStore};
+use t3a_ui::{Footer, ListModel, PopupModel, PopupWindow, Row, RowMarker, TashkeelModel};
+use windows::core::{implement, Interface, BOOL, GUID};
+use windows::Win32::Foundation::{E_FAIL, E_INVALIDARG, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::ClientToScreen;
+use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+use windows::Win32::System::Variant::VARIANT;
+use windows::Win32::UI::Input::KeyboardAndMouse::VK_SPACE;
 use windows::Win32::UI::TextServices::{
-    IEnumTfDisplayAttributeInfo, ITfCompartmentEventSink, ITfCompartmentEventSink_Impl,
-    ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextView,
+    CLSID_TF_CategoryMgr, IEnumTfDisplayAttributeInfo, ITfCategoryMgr, ITfComposition,
+    ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextComposition,
     ITfDisplayAttributeInfo, ITfDisplayAttributeProvider, ITfDisplayAttributeProvider_Impl,
-    ITfDocumentMgr, ITfFnConfigure, ITfFnConfigure_Impl, ITfFunction, ITfFunctionProvider,
-    ITfFunctionProvider_Impl, ITfFunction_Impl, ITfInsertAtSelection, ITfKeyEventSink,
-    ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfRange, ITfSource, ITfTextInputProcessor,
-    ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
-    ITfTextLayoutSink, ITfTextLayoutSink_Impl, ITfThreadFocusSink, ITfThreadFocusSink_Impl,
-    ITfThreadMgr, ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl, TfLayoutCode, TF_ANCHOR_END,
-    TF_ES_ASYNCDONTCARE, TF_ES_READWRITE, TF_IAS_NOQUERY, TF_SELECTION, TF_SELECTIONSTYLE,
-    TF_TMAE_SECUREMODE,
+    ITfDocumentMgr, ITfEditSession, ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl,
+    ITfKeystrokeMgr, ITfRange, ITfSource, ITfTextInputProcessor, ITfTextInputProcessorEx,
+    ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl, ITfThreadFocusSink,
+    ITfThreadFocusSink_Impl, ITfThreadMgr, ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl,
+    GUID_PROP_ATTRIBUTE, TF_AE_NONE, TF_ANCHOR_END, TF_ES_ASYNCDONTCARE, TF_ES_READWRITE,
+    TF_IAS_QUERYONLY, TF_INVALID_COOKIE, TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION,
+    TF_SELECTIONSTYLE, TF_TMAE_SECUREMODE,
 };
-use windows::Win32::UI::WindowsAndMessaging::GetMessageExtraInfo;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetCursorPos, GetGUIThreadInfo, GetMessageExtraInfo, GUITHREADINFO,
+};
 use windows_core::IUnknownImpl;
 
-const T3A_REINJECT_MAGIC: usize = 0x54334152; // "T3AR"
+const PASS: Decision = Decision {
+    eat: false,
+    action: Action::Pass,
+};
+
+// ---------------------------------------------------------------------------------------------
+// Process-wide resources
 
 static ENGINE: OnceLock<Engine> = OnceLock::new();
-fn get_engine() -> &'static Engine {
+
+fn engine() -> &'static Engine {
     ENGINE.get_or_init(|| {
-        let candidates = [
-            t3a_paths::data_file_path(),
-            std::env::current_exe()
-                .unwrap_or_default()
-                .parent()
-                .unwrap_or_else(|| std::path::Path::new(""))
-                .join(t3a_paths::DATA_FILE_NAME),
-            std::path::PathBuf::from("target").join(t3a_paths::DATA_FILE_NAME),
-            std::path::PathBuf::from(t3a_paths::DATA_FILE_NAME),
-        ];
+        // Next to the DLL (dev install: <dir>\x64\t3a_tip.dll + <dir>\type3arabi.dat), then the
+        // installed location.
+        let mut candidates = Vec::new();
+        if let Some(dir) = dll::dll_path().as_deref().and_then(|p| p.parent()) {
+            candidates.push(dir.join(t3a_paths::DATA_FILE_NAME));
+            if let Some(up) = dir.parent() {
+                candidates.push(up.join(t3a_paths::DATA_FILE_NAME));
+            }
+        }
+        candidates.push(t3a_paths::data_file_path());
         for path in &candidates {
-            if path.exists() {
-                if let Ok(file) = t3a_data::DataFile::open(path) {
-                    let boxed: &'static t3a_data::DataFile = Box::leak(Box::new(file));
-                    if let Ok(view) = boxed.view() {
-                        if let Ok(eng) = Engine::new(view) {
-                            return eng;
-                        }
+            if !path.exists() {
+                continue;
+            }
+            if let Ok(file) = t3a_data::DataFile::open(path) {
+                let file: &'static t3a_data::DataFile = Box::leak(Box::new(file));
+                if let Ok(view) = file.view() {
+                    if let Ok(eng) = Engine::new(view) {
+                        return eng;
                     }
                 }
             }
         }
+        t3a_paths::log_error("type3arabi.dat missing or invalid; using built-in seed tables");
         Engine::builtin()
     })
 }
 
-static USER_STORE: OnceLock<Arc<UserStore>> = OnceLock::new();
-fn get_user_store(secure_mode: bool) -> Arc<UserStore> {
+static USER_STORE: OnceLock<Option<Arc<UserStore>>> = OnceLock::new();
+
+/// Opened on first use (first keystroke), not at activation (R4).
+fn user_store() -> Option<Arc<UserStore>> {
     USER_STORE
         .get_or_init(|| {
-            let is_ac = t3a_paths::is_app_container();
-            let read_only = is_ac || secure_mode;
-            let store_dir = t3a_paths::user_store_dir();
-            match UserStore::open(&store_dir, read_only) {
-                Ok(store) => Arc::new(store),
-                Err(_) => Arc::new(
-                    UserStore::open(std::path::Path::new(""), true).unwrap_or_else(|_| {
-                        let tmp = std::env::temp_dir().join("type3arabi_tmp_store");
-                        UserStore::open(&tmp, true).unwrap()
-                    }),
-                ),
-            }
+            let dir = t3a_paths::user_store_dir();
+            let read_only = t3a_paths::is_app_container();
+            UserStore::open(&dir, read_only)
+                .or_else(|_| UserStore::open(&dir, true))
+                .ok()
+                .map(Arc::new)
         })
         .clone()
 }
 
-fn get_config() -> Config {
-    let p = t3a_paths::config_path();
-    if let Ok(s) = std::fs::read_to_string(&p) {
-        let (cfg, _warns) = Config::parse(&s);
-        cfg
-    } else {
-        Config::default()
+fn with_scorer<R>(f: impl FnOnce(&dyn UserScorer) -> R) -> R {
+    match user_store() {
+        Some(store) => f(store.as_ref()),
+        None => f(&NoUser),
     }
 }
 
-fn reinject_key(wparam: WPARAM, lparam: LPARAM) {
-    let vk = (wparam.0 & 0xFF) as u16;
-    let scan = ((lparam.0 >> 16) & 0xFF) as u16;
-    let ext = ((lparam.0 >> 24) & 1) != 0;
-    let flags_down = if ext { 0x0001 } else { 0 }; // KEYEVENTF_EXTENDEDKEY
-    let flags_up = flags_down | 0x0002; // KEYEVENTF_KEYUP
-
-    let inputs = [
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VIRTUAL_KEY(vk),
-                    wScan: scan,
-                    dwFlags: KEYBD_EVENT_FLAGS(flags_down),
-                    time: 0,
-                    dwExtraInfo: T3A_REINJECT_MAGIC,
-                },
-            },
-        },
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VIRTUAL_KEY(vk),
-                    wScan: scan,
-                    dwFlags: KEYBD_EVENT_FLAGS(flags_up),
-                    time: 0,
-                    dwExtraInfo: T3A_REINJECT_MAGIC,
-                },
-            },
-        },
-    ];
-    unsafe {
-        let _ = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+fn load_config() -> Config {
+    match std::fs::read_to_string(t3a_paths::config_path()) {
+        Ok(text) => Config::parse(&text).0,
+        Err(_) => Config::default(),
     }
 }
 
+fn utf16(s: &str) -> Vec<u16> {
+    s.encode_utf16().collect()
+}
+
+// ---------------------------------------------------------------------------------------------
+// State
+
+/// What Backspace can undo right after a commit (docs/02 §12.2).
 #[derive(Clone, Debug)]
-pub struct ReEditState {
-    pub latin: String,
-    pub text: String,
-    pub had_trailing_space: bool,
-    pub candidate_index: usize,
+struct ReEditAnchor {
+    latin: String,
+    word: String,
+    trailing_space: bool,
+    rank: usize,
 }
 
-pub struct Inner {
-    pub thread_mgr: Option<ITfThreadMgr>,
-    pub client_id: u32,
-    pub session: Session<'static>,
-    pub user_store: Arc<UserStore>,
-    pub config: Config,
-    pub arabic_mode: bool,
-    pub secure_mode: bool,
-    pub active_composition: Option<ITfComposition>,
-    pub composition_range: Option<ITfRange>,
-    pub popup: Option<t3a_ui::PopupWindow>,
-    pub eaten_keys: [bool; 256],
-    pub cookie_thread_mgr: u32,
-    pub cookie_thread_focus: u32,
-    pub cookie_key_sink: bool,
-    pub cookie_text_layout: u32,
-    pub selected_index: usize,
-    pub current_page: usize,
-    pub last_commit: Option<ReEditState>,
-    pub recent_words: Vec<String>,
-    pub last_raw_key: (WPARAM, LPARAM),
-    pub tashkeel_editor: Option<t3a_engine::TashkeelEditor>,
+pub struct State {
+    thread_mgr: Option<ITfThreadMgr>,
+    client_id: u32,
+    secure_mode: bool,
+    cookie_thread_mgr: u32,
+    cookie_thread_focus: u32,
+    key_sink: bool,
+    preserved_toggle: bool,
+    attr_input: i32,
+    attr_tashkeel: i32,
+    session: Session<'static>,
+    config: Config,
+    arabic_mode: bool,
+    composition: Option<ITfComposition>,
+    selected: usize,
+    page: usize,
+    tashkeel: Option<TashkeelEditor>,
+    anchor: Option<ReEditAnchor>,
+    recent_words: Vec<String>,
+    eaten: [bool; 256],
+    popup: Option<PopupWindow>,
+    text_rect: RECT,
 }
+
+impl State {
+    fn composing(&self) -> bool {
+        !self.session.is_empty() || self.tashkeel.is_some()
+    }
+
+    fn page_size(&self) -> usize {
+        self.config.candidates_per_page.clamp(5, 9) as usize
+    }
+
+    fn preview_text(&self) -> String {
+        if let Some(ed) = &self.tashkeel {
+            return ed.render();
+        }
+        let list = self.session.candidates();
+        if self.config.inline_preview == "latin" {
+            return list.raw.clone();
+        }
+        list.items
+            .get(self.selected)
+            .or_else(|| list.items.first())
+            .map_or_else(|| list.raw.clone(), |c| c.text.clone())
+    }
+
+    fn preview_op(&self) -> DocOp {
+        DocOp::Preview {
+            text: utf16(&self.preview_text()),
+            tashkeel: self.tashkeel.is_some(),
+        }
+    }
+
+    fn popup_model(&self) -> PopupModel {
+        if let Some(ed) = &self.tashkeel {
+            return PopupModel::Tashkeel(TashkeelModel {
+                picks: ed.picks.clone(),
+                from_typing: ed.from_typing,
+                highlighted_pick: ed.highlighted_pick,
+                word: ed.render(),
+                focused_letter: ed.focused_letter,
+            });
+        }
+        let list = self.session.candidates();
+        let ps = self.page_size();
+        let total = list.items.len();
+        let pages = total.div_ceil(ps).max(1);
+        let page = self.page.min(pages - 1);
+        let start = page * ps;
+        let end = (start + ps).min(total);
+        let rows = list.items[start..end]
+            .iter()
+            .map(|c| Row {
+                text: c.text.clone(),
+                marker: match c.kind {
+                    CandidateKind::Completion => RowMarker::Completion,
+                    CandidateKind::Custom => RowMarker::Custom,
+                    CandidateKind::RawLatin => RowMarker::RawLatin,
+                    _ => RowMarker::None,
+                },
+                rtl: c.kind != CandidateKind::RawLatin,
+            })
+            .collect();
+        let footer = if pages > 1 {
+            Footer::Paging {
+                page: (page + 1).min(255) as u8,
+                pages: pages.min(255) as u8,
+            }
+        } else if self.config.footer_hints == "never" {
+            Footer::Hidden
+        } else {
+            Footer::Hints
+        };
+        let badge = self.config.show_dialect_badge.then(|| {
+            t3a_engine::dialect::argmax(&self.session.dialect())
+                .arabic_name()
+                .to_string()
+        });
+        PopupModel::List(ListModel {
+            latin: list.raw.clone(),
+            badge,
+            rows,
+            highlighted: self.selected.saturating_sub(start),
+            footer,
+        })
+    }
+}
+
+/// A document change, executed inside an edit session by `apply`.
+enum DocOp {
+    /// Show `text` as the composing word (starts the composition if needed) and place the popup.
+    Preview { text: Vec<u16>, tashkeel: bool },
+    /// Replace the composition (if any) with `text`, end it, then insert `suffix` after it.
+    Commit { text: Vec<u16>, suffix: Vec<u16> },
+    /// End the composition keeping whatever it shows (focus change, deactivation).
+    Finalize,
+    /// Insert text at the caret (no composition).
+    Insert(Vec<u16>),
+    /// If the text before the caret is `expect`, turn it back into a composition showing `preview`;
+    /// otherwise behave like a plain Backspace.
+    ReEdit { expect: Vec<u16>, preview: Vec<u16> },
+}
+
+// ---------------------------------------------------------------------------------------------
+// COM object
 
 #[implement(
     ITfTextInputProcessor,
     ITfTextInputProcessorEx,
     ITfThreadMgrEventSink,
     ITfThreadFocusSink,
-    ITfTextLayoutSink,
     ITfKeyEventSink,
     ITfCompositionSink,
-    ITfDisplayAttributeProvider,
-    ITfCompartmentEventSink,
-    ITfFunctionProvider,
-    ITfFunction,
-    ITfFnConfigure
+    ITfDisplayAttributeProvider
 )]
 pub struct TextService {
-    pub inner: RefCell<Inner>,
+    state: RefCell<State>,
 }
 
 impl TextService {
     pub fn new() -> windows::core::Result<Self> {
+        let config = load_config();
+        let session = Session::new(engine(), config.to_engine_settings());
         add_object();
-        let popup = t3a_ui::PopupWindow::new().ok();
-        let engine = get_engine();
-        let config = get_config();
-        let user_store = get_user_store(false);
-        let session = Session::new(engine, config.to_engine_settings());
-
         Ok(Self {
-            inner: RefCell::new(Inner {
+            state: RefCell::new(State {
                 thread_mgr: None,
                 client_id: 0,
+                secure_mode: false,
+                cookie_thread_mgr: TF_INVALID_COOKIE,
+                cookie_thread_focus: TF_INVALID_COOKIE,
+                key_sink: false,
+                preserved_toggle: false,
+                attr_input: 0,
+                attr_tashkeel: 0,
                 session,
-                user_store,
                 config,
                 arabic_mode: true,
-                secure_mode: false,
-                active_composition: None,
-                composition_range: None,
-                popup,
-                eaten_keys: [false; 256],
-                cookie_thread_mgr: 0,
-                cookie_thread_focus: 0,
-                cookie_key_sink: false,
-                cookie_text_layout: 0,
-                selected_index: 0,
-                current_page: 0,
-                last_commit: None,
+                composition: None,
+                selected: 0,
+                page: 0,
+                tashkeel: None,
+                anchor: None,
                 recent_words: Vec::new(),
-                last_raw_key: (WPARAM(0), LPARAM(0)),
-                tashkeel_editor: None,
+                eaten: [false; 256],
+                popup: None,
+                text_rect: RECT::default(),
             }),
         })
     }
@@ -226,44 +310,66 @@ impl Drop for TextService {
     }
 }
 
+fn toggle_key() -> TF_PRESERVEDKEY {
+    TF_PRESERVEDKEY {
+        uVKey: VK_SPACE.0 as u32,
+        uModifiers: TF_MOD_CONTROL,
+    }
+}
+
 impl ITfTextInputProcessor_Impl for TextService_Impl {
     fn Activate(
         &self,
         ptim: windows_core::Ref<'_, ITfThreadMgr>,
         tid: u32,
     ) -> windows::core::Result<()> {
-        self.ActivateEx(ptim, tid, 0)
+        ITfTextInputProcessorEx_Impl::ActivateEx(self, ptim, tid, 0)
     }
 
     fn Deactivate(&self) -> windows::core::Result<()> {
         guard(Ok(()), || {
-            let mut inner = self.inner.borrow_mut();
-            if let Some(mut popup) = inner.popup.take() {
-                popup.hide();
-                inner.popup = Some(popup);
-            }
-            inner.session.reset();
-            inner.active_composition = None;
-            inner.composition_range = None;
-            inner.last_commit = None;
-            inner.tashkeel_editor = None;
-
-            if let Some(tm) = inner.thread_mgr.take() {
-                if let Ok(source) = tm.cast::<ITfSource>() {
-                    if inner.cookie_thread_mgr != 0 {
-                        let _ = unsafe { source.UnadviseSink(inner.cookie_thread_mgr) };
-                        inner.cookie_thread_mgr = 0;
+            self.finalize_composition();
+            let (tm, tid, c_mgr, c_focus, key_sink, preserved, popup) = {
+                let Ok(mut s) = self.state.try_borrow_mut() else {
+                    return Ok(());
+                };
+                s.anchor = None;
+                s.recent_words.clear();
+                let out = (
+                    s.thread_mgr.take(),
+                    s.client_id,
+                    s.cookie_thread_mgr,
+                    s.cookie_thread_focus,
+                    s.key_sink,
+                    s.preserved_toggle,
+                    s.popup.take(),
+                );
+                s.cookie_thread_mgr = TF_INVALID_COOKIE;
+                s.cookie_thread_focus = TF_INVALID_COOKIE;
+                s.key_sink = false;
+                s.preserved_toggle = false;
+                out
+            };
+            drop(popup); // destroys the window on this (its owning) thread
+            if let Some(tm) = tm {
+                // SAFETY: plain COM calls on the thread manager we were activated with.
+                unsafe {
+                    if let Ok(source) = tm.cast::<ITfSource>() {
+                        for cookie in [c_mgr, c_focus] {
+                            if cookie != TF_INVALID_COOKIE {
+                                let _ = source.UnadviseSink(cookie);
+                            }
+                        }
                     }
-                    if inner.cookie_thread_focus != 0 {
-                        let _ = unsafe { source.UnadviseSink(inner.cookie_thread_focus) };
-                        inner.cookie_thread_focus = 0;
-                    }
-                }
-                if inner.cookie_key_sink {
                     if let Ok(km) = tm.cast::<ITfKeystrokeMgr>() {
-                        let _ = unsafe { km.UnadviseKeyEventSink(inner.client_id) };
+                        if preserved {
+                            let guid = GUID::from_u128(GUID_PRESERVED_TOGGLE);
+                            let _ = km.UnpreserveKey(&guid, &toggle_key());
+                        }
+                        if key_sink {
+                            let _ = km.UnadviseKeyEventSink(tid);
+                        }
                     }
-                    inner.cookie_key_sink = false;
                 }
             }
             Ok(())
@@ -279,54 +385,60 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         dwflags: u32,
     ) -> windows::core::Result<()> {
         guard(Ok(()), || {
-            let tm = ptim.ok()?;
-            let mut inner = self.inner.borrow_mut();
-            inner.thread_mgr = Some(tm.clone());
-            inner.client_id = tid;
-            inner.secure_mode = (dwflags & TF_TMAE_SECUREMODE) != 0;
-
-            // Advise ThreadMgr sinks
-            if let Ok(source) = tm.cast::<ITfSource>() {
-                let this_unk: windows::core::IUnknown = self.to_interface();
-                if let Ok(cookie) = unsafe {
-                    source.AdviseSink(
-                        &windows::Win32::UI::TextServices::ITfThreadMgrEventSink::IID,
-                        &this_unk,
-                    )
-                } {
-                    inner.cookie_thread_mgr = cookie;
-                }
-
-                if let Ok(cookie_focus) = unsafe {
-                    source.AdviseSink(
-                        &windows::Win32::UI::TextServices::ITfThreadFocusSink::IID,
-                        &this_unk,
-                    )
-                } {
-                    inner.cookie_thread_focus = cookie_focus;
-                }
-            }
-
-            // Advise KeyEventSink
-            if let Ok(km) = tm.cast::<ITfKeystrokeMgr>() {
-                let this_key_sink: ITfKeyEventSink = self.to_interface();
-                if unsafe { km.AdviseKeyEventSink(tid, &this_key_sink, true) }.is_ok() {
-                    inner.cookie_key_sink = true;
-                }
-
-                // Register preserved key (Ctrl+Space toggle)
-                let preserved_guid = GUID::from_u128(GUID_PRESERVED_TOGGLE);
-                let preserved_key = windows::Win32::UI::TextServices::TF_PRESERVEDKEY {
-                    uVKey: windows::Win32::UI::Input::KeyboardAndMouse::VK_SPACE.0 as u32,
-                    uModifiers: windows::Win32::UI::TextServices::TF_MOD_CONTROL,
+            let tm = ptim.ok()?.clone();
+            let use_ctrl_space = {
+                let Ok(mut s) = self.state.try_borrow_mut() else {
+                    return Err(E_FAIL.into());
                 };
-                let desc: Vec<u16> = "Arabic/Latin Toggle"
-                    .encode_utf16()
-                    .chain(std::iter::once(0))
-                    .collect();
-                let _ = unsafe { km.PreserveKey(tid, &preserved_guid, &preserved_key, &desc) };
+                s.thread_mgr = Some(tm.clone());
+                s.client_id = tid;
+                s.secure_mode = (dwflags & TF_TMAE_SECUREMODE) != 0;
+                s.arabic_mode = true;
+                Toggle::parse(&s.config.mode_toggle) == Toggle::CtrlSpace
+            };
+
+            let mut cookies = (TF_INVALID_COOKIE, TF_INVALID_COOKIE);
+            let mut key_sink = false;
+            let mut preserved = false;
+            let mut atoms = (0i32, 0i32);
+            // SAFETY: plain COM calls; no state borrow is held.
+            unsafe {
+                if let Ok(source) = tm.cast::<ITfSource>() {
+                    let unk: windows::core::IUnknown = self.to_interface();
+                    if let Ok(c) = source.AdviseSink(&ITfThreadMgrEventSink::IID, &unk) {
+                        cookies.0 = c;
+                    }
+                    if let Ok(c) = source.AdviseSink(&ITfThreadFocusSink::IID, &unk) {
+                        cookies.1 = c;
+                    }
+                }
+                if let Ok(km) = tm.cast::<ITfKeystrokeMgr>() {
+                    let sink: ITfKeyEventSink = self.to_interface();
+                    key_sink = km.AdviseKeyEventSink(tid, &sink, true).is_ok();
+                    if use_ctrl_space {
+                        let guid = GUID::from_u128(GUID_PRESERVED_TOGGLE);
+                        let desc = utf16("Type3arabi Arabic/Latin");
+                        preserved = km.PreserveKey(tid, &guid, &toggle_key(), &desc).is_ok();
+                    }
+                }
+                if let Ok(cat) = CoCreateInstance::<_, ITfCategoryMgr>(
+                    &CLSID_TF_CategoryMgr,
+                    None,
+                    CLSCTX_INPROC_SERVER,
+                ) {
+                    atoms.0 = cat.RegisterGUID(&GUID_ATTR_INPUT).unwrap_or(0) as i32;
+                    atoms.1 = cat.RegisterGUID(&GUID_ATTR_TASHKEEL).unwrap_or(0) as i32;
+                }
             }
 
+            if let Ok(mut s) = self.state.try_borrow_mut() {
+                s.cookie_thread_mgr = cookies.0;
+                s.cookie_thread_focus = cookies.1;
+                s.key_sink = key_sink;
+                s.preserved_toggle = preserved;
+                s.attr_input = atoms.0;
+                s.attr_tashkeel = atoms.1;
+            }
             Ok(())
         })
     }
@@ -335,61 +447,50 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
 impl ITfThreadMgrEventSink_Impl for TextService_Impl {
     fn OnInitDocumentMgr(
         &self,
-        _pdim: windows_core::Ref<'_, ITfDocumentMgr>,
+        _: windows_core::Ref<'_, ITfDocumentMgr>,
     ) -> windows::core::Result<()> {
         Ok(())
     }
     fn OnUninitDocumentMgr(
         &self,
-        _pdim: windows_core::Ref<'_, ITfDocumentMgr>,
+        _: windows_core::Ref<'_, ITfDocumentMgr>,
     ) -> windows::core::Result<()> {
         Ok(())
     }
     fn OnSetFocus(
         &self,
-        _pdimfocus: windows_core::Ref<'_, ITfDocumentMgr>,
-        _pdimprevfocus: windows_core::Ref<'_, ITfDocumentMgr>,
+        _focus: windows_core::Ref<'_, ITfDocumentMgr>,
+        _prev: windows_core::Ref<'_, ITfDocumentMgr>,
     ) -> windows::core::Result<()> {
-        let mut inner = self.inner.borrow_mut();
-        if let Some(popup) = &mut inner.popup {
-            popup.hide();
-        }
-        inner.session.reset();
-        inner.active_composition = None;
-        inner.composition_range = None;
-        inner.last_commit = None;
+        guard(Ok(()), || {
+            self.finalize_composition();
+            if let Ok(mut s) = self.state.try_borrow_mut() {
+                s.anchor = None;
+                s.recent_words.clear();
+            }
+            Ok(())
+        })
+    }
+    fn OnPushContext(&self, _: windows_core::Ref<'_, ITfContext>) -> windows::core::Result<()> {
         Ok(())
     }
-    fn OnPushContext(&self, _pic: windows_core::Ref<'_, ITfContext>) -> windows::core::Result<()> {
-        Ok(())
-    }
-    fn OnPopContext(&self, _pic: windows_core::Ref<'_, ITfContext>) -> windows::core::Result<()> {
+    fn OnPopContext(&self, _: windows_core::Ref<'_, ITfContext>) -> windows::core::Result<()> {
         Ok(())
     }
 }
 
 impl ITfThreadFocusSink_Impl for TextService_Impl {
     fn OnSetThreadFocus(&self) -> windows::core::Result<()> {
-        Ok(())
+        guard(Ok(()), || {
+            self.show_popup();
+            Ok(())
+        })
     }
     fn OnKillThreadFocus(&self) -> windows::core::Result<()> {
-        let mut inner = self.inner.borrow_mut();
-        if let Some(popup) = &mut inner.popup {
-            popup.hide();
-        }
-        inner.last_commit = None;
-        Ok(())
-    }
-}
-
-impl ITfTextLayoutSink_Impl for TextService_Impl {
-    fn OnLayoutChange(
-        &self,
-        _pic: windows_core::Ref<'_, ITfContext>,
-        _lcode: TfLayoutCode,
-        _pview: windows_core::Ref<'_, ITfContextView>,
-    ) -> windows::core::Result<()> {
-        Ok(())
+        guard(Ok(()), || {
+            self.hide_popup();
+            Ok(())
+        })
     }
 }
 
@@ -405,39 +506,10 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
         lparam: LPARAM,
     ) -> windows::core::Result<BOOL> {
         guard(Ok(BOOL::from(false)), || {
-            unsafe {
-                if GetMessageExtraInfo().0 as usize == T3A_REINJECT_MAGIC {
-                    return Ok(BOOL::from(false));
-                }
+            let (decision, key) = self.decide(pic.as_ref(), wparam, lparam);
+            if !decision.eat && key != Key::Modifier {
+                self.drop_anchor();
             }
-
-            let inner = self.inner.borrow();
-            let (key, mods) = translate_key(wparam, lparam);
-            let ctx_mode =
-                evaluate_context_mode(pic.as_ref(), inner.arabic_mode, inner.secure_mode);
-
-            let raw = inner.session.candidates().raw.to_ascii_lowercase();
-            let buffer_is_article =
-                inner.config.article_joining && matches!(raw.as_str(), "el" | "al" | "il" | "l");
-
-            let reedit_anchor = inner.last_commit.is_some() && inner.config.reedit_backspace;
-
-            let state = RouterState {
-                context: ctx_mode,
-                composing: !inner.session.is_empty(),
-                popup: if inner.tashkeel_editor.is_some() {
-                    Popup::Tashkeel
-                } else if inner.popup.as_ref().is_some_and(|p| p.is_visible()) {
-                    Popup::List
-                } else {
-                    Popup::Hidden
-                },
-                reedit_anchor,
-                buffer_is_article,
-                toggle: Toggle::parse(&inner.config.mode_toggle),
-            };
-
-            let decision = classify(&state, key, mods);
             Ok(BOOL::from(decision.eat))
         })
     }
@@ -449,60 +521,23 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
         lparam: LPARAM,
     ) -> windows::core::Result<BOOL> {
         guard(Ok(BOOL::from(false)), || {
-            unsafe {
-                if GetMessageExtraInfo().0 as usize == T3A_REINJECT_MAGIC {
-                    return Ok(BOOL::from(false));
-                }
+            let (decision, key) = self.decide(pic.as_ref(), wparam, lparam);
+            if decision.action != Action::ReEdit && key != Key::Modifier {
+                self.drop_anchor();
             }
-
-            let (key, mods) = translate_key(wparam, lparam);
-
-            let action = {
-                let inner = self.inner.borrow();
-                inner.user_store.sync();
-
-                let ctx_mode =
-                    evaluate_context_mode(pic.as_ref(), inner.arabic_mode, inner.secure_mode);
-
-                let raw = inner.session.candidates().raw.to_ascii_lowercase();
-                let buffer_is_article = inner.config.article_joining
-                    && matches!(raw.as_str(), "el" | "al" | "il" | "l");
-
-                let reedit_anchor = inner.last_commit.is_some() && inner.config.reedit_backspace;
-
-                let state = RouterState {
-                    context: ctx_mode,
-                    composing: !inner.session.is_empty(),
-                    popup: if inner.tashkeel_editor.is_some() {
-                        Popup::Tashkeel
-                    } else if inner.popup.as_ref().is_some_and(|p| p.is_visible()) {
-                        Popup::List
-                    } else {
-                        Popup::Hidden
-                    },
-                    reedit_anchor,
-                    buffer_is_article,
-                    toggle: Toggle::parse(&inner.config.mode_toggle),
-                };
-                let decision = classify(&state, key, mods);
-                if !decision.eat {
-                    return Ok(BOOL::from(false));
-                }
-                decision.action
+            let Some(ctx) = pic.as_ref() else {
+                return Ok(BOOL::from(false));
             };
-
-            {
-                let mut inner = self.inner.borrow_mut();
-                let vk_idx = wparam.0 & 0xFF;
-                inner.eaten_keys[vk_idx] = true;
-                inner.last_raw_key = (wparam, lparam);
-                if action != Action::ReEdit && inner.session.is_empty() {
-                    inner.last_commit = None;
+            if !decision.eat {
+                return Ok(BOOL::from(false));
+            }
+            let eaten = self.execute(ctx, decision.action);
+            if eaten {
+                if let Ok(mut s) = self.state.try_borrow_mut() {
+                    s.eaten[wparam.0 & 0xFF] = true;
                 }
             }
-
-            self.execute_action(pic.as_ref(), action)?;
-            Ok(BOOL::from(true))
+            Ok(BOOL::from(eaten))
         })
     }
 
@@ -512,9 +547,14 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
         wparam: WPARAM,
         _lparam: LPARAM,
     ) -> windows::core::Result<BOOL> {
-        let inner = self.inner.borrow();
-        let vk_idx = wparam.0 & 0xFF;
-        Ok(BOOL::from(inner.eaten_keys[vk_idx]))
+        guard(Ok(BOOL::from(false)), || {
+            let eaten = self
+                .state
+                .try_borrow()
+                .map(|s| s.eaten[wparam.0 & 0xFF])
+                .unwrap_or(false);
+            Ok(BOOL::from(eaten))
+        })
     }
 
     fn OnKeyUp(
@@ -523,811 +563,770 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
         wparam: WPARAM,
         _lparam: LPARAM,
     ) -> windows::core::Result<BOOL> {
-        let mut inner = self.inner.borrow_mut();
-        let vk_idx = wparam.0 & 0xFF;
-        let eaten = inner.eaten_keys[vk_idx];
-        inner.eaten_keys[vk_idx] = false;
-        Ok(BOOL::from(eaten))
+        guard(Ok(BOOL::from(false)), || {
+            let eaten = match self.state.try_borrow_mut() {
+                Ok(mut s) => std::mem::replace(&mut s.eaten[wparam.0 & 0xFF], false),
+                Err(_) => false,
+            };
+            Ok(BOOL::from(eaten))
+        })
     }
 
     fn OnPreservedKey(
         &self,
-        _pic: windows_core::Ref<'_, ITfContext>,
+        pic: windows_core::Ref<'_, ITfContext>,
         rguid: *const GUID,
     ) -> windows::core::Result<BOOL> {
-        if rguid.is_null() {
-            return Err(windows::core::Error::from(E_POINTER));
-        }
-        let preserved_guid = GUID::from_u128(GUID_PRESERVED_TOGGLE);
-        // SAFETY: rguid is verified non-null above
-        if unsafe { *rguid } == preserved_guid {
-            let mut inner = self.inner.borrow_mut();
-            inner.arabic_mode = !inner.arabic_mode;
+        guard(Ok(BOOL::from(false)), || {
+            // SAFETY: TSF passes a valid GUID pointer; checked for null.
+            if rguid.is_null() || unsafe { *rguid } != GUID::from_u128(GUID_PRESERVED_TOGGLE) {
+                return Ok(BOOL::from(false));
+            }
+            let composing = self
+                .state
+                .try_borrow()
+                .map(|s| s.composing())
+                .unwrap_or(false);
+            match (composing, pic.as_ref()) {
+                (true, Some(ctx)) => {
+                    self.execute(ctx, Action::CommitThenToggle);
+                }
+                _ => self.toggle_mode(),
+            }
             Ok(BOOL::from(true))
-        } else {
-            Ok(BOOL::from(false))
-        }
+        })
     }
 }
 
 impl ITfCompositionSink_Impl for TextService_Impl {
     fn OnCompositionTerminated(
         &self,
-        _ecwrite: u32,
-        _pcomposition: windows_core::Ref<'_, ITfComposition>,
+        ecwrite: u32,
+        pcomposition: windows_core::Ref<'_, ITfComposition>,
     ) -> windows::core::Result<()> {
-        let mut inner = self.inner.borrow_mut();
-        inner.active_composition = None;
-        inner.composition_range = None;
-        inner.tashkeel_editor = None;
-        inner.session.reset();
-        if let Some(popup) = &mut inner.popup {
-            popup.hide();
-        }
-        Ok(())
+        guard(Ok(()), || {
+            // The host ended our composition (click elsewhere, app command…). The text it shows
+            // stays; drop our side of it. No learning (docs/02 §8).
+            let ctx_attr = pcomposition.as_ref().and_then(|c| {
+                // SAFETY: COM calls on the composition being terminated, inside its edit cookie.
+                unsafe {
+                    let range = c.GetRange().ok()?;
+                    let ctx = range.GetContext().ok()?;
+                    Some((ctx, range))
+                }
+            });
+            if let Some((ctx, range)) = ctx_attr {
+                // SAFETY: ecwrite is the write cookie TSF granted for this callback.
+                unsafe { clear_attr(&ctx, ecwrite, &range) };
+            }
+            if let Ok(mut s) = self.state.try_borrow_mut() {
+                s.composition = None;
+                s.session.reset();
+                s.tashkeel = None;
+                s.selected = 0;
+                s.page = 0;
+            }
+            self.hide_popup();
+            Ok(())
+        })
     }
 }
 
 impl ITfDisplayAttributeProvider_Impl for TextService_Impl {
     fn EnumDisplayAttributeInfo(&self) -> windows::core::Result<IEnumTfDisplayAttributeInfo> {
-        Err(windows::core::Error::from(
-            windows::Win32::Foundation::E_NOTIMPL,
-        ))
+        guard(
+            Err(E_FAIL.into()),
+            || Ok(EnumDisplayAttributeInfo::create()),
+        )
     }
 
     fn GetDisplayAttributeInfo(
         &self,
-        _guid: *const GUID,
+        guid: *const GUID,
     ) -> windows::core::Result<ITfDisplayAttributeInfo> {
-        Err(windows::core::Error::from(
-            windows::Win32::Foundation::E_NOTIMPL,
-        ))
+        guard(Err(E_FAIL.into()), || {
+            if guid.is_null() {
+                return Err(E_INVALIDARG.into());
+            }
+            // SAFETY: checked non-null.
+            DisplayAttributeInfo::lookup(unsafe { &*guid }).ok_or_else(|| E_INVALIDARG.into())
+        })
     }
 }
 
-impl ITfCompartmentEventSink_Impl for TextService_Impl {
-    fn OnChange(&self, _rguid: *const GUID) -> windows::core::Result<()> {
-        Ok(())
-    }
-}
-
-impl ITfFunctionProvider_Impl for TextService_Impl {
-    fn GetType(&self) -> windows::core::Result<GUID> {
-        Ok(CLSID_TYPE3ARABI_TIP)
-    }
-
-    fn GetDescription(&self) -> windows::core::Result<BSTR> {
-        Ok(BSTR::from("Type3arabi Function Provider"))
-    }
-
-    fn GetFunction(
-        &self,
-        _rguid: *const GUID,
-        riid: *const GUID,
-    ) -> windows::core::Result<windows::core::IUnknown> {
-        if riid.is_null() {
-            return Err(windows::core::Error::from(E_POINTER));
-        }
-        let unk: windows::core::IUnknown = self.to_interface();
-        Ok(unk)
-    }
-}
-
-impl ITfFunction_Impl for TextService_Impl {
-    fn GetDisplayName(&self) -> windows::core::Result<BSTR> {
-        Ok(BSTR::from("Type3arabi"))
-    }
-}
-
-impl ITfFnConfigure_Impl for TextService_Impl {
-    fn Show(
-        &self,
-        _hwndparent: HWND,
-        _langid: u16,
-        _rguidprofile: *const GUID,
-    ) -> windows::core::Result<()> {
-        Ok(())
-    }
-}
+// ---------------------------------------------------------------------------------------------
+// Key handling
 
 impl TextService_Impl {
-    fn execute_action(
-        &self,
-        pic: Option<&ITfContext>,
-        action: Action,
-    ) -> windows::core::Result<()> {
-        let Some(ctx) = pic else {
-            return Ok(());
+    /// Pure routing decision (docs/02 §5.1): identical for OnTestKeyDown and OnKeyDown.
+    fn decide(&self, ctx: Option<&ITfContext>, wparam: WPARAM, lparam: LPARAM) -> (Decision, Key) {
+        // SAFETY: GetMessageExtraInfo has no preconditions.
+        if unsafe { GetMessageExtraInfo() }.0 as usize == crate::ids::REINJECT_MAGIC {
+            return (PASS, Key::Other);
+        }
+        let Ok(arabic) = self.state.try_borrow().map(|s| s.arabic_mode) else {
+            return (PASS, Key::Other);
         };
+        let mode = evaluate_context_mode(ctx, arabic);
+        let (key, mods) = translate_key(wparam, lparam);
+        let Ok(s) = self.state.try_borrow() else {
+            return (PASS, key);
+        };
+        let raw = s.session.candidates().raw.to_ascii_lowercase();
+        let rs = RouterState {
+            context: mode,
+            composing: s.composing(),
+            popup: if s.tashkeel.is_some() {
+                Popup::Tashkeel
+            } else if s.composing() {
+                Popup::List
+            } else {
+                Popup::Hidden
+            },
+            reedit_anchor: s.anchor.is_some() && s.config.reedit_backspace,
+            buffer_is_article: s.config.article_joining
+                && matches!(raw.as_str(), "el" | "al" | "il" | "l"),
+            toggle: Toggle::parse(&s.config.mode_toggle),
+        };
+        (classify(&rs, key, mods), key)
+    }
 
+    fn drop_anchor(&self) {
+        if let Ok(mut s) = self.state.try_borrow_mut() {
+            s.anchor = None;
+        }
+    }
+
+    fn toggle_mode(&self) {
+        if let Ok(mut s) = self.state.try_borrow_mut() {
+            s.arabic_mode = !s.arabic_mode;
+        }
+    }
+
+    /// Execute an eaten key's action. Returns whether the key stays eaten (false = let the host
+    /// also process it, used for commit-then-pass keys like Enter/arrows/Ctrl combos).
+    fn execute(&self, ctx: &ITfContext, action: Action) -> bool {
         match action {
-            Action::AppendChar(ch) => {
-                let mut inner = self.inner.borrow_mut();
-                if inner.session.is_empty() {
-                    let prev_words = inner.recent_words.clone();
-                    let prev_refs: Vec<&str> = prev_words.iter().map(|s| s.as_str()).collect();
-                    inner.session.set_context(&prev_refs);
-                }
-                let store = Arc::clone(&inner.user_store);
-                inner.session.push(InputChar::new(ch), store.as_ref());
-                inner.selected_index = 0;
-                inner.current_page = 0;
-                self.sync_composition_and_ui(ctx, &mut inner)?;
+            Action::Pass => false,
+            Action::AppendChar(c) => {
+                self.push_char(ctx, InputChar::new(c));
+                true
             }
-            Action::AppendLiteralDigit(digit) => {
-                let mut inner = self.inner.borrow_mut();
-                if inner.session.is_empty() {
-                    let prev_words = inner.recent_words.clone();
-                    let prev_refs: Vec<&str> = prev_words.iter().map(|s| s.as_str()).collect();
-                    inner.session.set_context(&prev_refs);
-                }
-                let store = Arc::clone(&inner.user_store);
-                inner.session.push(InputChar::numpad(digit), store.as_ref());
-                inner.selected_index = 0;
-                inner.current_page = 0;
-                self.sync_composition_and_ui(ctx, &mut inner)?;
+            Action::AppendLiteralDigit(d) => {
+                self.push_char(ctx, InputChar::numpad(d));
+                true
             }
-            Action::ArticleHyphen => {
-                // Article hyphen '-' after el/al/il/l is swallowed
-            }
+            Action::ArticleHyphen => true,
             Action::Backspace => {
-                let mut inner = self.inner.borrow_mut();
-                let store = Arc::clone(&inner.user_store);
-                inner.session.pop(store.as_ref());
-                inner.selected_index = 0;
-                inner.current_page = 0;
-                if inner.session.is_empty() {
-                    self.end_composition_internal(ctx, &mut inner, None)?;
-                } else {
-                    self.sync_composition_and_ui(ctx, &mut inner)?;
-                }
-            }
-            Action::ReEdit => {
-                let mut inner = self.inner.borrow_mut();
-                if let Some(mut anchor) = inner.last_commit.take() {
-                    if anchor.had_trailing_space {
-                        anchor.had_trailing_space = false;
-                        inner.last_commit = Some(anchor);
-                        let tid = inner.client_id;
-                        let ctx_clone = ctx.clone();
-                        let edit_session = EditSession::new(move |ec| unsafe {
-                            let insert_at_sel: ITfInsertAtSelection = ctx_clone.cast()?;
-                            let range =
-                                insert_at_sel.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &[])?;
-                            let mut shifted = 0i32;
-                            let _ = range.ShiftStart(ec, -1, &mut shifted, std::ptr::null());
-                            let _ = range.SetText(ec, 0, &[]);
-                            let _ = range.Collapse(ec, TF_ANCHOR_END);
-                            let sel = TF_SELECTION {
-                                range: std::mem::ManuallyDrop::new(Some(range)),
-                                style: TF_SELECTIONSTYLE {
-                                    ase: windows::Win32::UI::TextServices::TF_AE_NONE,
-                                    fInterimChar: BOOL::from(false),
-                                },
-                            };
-                            let _ = ctx_clone.SetSelection(ec, &[sel]);
-                            Ok(())
-                        });
-                        unsafe {
-                            let session_inst: windows::Win32::UI::TextServices::ITfEditSession =
-                                edit_session.into();
-                            let _ = ctx.RequestEditSession(
-                                tid,
-                                &session_inst,
-                                TF_ES_READWRITE | TF_ES_ASYNCDONTCARE,
-                            );
-                        }
+                let op = {
+                    let Ok(mut s) = self.state.try_borrow_mut() else {
+                        return false;
+                    };
+                    with_scorer(|u| s.session.pop(u).is_some());
+                    s.selected = 0;
+                    s.page = 0;
+                    if s.session.is_empty() {
+                        None
                     } else {
-                        let delete_len = anchor.text.encode_utf16().count() as i32;
-                        let tid = inner.client_id;
-                        let ctx_clone = ctx.clone();
-                        let edit_session = EditSession::new(move |ec| unsafe {
-                            let insert_at_sel: ITfInsertAtSelection = ctx_clone.cast()?;
-                            let range =
-                                insert_at_sel.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &[])?;
-                            let mut shifted = 0i32;
-                            let _ =
-                                range.ShiftStart(ec, -delete_len, &mut shifted, std::ptr::null());
-                            let _ = range.SetText(ec, 0, &[]);
-                            let _ = range.Collapse(ec, TF_ANCHOR_END);
-                            let sel = TF_SELECTION {
-                                range: std::mem::ManuallyDrop::new(Some(range)),
-                                style: TF_SELECTIONSTYLE {
-                                    ase: windows::Win32::UI::TextServices::TF_AE_NONE,
-                                    fInterimChar: BOOL::from(false),
-                                },
-                            };
-                            let _ = ctx_clone.SetSelection(ec, &[sel]);
-                            Ok(())
-                        });
-                        unsafe {
-                            let session_inst: windows::Win32::UI::TextServices::ITfEditSession =
-                                edit_session.into();
-                            let _ = ctx.RequestEditSession(
-                                tid,
-                                &session_inst,
-                                TF_ES_READWRITE | TF_ES_ASYNCDONTCARE,
-                            );
+                        Some(s.preview_op())
+                    }
+                };
+                match op {
+                    Some(op) => self.run(ctx, op),
+                    None => {
+                        self.hide_popup();
+                        self.run(
+                            ctx,
+                            DocOp::Commit {
+                                text: Vec::new(),
+                                suffix: Vec::new(),
+                            },
+                        );
+                    }
+                }
+                true
+            }
+            Action::ReEdit => self.reedit(ctx),
+            Action::NextCandidate | Action::PrevCandidate | Action::NextPage | Action::PrevPage => {
+                let op = {
+                    let Ok(mut s) = self.state.try_borrow_mut() else {
+                        return false;
+                    };
+                    let total = s.session.candidates().items.len();
+                    if total == 0 {
+                        return true;
+                    }
+                    let ps = s.page_size();
+                    match action {
+                        Action::NextCandidate => s.selected = (s.selected + 1) % total,
+                        Action::PrevCandidate => s.selected = (s.selected + total - 1) % total,
+                        Action::NextPage if (s.page + 1) * ps < total => {
+                            s.selected = (s.page + 1) * ps
                         }
-
-                        let store = Arc::clone(&inner.user_store);
-                        inner.session.restore(&anchor.latin, store.as_ref());
-                        inner.selected_index = anchor
-                            .candidate_index
-                            .min(inner.session.candidates().items.len());
-                        let page_size = inner.config.candidates_per_page.clamp(5, 9) as usize;
-                        inner.current_page =
-                            if inner.selected_index < inner.session.candidates().items.len() {
-                                inner.selected_index / page_size
-                            } else {
-                                0
-                            };
-                        self.sync_composition_and_ui(ctx, &mut inner)?;
+                        Action::PrevPage if s.page > 0 => s.selected = (s.page - 1) * ps,
+                        _ => {}
                     }
-                }
-            }
-            Action::NextCandidate => {
-                let mut inner = self.inner.borrow_mut();
-                let total = inner.session.candidates().items.len() + 1; // +1 for raw Latin
-                if total > 0 {
-                    inner.selected_index = (inner.selected_index + 1) % total;
-                    let page_size = inner.config.candidates_per_page.clamp(5, 9) as usize;
-                    if inner.selected_index < inner.session.candidates().items.len() {
-                        inner.current_page = inner.selected_index / page_size;
-                    }
-                    self.sync_composition_and_ui(ctx, &mut inner)?;
-                }
-            }
-            Action::PrevCandidate => {
-                let mut inner = self.inner.borrow_mut();
-                let total = inner.session.candidates().items.len() + 1;
-                if total > 0 {
-                    if inner.selected_index == 0 {
-                        inner.selected_index = total - 1;
-                    } else {
-                        inner.selected_index -= 1;
-                    }
-                    let page_size = inner.config.candidates_per_page.clamp(5, 9) as usize;
-                    if inner.selected_index < inner.session.candidates().items.len() {
-                        inner.current_page = inner.selected_index / page_size;
-                    }
-                    self.sync_composition_and_ui(ctx, &mut inner)?;
-                }
-            }
-            Action::NextPage => {
-                let mut inner = self.inner.borrow_mut();
-                let page_size = inner.config.candidates_per_page.clamp(5, 9) as usize;
-                let total_pages = inner
-                    .session
-                    .candidates()
-                    .items
-                    .len()
-                    .div_ceil(page_size)
-                    .max(1);
-                if inner.current_page + 1 < total_pages {
-                    inner.current_page += 1;
-                    inner.selected_index = inner.current_page * page_size;
-                    self.sync_composition_and_ui(ctx, &mut inner)?;
-                }
-            }
-            Action::PrevPage => {
-                let mut inner = self.inner.borrow_mut();
-                let page_size = inner.config.candidates_per_page.clamp(5, 9) as usize;
-                if inner.current_page > 0 {
-                    inner.current_page -= 1;
-                    inner.selected_index = inner.current_page * page_size;
-                    self.sync_composition_and_ui(ctx, &mut inner)?;
-                }
+                    s.page = s.selected / ps;
+                    s.preview_op()
+                };
+                self.run(ctx, op);
+                true
             }
             Action::CommitSpace => {
-                let mut inner = self.inner.borrow_mut();
-                let selected = inner.selected_index;
-                self.commit_candidate_internal(ctx, &mut inner, selected, CommitHow::Space)?;
+                self.commit(ctx, CommitHow::Space, None);
+                true
             }
             Action::CommitNoSpace => {
-                let mut inner = self.inner.borrow_mut();
-                let selected = inner.selected_index;
-                self.commit_candidate_internal(ctx, &mut inner, selected, CommitHow::Enter)?;
+                self.commit(ctx, CommitHow::Enter, None);
+                true
             }
             Action::CommitWithHarakat => {
-                let mut inner = self.inner.borrow_mut();
-                let selected = inner.selected_index;
-                self.commit_candidate_internal(ctx, &mut inner, selected, CommitHow::WithHarakat)?;
+                self.commit(ctx, CommitHow::WithHarakat, None);
+                true
             }
             Action::CommitRaw => {
-                let mut inner = self.inner.borrow_mut();
-                self.commit_candidate_internal(ctx, &mut inner, usize::MAX, CommitHow::Enter)?;
-            }
-            Action::CommitAndReinject => {
-                let (wparam, lparam) = {
-                    let mut inner = self.inner.borrow_mut();
-                    let selected = inner.selected_index;
-                    let raw = inner.last_raw_key;
-                    self.commit_candidate_internal(ctx, &mut inner, selected, CommitHow::Enter)?;
-                    raw
-                };
-                reinject_key(wparam, lparam);
+                if let Ok(mut s) = self.state.try_borrow_mut() {
+                    s.tashkeel = None;
+                    s.selected = s.session.candidates().items.len().saturating_sub(1);
+                }
+                self.commit(ctx, CommitHow::Enter, None);
+                true
             }
             Action::CommitThenPunctuation(c) => {
-                let (punct, tid) = {
-                    let mut inner = self.inner.borrow_mut();
-                    let punct =
-                        t3a_engine::display::punctuation(c, inner.config.arabic_punctuation);
-                    let selected = inner.selected_index;
-                    let tid = inner.client_id;
-                    self.commit_candidate_internal(ctx, &mut inner, selected, CommitHow::Enter)?;
-                    (punct, tid)
-                };
-                let punct_utf16: Vec<u16> = [punct as u16].to_vec();
-                let ctx_clone = ctx.clone();
-                let edit_session = EditSession::new(move |ec| unsafe {
-                    let insert_at_sel: ITfInsertAtSelection = ctx_clone.cast()?;
-                    let range =
-                        insert_at_sel.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &punct_utf16)?;
-                    range.Collapse(ec, TF_ANCHOR_END)?;
-                    let sel = TF_SELECTION {
-                        range: std::mem::ManuallyDrop::new(Some(range)),
-                        style: TF_SELECTIONSTYLE {
-                            ase: windows::Win32::UI::TextServices::TF_AE_NONE,
-                            fInterimChar: BOOL::from(false),
-                        },
-                    };
-                    ctx_clone.SetSelection(ec, &[sel])?;
-                    Ok(())
-                });
-                unsafe {
-                    let session_inst: windows::Win32::UI::TextServices::ITfEditSession =
-                        edit_session.into();
-                    let _ = ctx.RequestEditSession(
-                        tid,
-                        &session_inst,
-                        TF_ES_READWRITE | TF_ES_ASYNCDONTCARE,
-                    );
-                }
+                self.commit(ctx, CommitHow::Punctuation, Some(c));
+                true
+            }
+            Action::CommitAndReinject => {
+                self.commit(ctx, CommitHow::Enter, None);
+                false // the host now receives the key itself (docs/02 §5.3, pass-through variant)
             }
             Action::InsertLatin(c) => {
-                let (latin_utf16, tid) = {
-                    let inner = self.inner.borrow();
-                    ([c as u16].to_vec(), inner.client_id)
-                };
-                let ctx_clone = ctx.clone();
-                let edit_session = EditSession::new(move |ec| unsafe {
-                    let insert_at_sel: ITfInsertAtSelection = ctx_clone.cast()?;
-                    let range =
-                        insert_at_sel.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &latin_utf16)?;
-                    range.Collapse(ec, TF_ANCHOR_END)?;
-                    let sel = TF_SELECTION {
-                        range: std::mem::ManuallyDrop::new(Some(range)),
-                        style: TF_SELECTIONSTYLE {
-                            ase: windows::Win32::UI::TextServices::TF_AE_NONE,
-                            fInterimChar: BOOL::from(false),
-                        },
-                    };
-                    ctx_clone.SetSelection(ec, &[sel])?;
-                    Ok(())
-                });
-                unsafe {
-                    let session_inst: windows::Win32::UI::TextServices::ITfEditSession =
-                        edit_session.into();
-                    let _ = ctx.RequestEditSession(
-                        tid,
-                        &session_inst,
-                        TF_ES_READWRITE | TF_ES_ASYNCDONTCARE,
-                    );
-                }
+                self.run(ctx, DocOp::Insert(utf16(c.encode_utf8(&mut [0; 4]))));
+                true
             }
             Action::InsertPunctuation(c) => {
-                let (punct_utf16, tid) = {
-                    let inner = self.inner.borrow();
-                    let punct =
-                        t3a_engine::display::punctuation(c, inner.config.arabic_punctuation);
-                    ([punct as u16].to_vec(), inner.client_id)
-                };
-                let ctx_clone = ctx.clone();
-                let edit_session = EditSession::new(move |ec| unsafe {
-                    let insert_at_sel: ITfInsertAtSelection = ctx_clone.cast()?;
-                    let range =
-                        insert_at_sel.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &punct_utf16)?;
-                    range.Collapse(ec, TF_ANCHOR_END)?;
-                    let sel = TF_SELECTION {
-                        range: std::mem::ManuallyDrop::new(Some(range)),
-                        style: TF_SELECTIONSTYLE {
-                            ase: windows::Win32::UI::TextServices::TF_AE_NONE,
-                            fInterimChar: BOOL::from(false),
-                        },
-                    };
-                    ctx_clone.SetSelection(ec, &[sel])?;
-                    Ok(())
-                });
-                unsafe {
-                    let session_inst: windows::Win32::UI::TextServices::ITfEditSession =
-                        edit_session.into();
-                    let _ = ctx.RequestEditSession(
-                        tid,
-                        &session_inst,
-                        TF_ES_READWRITE | TF_ES_ASYNCDONTCARE,
-                    );
-                }
+                let p = self
+                    .state
+                    .try_borrow()
+                    .map(|s| t3a_engine::display::punctuation(c, s.config.arabic_punctuation))
+                    .unwrap_or(c);
+                self.run(ctx, DocOp::Insert(utf16(p.encode_utf8(&mut [0; 4]))));
+                true
             }
             Action::ToggleMode => {
-                let mut inner = self.inner.borrow_mut();
-                inner.arabic_mode = !inner.arabic_mode;
+                self.toggle_mode();
+                true
             }
             Action::CommitThenToggle => {
-                let mut inner = self.inner.borrow_mut();
-                let selected = inner.selected_index;
-                self.commit_candidate_internal(ctx, &mut inner, selected, CommitHow::Enter)?;
-                inner.arabic_mode = !inner.arabic_mode;
+                self.commit(ctx, CommitHow::Enter, None);
+                self.toggle_mode();
+                true
             }
             Action::OpenTashkeel => {
-                let (word, picks, from_typing) = {
-                    let inner = self.inner.borrow();
-                    let selected = inner.selected_index;
-                    let cands = inner.session.candidates();
-                    if selected < cands.items.len() {
-                        let word = cands.items[selected].text.clone();
-                        let vh = inner.session.vowel_harakat(selected);
-                        let picks = inner.session.vocalizations(selected);
-                        let from_typing = vh.as_ref().is_some_and(|v| picks.first() == Some(v));
-                        (Some(word), picks, from_typing)
-                    } else {
-                        (None, Vec::new(), false)
+                let op = {
+                    let Ok(mut s) = self.state.try_borrow_mut() else {
+                        return false;
+                    };
+                    let idx = s.selected;
+                    let Some(c) = s.session.candidates().items.get(idx) else {
+                        return true;
+                    };
+                    if c.kind == CandidateKind::RawLatin {
+                        return true;
                     }
+                    let word = c.text.clone();
+                    let vh = s.session.vowel_harakat(idx);
+                    let picks = s.session.vocalizations(idx);
+                    let from_typing = vh.is_some() && picks.first() == vh.as_ref();
+                    s.tashkeel = Some(TashkeelEditor::new(&word, picks, from_typing));
+                    s.preview_op()
                 };
-                if let Some(w) = word {
-                    let editor = t3a_engine::TashkeelEditor::new(&w, picks, from_typing);
-                    let mut inner = self.inner.borrow_mut();
-                    inner.tashkeel_editor = Some(editor);
-                    drop(inner);
-                    self.sync_tashkeel_ui(ctx)?;
-                }
+                self.run(ctx, op);
+                true
             }
             Action::Tashkeel(cmd) => {
-                let (action, to_commit) = {
-                    let mut inner = self.inner.borrow_mut();
-                    if let Some(editor) = &mut inner.tashkeel_editor {
-                        let action = editor.apply_cmd(cmd);
-                        let to_commit = match &action {
-                            t3a_engine::TashkeelAction::Commit(w) => Some(w.clone()),
-                            _ => None,
-                        };
-                        (Some(action), to_commit)
-                    } else {
-                        (None, None)
+                let result = {
+                    let Ok(mut s) = self.state.try_borrow_mut() else {
+                        return false;
+                    };
+                    let Some(ed) = s.tashkeel.as_mut() else {
+                        return true;
+                    };
+                    match ed.apply_cmd(cmd) {
+                        TashkeelAction::Continue => Some(s.preview_op()),
+                        TashkeelAction::BackToList => {
+                            s.tashkeel = None;
+                            Some(s.preview_op())
+                        }
+                        TashkeelAction::Commit(_) => None,
                     }
                 };
-                match action {
-                    Some(t3a_engine::TashkeelAction::Continue) => {
-                        self.sync_tashkeel_ui(ctx)?;
-                    }
-                    Some(t3a_engine::TashkeelAction::BackToList) => {
-                        let mut inner = self.inner.borrow_mut();
-                        inner.tashkeel_editor = None;
-                        drop(inner);
-                        self.sync_composition_and_ui(ctx, &mut self.inner.borrow_mut())?;
-                    }
-                    Some(t3a_engine::TashkeelAction::Commit(_)) => {
-                        let mut inner = self.inner.borrow_mut();
-                        inner.tashkeel_editor = None;
-                        self.end_composition_internal(ctx, &mut inner, to_commit.as_deref())?;
-                    }
-                    None => {}
+                match result {
+                    Some(op) => self.run(ctx, op),
+                    None => self.commit(ctx, CommitHow::Enter, None),
                 }
+                true
             }
-            _ => {}
         }
-        Ok(())
     }
 
-    fn commit_candidate_internal(
-        &self,
-        ctx: &ITfContext,
-        inner: &mut Inner,
-        index: usize,
-        how: CommitHow,
-    ) -> windows::core::Result<()> {
-        let latin = inner.session.candidates().raw.clone();
-        let total_cands = inner.session.candidates().items.len();
-
-        let (commit_text, trailing_space, had_rank) = if let Some(editor) =
-            inner.tashkeel_editor.take()
-        {
-            let vocalized = editor.render();
-            if index < total_cands {
-                let top_word = inner
-                    .session
-                    .candidates()
-                    .items
-                    .first()
-                    .map(|c| c.base.clone());
-                let navigated = index > 0;
-                let base = inner.session.candidates().items[index].base.clone();
-                if inner.config.learning_enabled
-                    && !inner.secure_mode
-                    && !t3a_paths::is_app_container()
-                {
-                    inner
-                        .user_store
-                        .record(&latin, &base, index, navigated, top_word.as_deref());
-                }
-            }
-            let has_space = how == CommitHow::Space;
-            (vocalized, has_space, index)
-        } else if index < total_cands {
-            let top_word = inner
-                .session
-                .candidates()
-                .items
-                .first()
-                .map(|c| c.base.clone());
-            let navigated = index > 0;
-            let commit = inner.session.commit(index, how);
-            if commit.learnable
-                && inner.config.learning_enabled
-                && !inner.secure_mode
-                && !t3a_paths::is_app_container()
-            {
-                inner.user_store.record(
-                    &latin,
-                    &commit.base,
-                    index,
-                    navigated,
-                    top_word.as_deref(),
-                );
-            }
-            let has_space = commit.trailing == t3a_engine::session::Trailing::Space;
-            (commit.text, has_space, index)
-        } else {
-            // Raw Latin selected
-            let raw = inner.session.candidates().raw.clone();
-            inner.session.reset();
-            (raw, how == CommitHow::Space, total_cands)
-        };
-
-        let text_to_insert = if trailing_space {
-            format!("{commit_text} ")
-        } else {
-            commit_text.clone()
-        };
-
-        inner.last_commit = Some(ReEditState {
-            latin,
-            text: commit_text.clone(),
-            had_trailing_space: trailing_space,
-            candidate_index: had_rank,
-        });
-
-        inner
-            .recent_words
-            .push(t3a_engine::arabic::strip_marks(&commit_text));
-        if inner.recent_words.len() > 2 {
-            inner.recent_words.remove(0);
-        }
-
-        self.end_composition_internal(ctx, inner, Some(&text_to_insert))
-    }
-
-    fn sync_composition_and_ui(
-        &self,
-        ctx: &ITfContext,
-        inner: &mut Inner,
-    ) -> windows::core::Result<()> {
-        let candidates = inner.session.candidates();
-        let default_text = if inner.selected_index < candidates.items.len() {
-            candidates.items[inner.selected_index].text.as_str()
-        } else if let Some(cand) = candidates.items.first() {
-            cand.text.as_str()
-        } else {
-            candidates.raw.as_str()
-        };
-        let preview_text = if inner.config.inline_preview == "latin" {
-            candidates.raw.as_str()
-        } else {
-            default_text
-        };
-        let preview_utf16: Vec<u16> = preview_text.encode_utf16().collect();
-        let tid = inner.client_id;
-
-        let ctx_clone = ctx.clone();
-        let edit_session = EditSession::new(move |ec| unsafe {
-            let insert_at_sel: ITfInsertAtSelection = ctx_clone.cast()?;
-            let range = insert_at_sel.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &preview_utf16)?;
-
-            range.Collapse(ec, TF_ANCHOR_END)?;
-            let sel = TF_SELECTION {
-                range: std::mem::ManuallyDrop::new(Some(range)),
-                style: TF_SELECTIONSTYLE {
-                    ase: windows::Win32::UI::TextServices::TF_AE_NONE,
-                    fInterimChar: BOOL::from(false),
-                },
+    fn push_char(&self, ctx: &ITfContext, ch: InputChar) {
+        let op = {
+            let Ok(mut s) = self.state.try_borrow_mut() else {
+                return;
             };
-            ctx_clone.SetSelection(ec, &[sel])?;
-            Ok(())
-        });
-
-        unsafe {
-            let session_inst: windows::Win32::UI::TextServices::ITfEditSession =
-                edit_session.into();
-            let _ =
-                ctx.RequestEditSession(tid, &session_inst, TF_ES_READWRITE | TF_ES_ASYNCDONTCARE);
-        }
-
-        // Show popup
-        if let Some(popup) = &mut inner.popup {
-            let page_size = inner.config.candidates_per_page.clamp(5, 9) as usize;
-            let total_items = candidates.items.len();
-            let total_pages = total_items.div_ceil(page_size).max(1);
-            if inner.current_page >= total_pages {
-                inner.current_page = total_pages.saturating_sub(1);
+            if s.session.is_empty() {
+                s.anchor = None;
+                let prev = s.recent_words.clone();
+                let refs: Vec<&str> = prev.iter().map(String::as_str).collect();
+                s.session.set_context(&refs);
+                if let Some(store) = user_store() {
+                    store.sync(); // pick up other processes' learning once per word
+                }
             }
-            let start = inner.current_page * page_size;
-            let end = (start + page_size).min(total_items);
+            with_scorer(|u| {
+                s.session.push(ch, u);
+            });
+            s.selected = 0;
+            s.page = 0;
+            if s.session.is_empty() {
+                return; // character not accepted by the engine
+            }
+            s.preview_op()
+        };
+        self.run(ctx, op);
+    }
 
-            let mut rows = Vec::new();
-            for c in &candidates.items[start..end] {
-                let marker = match c.kind {
-                    t3a_engine::session::CandidateKind::Completion => RowMarker::Completion,
-                    t3a_engine::session::CandidateKind::Custom => RowMarker::Custom,
-                    _ => RowMarker::None,
-                };
-                rows.push(Row {
-                    text: c.text.clone(),
-                    marker,
-                    rtl: true,
+    /// Commit the highlighted candidate (or the tashkeel editor's word), then `suffix`.
+    fn commit(&self, ctx: &ITfContext, how: CommitHow, punct: Option<char>) {
+        let op = {
+            let Ok(mut s) = self.state.try_borrow_mut() else {
+                return;
+            };
+            if !s.composing() {
+                return;
+            }
+            let idx = s.selected;
+            let list = s.session.candidates();
+            let latin = list.raw.clone();
+            let top = list.items.first().map(|c| c.base.clone());
+            let picked_base = list.items.get(idx).map(|c| c.base.clone());
+            let list_key = list.key.clone();
+            let (text, key, base, trailing_space, learnable) = match s.tashkeel.take() {
+                Some(ed) => {
+                    let base = picked_base;
+                    let key = list_key;
+                    s.session.reset();
+                    (
+                        ed.render(),
+                        key,
+                        base.clone().unwrap_or_default(),
+                        how == CommitHow::Space,
+                        base.is_some(),
+                    )
+                }
+                None => {
+                    let c = s.session.commit(idx, how);
+                    let space = c.trailing == Trailing::Space;
+                    (c.text, c.key, c.base, space, c.learnable)
+                }
+            };
+            if learnable && s.config.learning_enabled && !s.secure_mode && !key.is_empty() {
+                if let Some(store) = user_store() {
+                    if !store.is_read_only() {
+                        store.record(&key, &base, idx, idx > 0, top.as_deref());
+                    }
+                }
+            }
+
+            let mut suffix = String::new();
+            if trailing_space {
+                suffix.push(' ');
+            }
+            if let Some(c) = punct {
+                suffix.push(t3a_engine::display::punctuation(
+                    c,
+                    s.config.arabic_punctuation,
+                ));
+            }
+            s.anchor = punct.is_none().then(|| ReEditAnchor {
+                latin,
+                word: text.clone(),
+                trailing_space,
+                rank: idx,
+            });
+            if text.chars().any(|c| ('\u{0621}'..='\u{064A}').contains(&c)) {
+                s.recent_words.push(t3a_engine::arabic::strip_marks(&text));
+                let excess = s.recent_words.len().saturating_sub(2);
+                s.recent_words.drain(..excess);
+            }
+            s.selected = 0;
+            s.page = 0;
+            DocOp::Commit {
+                text: utf16(&text),
+                suffix: utf16(&suffix),
+            }
+        };
+        self.hide_popup();
+        self.run(ctx, op);
+    }
+
+    /// Backspace right after a commit (docs/02 §12.2).
+    fn reedit(&self, ctx: &ITfContext) -> bool {
+        let op = {
+            let Ok(mut s) = self.state.try_borrow_mut() else {
+                return false;
+            };
+            let Some(anchor) = s.anchor.take() else {
+                return false;
+            };
+            if anchor.trailing_space {
+                // Step 1: the host deletes the space itself; keep the anchor for the next Backspace.
+                s.anchor = Some(ReEditAnchor {
+                    trailing_space: false,
+                    ..anchor
                 });
+                return false;
             }
-            rows.push(Row {
-                text: candidates.raw.clone(),
-                marker: RowMarker::RawLatin,
-                rtl: false,
+            with_scorer(|u| {
+                s.session.restore(&anchor.latin, u);
             });
-
-            let highlighted = if inner.selected_index >= start && inner.selected_index < end {
-                inner.selected_index - start
-            } else if inner.selected_index >= total_items {
-                rows.len().saturating_sub(1)
-            } else {
-                0
-            };
-
-            let footer = if total_pages > 1 {
-                Footer::Paging {
-                    page: (inner.current_page + 1) as u8,
-                    pages: total_pages as u8,
-                }
-            } else {
-                match inner.config.footer_hints.as_str() {
-                    "always" => Footer::Hints,
-                    "never" => Footer::Hidden,
-                    _ => Footer::Hints,
-                }
-            };
-
-            let badge = if inner.config.show_dialect_badge {
-                let dominant = t3a_engine::dialect::argmax(&inner.session.dialect());
-                Some(dominant.arabic_name().to_string())
-            } else {
-                None
-            };
-
-            let list_model = ListModel {
-                latin: candidates.raw.clone(),
-                badge,
-                rows,
-                highlighted,
-                footer,
-            };
-
-            let mut pt = windows::Win32::Foundation::POINT::default();
-            unsafe {
-                let _ = windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut pt);
+            let total = s.session.candidates().items.len();
+            s.selected = anchor.rank.min(total.saturating_sub(1));
+            s.page = s.selected / s.page_size();
+            s.tashkeel = None;
+            DocOp::ReEdit {
+                expect: utf16(&anchor.word),
+                preview: utf16(&s.preview_text()),
             }
-            let anchor = (pt.x, pt.y, pt.x + 20, pt.y + 20);
-            popup.show(PopupModel::List(list_model), anchor);
-        }
-
-        Ok(())
-    }
-
-    fn end_composition_internal(
-        &self,
-        ctx: &ITfContext,
-        inner: &mut Inner,
-        commit_text: Option<&str>,
-    ) -> windows::core::Result<()> {
-        let tid = inner.client_id;
-        if let Some(text) = commit_text {
-            let text_utf16: Vec<u16> = text.encode_utf16().collect();
-            let ctx_clone = ctx.clone();
-            let edit_session = EditSession::new(move |ec| unsafe {
-                let insert_at_sel: ITfInsertAtSelection = ctx_clone.cast()?;
-                let range = insert_at_sel.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &text_utf16)?;
-                range.Collapse(ec, TF_ANCHOR_END)?;
-                let sel = TF_SELECTION {
-                    range: std::mem::ManuallyDrop::new(Some(range)),
-                    style: TF_SELECTIONSTYLE {
-                        ase: windows::Win32::UI::TextServices::TF_AE_NONE,
-                        fInterimChar: BOOL::from(false),
-                    },
-                };
-                ctx_clone.SetSelection(ec, &[sel])?;
-                Ok(())
-            });
-            unsafe {
-                let session_inst: windows::Win32::UI::TextServices::ITfEditSession =
-                    edit_session.into();
-                let _ = ctx.RequestEditSession(
-                    tid,
-                    &session_inst,
-                    TF_ES_READWRITE | TF_ES_ASYNCDONTCARE,
-                );
-            }
-        }
-
-        if let Some(popup) = &mut inner.popup {
-            popup.hide();
-        }
-        inner.tashkeel_editor = None;
-        inner.session.reset();
-        inner.active_composition = None;
-        inner.composition_range = None;
-
-        Ok(())
-    }
-
-    fn sync_tashkeel_ui(&self, ctx: &ITfContext) -> windows::core::Result<()> {
-        let (preview_text, model, tid) = {
-            let inner = self.inner.borrow();
-            let Some(editor) = &inner.tashkeel_editor else {
-                return Ok(());
-            };
-            let word = editor.render();
-            let model = t3a_ui::TashkeelModel {
-                picks: editor.picks.clone(),
-                from_typing: editor.from_typing,
-                highlighted_pick: editor.highlighted_pick,
-                word: word.clone(),
-                focused_letter: editor.focused_letter,
-            };
-            (word, model, inner.client_id)
         };
+        self.run(ctx, op);
+        true
+    }
 
-        let preview_utf16: Vec<u16> = preview_text.encode_utf16().collect();
-        let ctx_clone = ctx.clone();
-        let edit_session = EditSession::new(move |ec| unsafe {
-            let insert_at_sel: ITfInsertAtSelection = ctx_clone.cast()?;
-            let range = insert_at_sel.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &preview_utf16)?;
-
-            range.Collapse(ec, TF_ANCHOR_END)?;
-            let sel = TF_SELECTION {
-                range: std::mem::ManuallyDrop::new(Some(range)),
-                style: TF_SELECTIONSTYLE {
-                    ase: windows::Win32::UI::TextServices::TF_AE_NONE,
-                    fInterimChar: BOOL::from(false),
-                },
-            };
-            ctx_clone.SetSelection(ec, &[sel])?;
-            Ok(())
-        });
-
-        unsafe {
-            let session_inst: windows::Win32::UI::TextServices::ITfEditSession =
-                edit_session.into();
-            let _ =
-                ctx.RequestEditSession(tid, &session_inst, TF_ES_READWRITE | TF_ES_ASYNCDONTCARE);
-        }
-
-        // Show popup
-        let mut inner = self.inner.borrow_mut();
-        if let Some(popup) = &mut inner.popup {
-            let mut pt = windows::Win32::Foundation::POINT::default();
-            unsafe {
-                let _ = windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut pt);
+    /// End the current composition keeping its text (focus change / deactivation). No learning.
+    fn finalize_composition(&self) {
+        let comp = match self.state.try_borrow_mut() {
+            Ok(mut s) => {
+                s.session.reset();
+                s.tashkeel = None;
+                s.selected = 0;
+                s.page = 0;
+                s.composition.clone()
             }
-            let anchor = (pt.x, pt.y, pt.x + 20, pt.y + 20);
-            popup.show(PopupModel::Tashkeel(model), anchor);
+            Err(_) => None,
+        };
+        self.hide_popup();
+        let ctx = comp.and_then(|c| {
+            // SAFETY: COM queries on our own live composition.
+            unsafe { c.GetRange().and_then(|r| r.GetContext()).ok() }
+        });
+        if let Some(ctx) = ctx {
+            self.run(&ctx, DocOp::Finalize);
         }
+    }
 
-        Ok(())
+    // -----------------------------------------------------------------------------------------
+    // Popup
+
+    fn hide_popup(&self) {
+        let popup = self
+            .state
+            .try_borrow_mut()
+            .ok()
+            .and_then(|mut s| s.popup.take());
+        if let Some(mut p) = popup {
+            p.hide();
+            if let Ok(mut s) = self.state.try_borrow_mut() {
+                s.popup = Some(p);
+            }
+        }
+    }
+
+    fn show_popup(&self) {
+        let (model, rect, popup) = {
+            let Ok(mut s) = self.state.try_borrow_mut() else {
+                return;
+            };
+            if !s.composing() {
+                return;
+            }
+            let model = s.popup_model();
+            (model, s.text_rect, s.popup.take())
+        };
+        let Some(mut popup) = popup.or_else(|| PopupWindow::new().ok()) else {
+            return;
+        };
+        popup.show(model, (rect.left, rect.top, rect.right, rect.bottom));
+        if let Ok(mut s) = self.state.try_borrow_mut() {
+            s.popup = Some(popup);
+        }
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Edit sessions
+
+    fn run(&self, ctx: &ITfContext, op: DocOp) {
+        let Ok(tid) = self.state.try_borrow().map(|s| s.client_id) else {
+            return;
+        };
+        let this = self.to_object();
+        let ctx2 = ctx.clone();
+        let session: ITfEditSession =
+            EditSession::new(move |ec| apply(&this, &ctx2, ec, op)).into();
+        // SAFETY: plain COM call; no state borrow is held (the session may run synchronously).
+        unsafe {
+            let _ = ctx.RequestEditSession(tid, &session, TF_ES_READWRITE | TF_ES_ASYNCDONTCARE);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Document operations (run inside an edit session with cookie `ec`)
+
+fn apply(
+    this: &TextService_Impl,
+    ctx: &ITfContext,
+    ec: u32,
+    op: DocOp,
+) -> windows::core::Result<()> {
+    // SAFETY (whole fn): COM calls on live TSF objects inside a granted read/write edit session.
+    unsafe {
+        match op {
+            DocOp::Preview { text, tashkeel } => {
+                let (comp, atom) = match this.state.try_borrow() {
+                    Ok(s) => (
+                        s.composition.clone(),
+                        if tashkeel {
+                            s.attr_tashkeel
+                        } else {
+                            s.attr_input
+                        },
+                    ),
+                    Err(_) => return Ok(()),
+                };
+                let range = match comp.and_then(|c| c.GetRange().ok()) {
+                    Some(r) => Some(r),
+                    None => start_composition(this, ctx, ec),
+                };
+                match range {
+                    Some(range) => {
+                        range.SetText(ec, 0, &text)?;
+                        set_attr(ctx, ec, &range, atom);
+                        set_caret_end(ctx, ec, &range);
+                        update_text_rect(this, ctx, ec, &range);
+                    }
+                    None => {
+                        // Host refused a composition: still offer the candidate list at the caret.
+                        if let Some(sel) = selection_range(ctx, ec) {
+                            update_text_rect(this, ctx, ec, &sel);
+                        }
+                    }
+                }
+                this.show_popup();
+            }
+            DocOp::Commit { text, suffix } => {
+                let comp = this
+                    .state
+                    .try_borrow_mut()
+                    .ok()
+                    .and_then(|mut s| s.composition.take());
+                match comp {
+                    Some(comp) => {
+                        if let Ok(range) = comp.GetRange() {
+                            let _ = range.SetText(ec, 0, &text);
+                            clear_attr(ctx, ec, &range);
+                            set_caret_end(ctx, ec, &range);
+                        }
+                        let _ = comp.EndComposition(ec);
+                        if !suffix.is_empty() {
+                            insert_at_caret(ctx, ec, &suffix)?;
+                        }
+                    }
+                    None => {
+                        let all: Vec<u16> = text.into_iter().chain(suffix).collect();
+                        if !all.is_empty() {
+                            insert_at_caret(ctx, ec, &all)?;
+                        }
+                    }
+                }
+            }
+            DocOp::Finalize => {
+                let comp = this
+                    .state
+                    .try_borrow_mut()
+                    .ok()
+                    .and_then(|mut s| s.composition.take());
+                if let Some(comp) = comp {
+                    if let Ok(range) = comp.GetRange() {
+                        clear_attr(ctx, ec, &range);
+                    }
+                    let _ = comp.EndComposition(ec);
+                }
+            }
+            DocOp::Insert(text) => insert_at_caret(ctx, ec, &text)?,
+            DocOp::ReEdit { expect, preview } => {
+                let Some(sel) = selection_range(ctx, ec) else {
+                    return Ok(());
+                };
+                let caret = sel.IsEmpty(ec).map(|b| b.as_bool()).unwrap_or(false);
+                let mut restored = false;
+                if caret && !expect.is_empty() {
+                    let r = sel.Clone()?;
+                    let mut moved = 0i32;
+                    r.ShiftStart(ec, -(expect.len() as i32), &mut moved, std::ptr::null())?;
+                    if moved.unsigned_abs() as usize == expect.len() {
+                        let mut buf = vec![0u16; expect.len() + 1];
+                        let mut got = 0u32;
+                        r.GetText(ec, 0, &mut buf, &mut got)?;
+                        if buf[..got as usize] == expect[..] {
+                            r.SetText(ec, 0, &[])?;
+                            restored = true;
+                        }
+                    }
+                }
+                if restored {
+                    return apply(
+                        this,
+                        ctx,
+                        ec,
+                        DocOp::Preview {
+                            text: preview,
+                            tashkeel: false,
+                        },
+                    );
+                }
+                // The text changed since the commit: undo the restore and act as plain Backspace.
+                if let Ok(mut s) = this.state.try_borrow_mut() {
+                    s.session.reset();
+                    s.selected = 0;
+                    s.page = 0;
+                }
+                this.hide_popup();
+                if caret {
+                    let r = sel.Clone()?;
+                    let mut moved = 0i32;
+                    r.ShiftStart(ec, -1, &mut moved, std::ptr::null())?;
+                    r.SetText(ec, 0, &[])?;
+                } else {
+                    sel.SetText(ec, 0, &[])?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+unsafe fn selection_range(ctx: &ITfContext, ec: u32) -> Option<ITfRange> {
+    let ins: ITfInsertAtSelection = ctx.cast().ok()?;
+    ins.InsertTextAtSelection(ec, TF_IAS_QUERYONLY, &[]).ok()
+}
+
+unsafe fn start_composition(
+    this: &TextService_Impl,
+    ctx: &ITfContext,
+    ec: u32,
+) -> Option<ITfRange> {
+    let at = selection_range(ctx, ec)?;
+    let cc: ITfContextComposition = ctx.cast().ok()?;
+    let sink: ITfCompositionSink = this.to_interface();
+    let comp = cc.StartComposition(ec, &at, &sink).ok()?;
+    let range = comp.GetRange().ok()?;
+    match this.state.try_borrow_mut() {
+        Ok(mut s) => s.composition = Some(comp),
+        Err(_) => {
+            let _ = comp.EndComposition(ec);
+            return None;
+        }
+    }
+    Some(range)
+}
+
+unsafe fn insert_at_caret(ctx: &ITfContext, ec: u32, text: &[u16]) -> windows::core::Result<()> {
+    let ins: ITfInsertAtSelection = ctx.cast()?;
+    let range = ins.InsertTextAtSelection(ec, Default::default(), text)?;
+    set_caret_end(ctx, ec, &range);
+    Ok(())
+}
+
+unsafe fn set_caret_end(ctx: &ITfContext, ec: u32, range: &ITfRange) {
+    let Ok(r) = range.Clone() else {
+        return;
+    };
+    if r.Collapse(ec, TF_ANCHOR_END).is_err() {
+        return;
+    }
+    let sel = [TF_SELECTION {
+        range: ManuallyDrop::new(Some(r)),
+        style: TF_SELECTIONSTYLE {
+            ase: TF_AE_NONE,
+            fInterimChar: false.into(),
+        },
+    }];
+    let _ = ctx.SetSelection(ec, &sel);
+    let [s] = sel;
+    drop(ManuallyDrop::into_inner(s.range)); // release our reference
+}
+
+unsafe fn set_attr(ctx: &ITfContext, ec: u32, range: &ITfRange, atom: i32) {
+    if atom == 0 {
+        return;
+    }
+    if let Ok(prop) = ctx.GetProperty(&GUID_PROP_ATTRIBUTE) {
+        let v = VARIANT::from(atom);
+        let _ = prop.SetValue(ec, range, &v);
+    }
+}
+
+unsafe fn clear_attr(ctx: &ITfContext, ec: u32, range: &ITfRange) {
+    if let Ok(prop) = ctx.GetProperty(&GUID_PROP_ATTRIBUTE) {
+        let _ = prop.Clear(ec, range);
+    }
+}
+
+/// Screen rectangle of `range` for popup placement, with caret / cursor fallbacks (docs/02 §15).
+unsafe fn update_text_rect(this: &TextService_Impl, ctx: &ITfContext, ec: u32, range: &ITfRange) {
+    let mut rc = RECT::default();
+    let mut ok = false;
+    if let Ok(view) = ctx.GetActiveView() {
+        let mut clipped = BOOL::from(false);
+        ok = view.GetTextExt(ec, range, &mut rc, &mut clipped).is_ok()
+            && (rc.bottom > rc.top || rc.right > rc.left || rc.left != 0 || rc.top != 0);
+    }
+    if !ok {
+        let mut gti = GUITHREADINFO {
+            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        if GetGUIThreadInfo(0, &mut gti).is_ok() && !gti.hwndCaret.is_invalid() {
+            let mut tl = POINT {
+                x: gti.rcCaret.left,
+                y: gti.rcCaret.top,
+            };
+            let mut br = POINT {
+                x: gti.rcCaret.right,
+                y: gti.rcCaret.bottom,
+            };
+            let _ = ClientToScreen(gti.hwndCaret, &mut tl);
+            let _ = ClientToScreen(gti.hwndCaret, &mut br);
+            rc = RECT {
+                left: tl.x,
+                top: tl.y,
+                right: br.x,
+                bottom: br.y,
+            };
+        } else {
+            let mut pt = POINT::default();
+            let _ = GetCursorPos(&mut pt);
+            rc = RECT {
+                left: pt.x,
+                top: pt.y,
+                right: pt.x + 1,
+                bottom: pt.y + 20,
+            };
+        }
+    }
+    if let Ok(mut s) = this.state.try_borrow_mut() {
+        s.text_rect = rc;
     }
 }

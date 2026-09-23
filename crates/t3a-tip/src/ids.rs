@@ -20,8 +20,14 @@ pub const GUID_RESERVED_RECONVERSION: u128 = 0x51D93195_3C9E_4C04_BDE1_419D15F10
 /// Profile description shown by Windows.
 pub const PROFILE_DESCRIPTION: &str = "Type3arabi";
 
-/// Arabic LANGIDs the profile is registered under (docs/02 §2.1).
-pub const LANGIDS: [u16; 16] = [
+/// The single LANGID the profile is registered under (docs/02 §2.1, Owner decision O10):
+/// ar-SA. Users see exactly one entry, "Arabic (Saudi Arabia) · Type3arabi"; dialects are an engine
+/// concern, never a user-visible keyboard choice.
+pub const LANGID: u16 = 0x0401;
+
+/// Every Arabic LANGID an earlier dev build registered the profile under. Registration no longer
+/// uses these; `DllUnregisterServer` removes the profile from all of them so old installs are cleaned.
+pub const LEGACY_LANGIDS: [u16; 16] = [
     0x0401, 0x0801, 0x0C01, 0x1001, 0x1401, 0x1801, 0x1C01, 0x2001, 0x2401, 0x2801, 0x2C01, 0x3001,
     0x3401, 0x3801, 0x3C01, 0x4001,
 ];
@@ -72,6 +78,8 @@ mod tests {
                 guid_string(g)
             );
         }
-        assert!(LANGIDS.iter().all(|l| l & 0x3FF == 0x01)); // all LANG_ARABIC
+        assert_eq!(LANGID & 0x3FF, 0x01); // LANG_ARABIC
+        assert!(LEGACY_LANGIDS.iter().all(|l| l & 0x3FF == 0x01));
+        assert!(LEGACY_LANGIDS.contains(&LANGID));
     }
 }
