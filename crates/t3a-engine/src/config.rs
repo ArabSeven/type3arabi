@@ -383,8 +383,11 @@ commit_harakat = {}
     }
 }
 
-/// Syntax check for `[keys]` chords: `none`, or `Mod+…+Key` with modifiers Ctrl/Alt/Shift and a key
-/// name (Space, Enter, Tab, Esc, Backspace, a–z, 0–9). The TIP's key router interprets them.
+/// Check for `[keys]` chords: `none`, or `Mod+…+Key` with modifiers Ctrl/Alt/Shift and a key
+/// name (Space, Enter, Tab, Backspace, a–z, 0–9). The TIP's key router interprets them.
+/// Rejected because they would break normal typing: a letter or digit without Ctrl or Alt (it
+/// types that character), Space/Enter/Backspace without a modifier (commit, newline, delete), and
+/// Esc in any form (cancel; Ctrl+Esc is the Start menu).
 pub fn is_chord(s: &str) -> bool {
     if s.eq_ignore_ascii_case("none") {
         return true;
@@ -393,14 +396,22 @@ pub fn is_chord(s: &str) -> bool {
     let Some((key, mods)) = parts.split_last() else {
         return false;
     };
-    let key_ok = matches!(
-        key.to_ascii_lowercase().as_str(),
-        "space" | "enter" | "tab" | "esc" | "escape" | "backspace"
-    ) || (key.len() == 1 && key.chars().all(|c| c.is_ascii_alphanumeric()));
-    key_ok
-        && mods
-            .iter()
-            .all(|m| matches!(m.to_ascii_lowercase().as_str(), "ctrl" | "alt" | "shift"))
+    let mods: Vec<String> = mods.iter().map(|m| m.to_ascii_lowercase()).collect();
+    if !mods
+        .iter()
+        .all(|m| matches!(m.as_str(), "ctrl" | "alt" | "shift"))
+    {
+        return false;
+    }
+    let has = |m: &str| mods.iter().any(|x| x == m);
+    match key.to_ascii_lowercase().as_str() {
+        "tab" => true,
+        "space" | "enter" | "backspace" => !mods.is_empty(),
+        k if k.len() == 1 && k.chars().all(|c| c.is_ascii_alphanumeric()) => {
+            has("ctrl") || has("alt")
+        }
+        _ => false,
+    }
 }
 
 fn set<T>(slot: &mut T, v: T) -> bool {
@@ -449,6 +460,37 @@ const KNOWN: [&str; 36] = [
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn chords_that_would_break_typing_are_rejected() {
+        for ok in [
+            "none",
+            "Tab",
+            "Shift+Space",
+            "Ctrl+Enter",
+            "Ctrl+Shift+K",
+            "Alt+3",
+            "Shift+Tab",
+        ] {
+            assert!(is_chord(ok), "{ok}");
+        }
+        for bad in [
+            "A",
+            "Shift+A",
+            "7",
+            "Space",
+            "Enter",
+            "Backspace",
+            "Esc",
+            "Ctrl+Esc",
+            "Win+A",
+            "Ctrl+",
+            "",
+            "Ctrl+F5",
+        ] {
+            assert!(!is_chord(bad), "{bad}");
+        }
+    }
+
     use super::*;
 
     #[test]

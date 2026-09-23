@@ -10,3 +10,4 @@ node_modules/
 *.user
 .DS_Store
 /apps/settings/gen
+/apps/settings/target

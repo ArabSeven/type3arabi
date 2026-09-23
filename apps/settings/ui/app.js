@@ -43,8 +43,12 @@ function status(text, kind) {
 }
 
 // ---- shortcut capture
-const KEY_NAMES = { " ": "Space", Enter: "Enter", Tab: "Tab", Escape: "Esc", Backspace: "Backspace" };
-const MODIFIERS = ["Control", "Alt", "Shift", "Meta"];
+// Click a field → it waits for a shortcut. Esc (or clicking elsewhere) cancels and keeps the old
+// value. An invalid or unsupported shortcut is explained and never stored: the field keeps waiting,
+// so the next attempt works and Save is never blocked by a rejected attempt.
+const KEY_NAMES = { " ": "Space", Enter: "Enter", Tab: "Tab", Backspace: "Backspace" };
+const MODIFIERS = ["Control", "Alt", "Shift", "Meta", "AltGraph", "OS"];
+const WAITING = "…اضغط الاختصار (Esc للإلغاء) / press keys (Esc cancels)";
 
 function chordFromEvent(e, kind) {
   if (MODIFIERS.includes(e.key)) return null;
@@ -60,31 +64,68 @@ function chordFromEvent(e, kind) {
   return [...mods, key].join("+");
 }
 
+function stopCapture(el, value) {
+  el.classList.remove("capturing");
+  el.value = value;
+  delete el.dataset.capturing;
+  el.blur();
+}
+
 $$('input[data-kind]').forEach((el) => {
   el.addEventListener("focus", () => {
+    if (el.dataset.capturing) return;
+    el.dataset.capturing = "1";
     el.dataset.before = el.value;
     el.classList.add("capturing");
-    el.value = "…اضغط / press";
+    el.classList.remove("invalid");
+    el.value = WAITING;
   });
   el.addEventListener("blur", () => {
-    el.classList.remove("capturing");
-    if (el.value.startsWith("…")) el.value = el.dataset.before;
+    if (el.dataset.capturing) {
+      el.classList.remove("capturing");
+      el.value = el.dataset.before;
+      delete el.dataset.capturing;
+    }
   });
   el.addEventListener("keydown", async (e) => {
     e.preventDefault();
-    const chord = chordFromEvent(e, el.dataset.kind);
-    if (chord === null) return; // lone modifier: keep waiting
-    if (chord === undefined) {
-      status("هذا المفتاح غير مدعوم. That key is not supported.", "err");
+    e.stopPropagation();
+    if (!el.dataset.capturing || el.dataset.checking) return;
+    if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+      stopCapture(el, el.dataset.before);
+      status("");
       return;
     }
-    const ok = el.dataset.kind === "chord" ? await invoke("check_chord", { chord }) : /(Ctrl|Alt|Win)\+/.test(chord);
-    el.value = chord;
-    el.classList.toggle("invalid", !ok);
-    if (!ok) status("اختصار غير صالح. Invalid shortcut (the global hotkey needs Ctrl, Alt or Win).", "err");
-    else status("");
-    el.dataset.before = chord;
-    el.blur();
+    const chord = chordFromEvent(e, el.dataset.kind);
+    if (chord === null) return; // a modifier on its own: keep waiting for the key
+    if (chord === undefined) {
+      status("هذا المفتاح غير مدعوم — جرّب غيره أو اضغط Esc. That key is not supported — try another, or press Esc.", "err");
+      return;
+    }
+    el.dataset.checking = "1";
+    let ok = false;
+    try {
+      ok = el.dataset.kind === "chord" ? await invoke("check_chord", { chord }) : /(Ctrl|Alt|Win)\+/.test(chord);
+    } finally {
+      delete el.dataset.checking;
+    }
+    if (!el.dataset.capturing) return; // cancelled while checking
+    const same = (v) => (v || "").toLowerCase() === chord.toLowerCase();
+    const clash =
+      el.dataset.kind === "chord" &&
+      ($$('input[data-kind="chord"]').some((o) => o !== el && same(o.value)) ||
+        same($('[data-key="mode_toggle"]')?.value));
+    if (!ok || clash) {
+      const why = clash
+        ? "it is already used by another shortcut"
+        : el.dataset.kind === "hotkey"
+          ? "the global hotkey needs Ctrl, Alt or Win"
+          : "it would get in the way of normal typing — letters need Ctrl or Alt";
+      status(`«${chord}» غير صالح — جرّب اختصاراً آخر أو Esc للإلغاء. "${chord}" can't be used (${why}) — try another, or press Esc.`, "err");
+      return; // keep waiting; nothing is stored
+    }
+    stopCapture(el, chord);
+    status("");
   });
 });
 
