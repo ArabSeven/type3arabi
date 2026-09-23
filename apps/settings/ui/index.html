@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>إعدادات تعريب — Type3arabi Settings</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav>
+    <div class="brand"><span class="logo">ع</span> تعريب <small>Type3arabi</small></div>
+    <button data-page="keyboard" class="active">الاختصارات<small>Keyboard</small></button>
+    <button data-page="typing">الكتابة<small>Typing</small></button>
+    <button data-page="style">التشكيل<small>Diacritics</small></button>
+    <button data-page="learning">التعلّم والخصوصية<small>Learning &amp; privacy</small></button>
+    <button data-page="about">حول<small>About</small></button>
+  </nav>
+
+  <main>
+    <!-- Keyboard -->
+    <section id="keyboard" class="page active">
+      <h1>الاختصارات <small>Keyboard shortcuts</small></h1>
+      <p class="hint">انقر على الحقل ثم اضغط الاختصار الجديد. Click a field, then press the new shortcut.</p>
+
+      <h2>أثناء كتابة كلمة <small>While typing a word</small></h2>
+      <div class="row">
+        <label>إدراج الكلمة اللاتينية كما هي<small>Insert the Latin word as typed</small></label>
+        <div class="chord"><input data-key="key_commit_latin" data-kind="chord" readonly><button class="none">بلا</button></div>
+      </div>
+      <div class="row">
+        <label>فتح محرر التشكيل<small>Open the diacritics editor</small></label>
+        <div class="chord"><input data-key="key_open_tashkeel" data-kind="chord" readonly><button class="none">بلا</button></div>
+      </div>
+      <div class="row">
+        <label>إدراج مع حركات من كتابتك<small>Insert with harakat from your vowels</small></label>
+        <div class="chord"><input data-key="key_commit_harakat" data-kind="chord" readonly><button class="none">بلا</button></div>
+      </div>
+
+      <h2>التبديل <small>Switching</small></h2>
+      <div class="row">
+        <label>تبديل عربي ⇄ لاتيني<small>Arabic ⇄ Latin typing toggle</small></label>
+        <select data-key="mode_toggle">
+          <option value="Ctrl+Space">Ctrl+Space</option>
+          <option value="Shift+Space">Shift+Space</option>
+          <option value="Ctrl+Shift+Space">Ctrl+Shift+Space</option>
+          <option value="ShiftTap">Shift (نقرة واحدة / tap)</option>
+          <option value="none">بلا / none</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>اختصار عام لتفعيل تعريب من أي لوحة<small>Global hotkey to switch to Type3arabi from any keyboard</small></label>
+        <div class="chord">
+          <input type="checkbox" data-key="global_hotkey_enabled">
+          <input data-key="global_hotkey" data-kind="hotkey" readonly>
+        </div>
+      </div>
+    </section>
+
+    <!-- Typing -->
+    <section id="typing" class="page">
+      <h1>الكتابة <small>Typing</small></h1>
+      <div class="row"><label>المعاينة داخل النص<small>Inline preview</small></label>
+        <select data-key="inline_preview"><option value="arabic">عربي / Arabic</option><option value="latin">لاتيني / Latin</option></select></div>
+      <div class="row"><label>عدد الاقتراحات في الصفحة<small>Candidates per page</small></label>
+        <input type="number" min="5" max="9" data-key="candidates_per_page"></div>
+      <div class="row"><label>اقتراح إكمال الكلمات<small>Predictive completions</small></label><input type="checkbox" data-key="predictive_completions"></div>
+      <div class="row"><label>دمج «ال» مع الكلمة التالية<small>Join the article (el-) with the next word</small></label><input type="checkbox" data-key="article_joining"></div>
+      <div class="row"><label>مسافة للخلف تعيد الكلمة للتعديل<small>Backspace re-opens the word just inserted</small></label><input type="checkbox" data-key="reedit_backspace"></div>
+      <div class="row"><label>علامات ترقيم عربية ، ؛ ؟<small>Arabic punctuation</small></label><input type="checkbox" data-key="arabic_punctuation"></div>
+      <div class="row"><label>الأرقام<small>Numerals</small></label>
+        <select data-key="numerals"><option value="western">0123</option><option value="eastern">٠١٢٣</option></select></div>
+      <div class="row"><label>اللهجة<small>Dialect (auto learns from what you type)</small></label>
+        <select data-key="dialect_profile">
+          <option value="auto">تلقائي / Auto</option><option value="LEV">شامي / Levantine</option>
+          <option value="EGY">مصري / Egyptian</option><option value="GLF">خليجي / Gulf</option>
+          <option value="IRQ">عراقي / Iraqi</option><option value="MAG">مغاربي / Maghrebi</option>
+          <option value="MSA">فصحى / MSA</option>
+        </select></div>
+      <div class="row"><label>إظهار اسم اللهجة في القائمة<small>Show the dialect badge</small></label><input type="checkbox" data-key="show_dialect_badge"></div>
+    </section>
+
+    <!-- Style -->
+    <section id="style" class="page">
+      <h1>التشكيل والإملاء <small>Diacritics &amp; spelling</small></h1>
+      <div class="row"><label>لفظ الجلالة<small>How the name of Allah is written</small></label>
+        <select data-key="allah_form">
+          <option value="shadda">اللّه</option><option value="shadda_fatha">اللَّه</option>
+          <option value="shadda_dagger">اللّٰه</option><option value="plain">الله</option>
+        </select></div>
+      <div class="row"><label>تنوين الفتح التلقائي (شكراً، جداً)<small>Automatic tanween</small></label><input type="checkbox" data-key="adverbial_tanween"></div>
+      <div class="row"><label>الهمزات<small>Hamza</small></label>
+        <select data-key="hamza"><option value="standard">قياسية (أكتب) / standard</option><option value="relaxed">مخففة (اكتب) / relaxed</option></select></div>
+      <div class="row"><label>حركات من كتابتك<small>Harakat from your vowels</small></label>
+        <select data-key="vowel_harakat"><option value="light">خفيفة / light</option><option value="full">كاملة / full</option></select></div>
+    </section>
+
+    <!-- Learning -->
+    <section id="learning" class="page">
+      <h1>التعلّم والخصوصية <small>Learning &amp; privacy</small></h1>
+      <p class="hint">كل شيء يبقى على جهازك. Everything stays on this computer — nothing is ever sent anywhere.</p>
+      <div class="row"><label>التعلّم من اختياراتك<small>Learn from your choices</small></label><input type="checkbox" data-key="learning_enabled"></div>
+      <div class="row"><label>تقديم آخر اختيار أولاً<small>Put your last choice first</small></label><input type="checkbox" data-key="sticky_last_choice"></div>
+      <div class="row"><label>استخدام الكلمات السابقة لتحسين الاقتراح<small>Use the words before the cursor for context (never stored)</small></label><input type="checkbox" data-key="use_surrounding_text"></div>
+      <div class="row danger"><label>نسيان كل ما تعلّمه تعريب<small>Forget everything Type3arabi learned</small></label><button id="wipe">نسيان الكل / Forget</button></div>
+    </section>
+
+    <!-- About -->
+    <section id="about" class="page">
+      <h1>حول <small>About</small></h1>
+      <p>تعريب — اكتب بالعربيزي في أي برنامج. Type Arabizi, get Arabic, in every app.</p>
+      <dl id="about-info"></dl>
+    </section>
+
+    <footer>
+      <span id="status"></span>
+      <button id="reset" class="secondary">الافتراضي / Defaults</button>
+      <button id="save">حفظ / Save</button>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -104,6 +104,7 @@ dependencies = [
 name = "t3a-hotkey"
 version = "0.1.0"
 dependencies = [
+ "t3a-engine",
  "t3a-paths",
  "windows",
 ]

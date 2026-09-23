@@ -1,0 +1,33 @@
+[package]
+name = "type3arabi-settings"
+description = "Type3arabi Settings (Tauri 2, ADR-0007): edits the user config.toml"
+version = "0.1.0"
+edition = "2021"
+license = "LicenseRef-Type3arabi-AllRightsReserved"
+publish = false
+
+# Separate workspace (STATUS D7): Tauri's large dependency tree stays out of the TIP's Cargo.lock.
+[workspace]
+
+[[bin]]
+name = "type3arabi-settings"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+t3a-engine = { path = "../../crates/t3a-engine" }
+t3a-hotkey = { path = "../../crates/t3a-hotkey" }
+t3a-paths = { path = "../../crates/t3a-paths" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+panic = "unwind"

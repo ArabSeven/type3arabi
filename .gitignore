@@ -9,3 +9,4 @@ node_modules/
 *.pdb
 *.user
 .DS_Store
+/apps/settings/gen

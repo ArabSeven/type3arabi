@@ -268,6 +268,116 @@ impl Config {
         }
     }
 
+    /// Serialize to the `config.toml` format (written by the Settings app; docs/13). Every key is
+    /// written, so the file is self-describing. Quotes inside strings are dropped (the reader has no
+    /// escapes). `Config::parse(&c.to_toml()).0 == c` for every valid config.
+    pub fn to_toml(&self) -> String {
+        fn q(s: &str) -> String {
+            format!("\"{}\"", s.replace('"', ""))
+        }
+        fn list(v: &[String]) -> String {
+            format!(
+                "[{}]",
+                v.iter().map(|s| q(s)).collect::<Vec<_>>().join(", ")
+            )
+        }
+        let c = self;
+        format!(
+            "# Type3arabi settings (docs/13-config-schema.md). Written by Type3arabi Settings.
+             schema = {}
+
+             [general]
+mode_toggle = {}
+mode_scope = {}
+global_hotkey_enabled = {}
+global_hotkey = {}
+
+             [typing]
+latin_layout = {}
+inline_preview = {}
+candidates_per_page = {}
+             predictive_completions = {}
+article_joining = {}
+reedit_backspace = {}
+             commit_on_focus_loss = {}
+latin_in_url_email = {}
+
+             [dialect]
+profile = {}
+seed_from_region = {}
+
+             [style]
+allah_form = {}
+adverbial_tanween = {}
+tanween_style = {}
+hamza = {}
+             vowel_harakat = {}
+arabic_punctuation = {}
+numerals = {}
+
+             [learning]
+enabled = {}
+sticky_last_choice = {}
+
+             [privacy]
+use_surrounding_text = {}
+
+             [appearance]
+theme = {}
+font_family = {}
+font_size = {}
+footer_hints = {}
+             show_dialect_badge = {}
+
+             [apps]
+excluded = {}
+rtl_assist = {}
+rtl_assist_classes = {}
+
+             [keys]
+commit_latin = {}
+open_tashkeel = {}
+commit_harakat = {}
+",
+            c.schema,
+            q(&c.mode_toggle),
+            q(&c.mode_scope),
+            c.global_hotkey_enabled,
+            q(&c.global_hotkey),
+            q(&c.latin_layout),
+            q(&c.inline_preview),
+            c.candidates_per_page,
+            c.predictive_completions,
+            c.article_joining,
+            c.reedit_backspace,
+            q(&c.commit_on_focus_loss),
+            c.latin_in_url_email,
+            q(&c.dialect_profile),
+            c.seed_from_region,
+            q(&c.allah_form),
+            c.adverbial_tanween,
+            q(&c.tanween_style),
+            q(&c.hamza),
+            q(&c.vowel_harakat),
+            c.arabic_punctuation,
+            q(&c.numerals),
+            c.learning_enabled,
+            c.sticky_last_choice,
+            c.use_surrounding_text,
+            q(&c.theme),
+            q(&c.font_family),
+            c.font_size,
+            q(&c.footer_hints),
+            c.show_dialect_badge,
+            list(&c.excluded_apps),
+            c.rtl_assist,
+            list(&c.rtl_assist_classes),
+            q(&c.key_commit_latin),
+            q(&c.key_open_tashkeel),
+            q(&c.key_commit_harakat),
+        )
+    }
+
     pub fn to_engine_settings(&self) -> crate::session::EngineSettings {
         crate::session::EngineSettings::from(self)
     }
@@ -346,6 +456,23 @@ mod tests {
         let (c, w) = Config::parse(include_str!("../../../config/config.default.toml"));
         assert!(w.is_empty(), "warnings: {w:?}");
         assert_eq!(c, Config::default());
+    }
+
+    #[test]
+    fn to_toml_round_trips() {
+        let d = Config::default();
+        let (back, w) = Config::parse(&d.to_toml());
+        assert!(w.is_empty(), "warnings: {w:?}");
+        assert_eq!(back, d);
+        let mut c = Config::default();
+        c.key_commit_latin = "Ctrl+Shift+L".into();
+        c.global_hotkey = "Ctrl+Alt+Q".into();
+        c.learning_enabled = false;
+        c.excluded_apps = vec!["game.exe".into(), "vim.exe".into()];
+        c.candidates_per_page = 9;
+        let (back, w) = Config::parse(&c.to_toml());
+        assert!(w.is_empty(), "warnings: {w:?}");
+        assert_eq!(back, c);
     }
 
     #[test]

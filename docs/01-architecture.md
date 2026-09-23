@@ -103,10 +103,16 @@ This keeps the UI reusable by the Plan-B overlay front-end (`docs/11`).
 | `windows-core` | (via windows) | MIT/Apache-2.0 | tip, ui | COM core types. |
 | `bytemuck` | 1.x | Zlib/MIT/Apache-2.0 | data | Zero-copy `#[repr(C)]` casts of mmapped sections. |
 | `memmap2` | 0.9.x | MIT/Apache-2.0 | data (feature `mmap`) | Portable read-only file mapping. |
-| `tauri` | 2.x | MIT/Apache-2.0 | apps/settings | Settings UI shell (WebView2). *(planned, M7)* |
+| `tauri` | 2.x | MIT/Apache-2.0 | apps/settings | Settings UI shell (WebView2), ADR-0007. Separate Cargo workspace (own `Cargo.lock`); `cargo deny --manifest-path apps/settings/Cargo.toml check` green. |
+| `tauri-build` | 2.x | MIT/Apache-2.0 | apps/settings (build-dep) | Embeds `tauri.conf.json`, the `ui/` folder and the icon. |
+| `serde` | 1.x | MIT/Apache-2.0 | apps/settings | Settings ⇄ UI command payloads (engine/TIP stay serde-free, R12). |
+| `serde_json` | 1.x | MIT/Apache-2.0 | apps/settings | Same. |
 | `embed-resource` | 3.x | MIT | tip (build-dep) | Compile `res/t3a.rc` (icons, VERSIONINFO). *(planned, M1)* |
 
-Dev-only (not shipped): `criterion` (bench), `proptest` (property tests), `cargo-fuzz`/`libfuzzer-sys` (fuzzing).
+Dev-only (not shipped): `criterion` (bench), `proptest` (property tests), `cargo-fuzz`/`libfuzzer-sys` (fuzzing);
+`windows` features `Win32_Storage_Xps` (t3a-ui `popup_paint` example screenshots).
+Pipeline tooling (Python, never shipped): `datasets`, `huggingface_hub`, `pyarrow`, `regex`, `numpy`, `tqdm`,
+`zstandard`, `openpyxl` (reads the Talafha corpus .xlsx).
 
 ## 9. Architecture invariants (checked in review)
 1. The engine never allocates per keystroke after warm-up (all buffers reused; asserted by a
