@@ -1,5 +1,7 @@
 # S5 — UILess Mode in Full-Screen & Immersive Contexts
 
+> **Status: UNVERIFIED (audit 2026-09-23).** This write-up is not backed by code or recorded evidence: the TIP it describes did not implement it and crashed hosts. Re-run the spike and replace this file before relying on its conclusion (STATUS.md -> Audit).
+
 ## 1. Question
 How does the candidate popup behave in full-screen DirectX/exclusive games, immersive shells, and the Windows Search Box? Does TSF `ITfUIElement` / UILess mode allow host rendering when our popup window is occluded or suppressed?
 

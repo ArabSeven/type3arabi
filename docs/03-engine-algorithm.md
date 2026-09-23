@@ -209,8 +209,8 @@ Ties (|Δ| < 1e-4): higher `LM`, then shorter display string, then lexicographic
 - Each lexicon word stores `lp[d]` for the 6 groups (`u8`, 255 = unseen in that dialect; unseen is
   treated as `params.unseen_dialect_lp` = −18.0).
 - **Prior**: `config.dialect.profile`: `"auto"` ⇒ prior from region (`GetUserGeoID(GEOCLASS_NATION)`
-  → ISO country → `data/seed/region_priors.tsv`, fallback to the TIP's LANGID country, then uniform with
-  MSA 0.25); a fixed profile `"LEV"` etc. ⇒ `π = 0.8` on it, `0.15` MSA, rest spread.
+  → ISO country → `data/seed/region_priors.tsv`, then uniform with MSA 0.25 — the TIP's LANGID is
+  always ar-SA (docs/02 §2.1) and is never used as a dialect signal); a fixed profile `"LEV"` etc. ⇒ `π = 0.8` on it, `0.15` MSA, rest spread.
 - **Update** after each commit of a lexicon/custom word `w` (not phrases, numbers, raw):
   `π_d ← normalize( π_d^(1−η) · (P(w|d) + ε)^η )`, `η = params.dialect_eta` (0.08), `ε = 1e-7`,
   then floor every `π_d` at `params.dialect_floor` (0.02) and MSA at 0.10; renormalize.

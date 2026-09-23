@@ -1,5 +1,7 @@
 # S1 — Scan-Code Translation Under Arabic HKL
 
+> **Status: UNVERIFIED (audit 2026-09-23).** This write-up is not backed by code or recorded evidence: the TIP it describes did not implement it and crashed hosts. Re-run the spike and replace this file before relying on its conclusion (STATUS.md -> Audit).
+
 ## 1. Question
 Does scan-code translation (`MapVirtualKeyExW` + `ToUnicodeEx`) yield correct Latin characters for US QWERTY, UK QWERTY, French AZERTY, and German QWERTZ when the active Windows thread layout is an Arabic HKL?
 

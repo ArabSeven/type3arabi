@@ -10,7 +10,7 @@
 
 **Type3arabi** is a Windows input method that lets people type Arabic by writing *Arabizi*
 (Arabic chat alphabet: `mar7aba`, `3ala`, `2albi`, `sba7 el 5er`) on any Latin keyboard. It installs
-as a real Windows keyboard under the Arabic language (**AR – Type3arabi**), works in every app
+as a real Windows keyboard under the Arabic language (one entry: **Arabic · Type3arabi**), works in every app
 (Word, Chrome, WhatsApp Desktop, Teams, Notepad, Start search…), shows a Yamli/Maren-style RTL candidate
 popup with the most likely Arabic word pre-selected, understands dialects (Levantine, Egyptian, Gulf,
 Iraqi, Maghrebi, MSA), applies critical diacritics automatically (e.g. **اللّه**, **شكراً**), and lets the
@@ -28,7 +28,7 @@ and idle-cost-free.
 **Locked decisions** (changing any of these requires a new ADR in `docs/adr/` with status `Proposed`
 and explicit Owner approval recorded in `STATUS.md → Owner decisions`):
 
-1. Primary integration = **TSF Text Input Processor (TIP)** in-proc COM DLL, registered under Arabic LANGIDs. (ADR-0001)
+1. Primary integration = **TSF Text Input Processor (TIP)** in-proc COM DLL, registered under **one** Arabic LANGID (ar-SA): users see a single "Arabic · Type3arabi" entry; dialects are never a user-visible choice. (ADR-0001, ADR-0009)
 2. Implementation language = **Rust** (stable toolchain pinned in `rust-toolchain.toml`), `windows` crate **=0.62.2**. (ADR-0002)
 3. Engine = **lexicon-constrained incremental beam search** with a log-linear model (transliteration model + dialect-mixture word LM + bigram context + user model), plus an unconstrained OOV path. No neural network in v1 runtime. (ADR-0003)
 4. All runtime data = one **memory-mapped, read-only, zero-copy binary** `type3arabi.dat` shared by all processes. (ADR-0004)
@@ -151,6 +151,9 @@ Doc map:
 
 - [ ] Behavior matches the spec section it implements (cite it in the commit body: `Spec: docs/03 §5.2`).
 - [ ] Tests added/updated; `cargo test --workspace` green; Windows job green if Windows code changed.
+- [ ] `t3a-tip` / `t3a-ui` changed ⇒ `tsf_harness` passes on x64 **and** x86 (§7).
+- [ ] Never record a gate or "works in app X" as passed without evidence someone actually ran (harness output,
+      Owner report, screenshot). Unverified is written as unverified.
 - [ ] Budgets in `docs/06` still met (bench/eval numbers pasted into `STATUS.md` if the task touches the hot path or data).
 - [ ] No new dependency without ledger entry; `cargo deny check` green.
 - [ ] Docs updated if behavior visible to users or other components changed.
@@ -197,8 +200,11 @@ cargo deny check
 cd tools/pipeline && uv run pytest && uv run t3ap sources        # pipeline tests + dataset registry
 # Local note: if rustup cannot download the pinned toolchain, RUSTUP_TOOLCHAIN=stable uses your installed one.
 # Windows only:
-cargo build -p t3a-tip --release --target x86_64-pc-windows-msvc
-regsvr32 target\x86_64-pc-windows-msvc\release\t3a_tip.dll      # dev registration (admin)
+cargo run --release -p t3a-tip --example tsf_harness --target x86_64-pc-windows-msvc   # TIP in a real TSF host, no install
+cargo run --release -p t3a-tip --example tsf_harness --target i686-pc-windows-msvc
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-install.ps1     # build, copy to Program Files, one Arabic profile
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-uninstall.ps1   # remove (also repairs older broken installs)
+# Never regsvr32 a DLL inside target\: Windows keeps registered DLLs loaded (locked) in every app.
 ```
 
 ## 8. Glossary (minimum)

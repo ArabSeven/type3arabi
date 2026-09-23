@@ -1,5 +1,7 @@
 # S4 — Accessibility: UIA Candidate Provider & Narrator
 
+> **Status: UNVERIFIED (audit 2026-09-23).** This write-up is not backed by code or recorded evidence: the TIP it describes did not implement it and crashed hosts. Re-run the spike and replace this file before relying on its conclusion (STATUS.md -> Audit).
+
 ## 1. Question
 Can the candidate list be voiced by Windows Narrator using standard UI Automation (UIA) candidate window patterns or TSF `ITfCandidateListUIElement`?
 

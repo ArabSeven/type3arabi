@@ -1,5 +1,7 @@
 # S2 — Base Keyboard Layout Substitution (`hklSubstitute`)
 
+> **Status: UNVERIFIED (audit 2026-09-23).** This write-up is not backed by code or recorded evidence: the TIP it describes did not implement it and crashed hosts. Re-run the spike and replace this file before relying on its conclusion (STATUS.md -> Audit).
+
 ## 1. Question
 Does registering each TSF profile with `hklSubstitute = MAKELONG(langid, 0x0409)` (e.g. `0x04090401` = "Arabic language, US layout") provide a Latin physical layout while Type3arabi is active, so that:
 1. Fields where IMEs are disabled (e.g., password boxes) receive Latin characters?

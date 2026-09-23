@@ -10,5 +10,6 @@ Format: Context · Decision · Consequences · Alternatives. New ADRs start as `
 - ADR-0006: Overlay (hook) mode only as fallback — Accepted
 - ADR-0007: Settings app with Tauri 2 — Accepted
 - ADR-0008: WiX MSI, per-machine, three architectures — Accepted
+- ADR-0009: One Arabic profile (ar-SA); dialects are never a user choice — Accepted (amends ADR-0001)
 
 Template: copy `template.md`.

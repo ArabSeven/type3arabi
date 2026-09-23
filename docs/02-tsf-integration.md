@@ -27,7 +27,7 @@ Code may be adapted only from MIT/Apache/BSD sources, with attribution in `NOTIC
 | Preserved key: mode toggle | `{35746905-7855-46BE-A409-AF7CC35C8FF7}` |
 | MSI UpgradeCode | `{C71F4AAE-43FF-47DA-B6F0-582B0611BAF6}` |
 | Spare (reserve for reconversion function provider) | `{51D93195-3C9E-4C04-BDE1-419D15F1015C}` |
-| Profile description | `Type3arabi` (Windows shows **AR – Type3arabi** / "Arabic – Type3arabi") |
+| Profile description | `Type3arabi` (Windows shows **Arabic (Saudi Arabia) · Type3arabi**; tray abbreviation **ARA**) |
 | COM ThreadingModel | `Apartment` |
 
 All GUIDs live in `crates/t3a-tip/src/ids.rs` as `windows_core::GUID::from_u128(0x…)`.
@@ -42,22 +42,26 @@ Order (mirror in unregister, reversed):
    All three use the **same CLSID** so Windows presents one logical input method.
 2. **Profiles**: `CoCreateInstance(CLSID_TF_InputProcessorProfiles)` → `ITfInputProcessorProfileMgr::RegisterProfile(
    CLSID, langid, PROFILE_GUID, "Type3arabi", iconFile = <this DLL path>, uIconIndex = -IDI_BRAND (resource id, negative),
-   hklSubstitute = see §6.3, dwPreferredLayout = 0, bEnabledByDefault = TRUE, dwFlags = 0)` for **each** LANGID in §2.1.
-3. **Categories** (`ITfCategoryMgr::RegisterCategory(CLSID, cat, CLSID)`):
-   `GUID_TFCAT_TIP_KEYBOARD`, `GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER`, `GUID_TFCAT_TIPCAP_UIELEMENTENABLED`,
-   `GUID_TFCAT_TIPCAP_SECUREMODE`, `GUID_TFCAT_TIPCAP_COMLESS`, `GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT`,
+   hklSubstitute = 0 (see §6.3), dwPreferredLayout = 0, bEnabledByDefault = TRUE, dwFlags = 0)` for the **one** LANGID in §2.1.
+   `DllUnregisterServer` removes the profile from every Arabic LANGID (cleans installs of older dev builds).
+3. **Categories** (`ITfCategoryMgr::RegisterCategory(CLSID, cat, CLSID)`) — only capabilities that are
+   implemented: `GUID_TFCAT_TIP_KEYBOARD`, `GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER`,
    `GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT`, `GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT`.
-4. The **installer** (not the DLL) then calls `InstallLayoutOrTip("<langid>:{CLSID}{PROFILE}", flags)` once for
-   the user's chosen Arabic locale (default: an Arabic language already in the user's list; else `0401`).
-   Flag `ILOT_DEFPROFILE` only if the user ticked "Make Type3arabi the default Arabic keyboard".
-   Never write `HKCU\Keyboard Layout\Preload` or similar directly.
+   Add `UIELEMENTENABLED` with the UIElement work (§9), `INPUTMODECOMPARTMENT` with the mode compartment
+   (§10), `SECUREMODE` after a secure-desktop test. Claiming a capability we do not implement makes hosts
+   call interfaces we do not provide.
+4. The **installer** (not the DLL) then enables the keyboard for the user by adding the input-method tip
+   `0401:{CLSID}{PROFILE}` to the ar-SA entry of the user language list (`Set-WinUserLanguageList`, or
+   `InstallLayoutOrTip(tip, 0)`; note `ILOT_UNINSTALL = 0x1`, `ILOT_DEFPROFILE = 0x2`).
+   Never write `HKCU\Keyboard Layout\Preload` or similar directly (the dev uninstall script is the one
+   exception: it repairs Preload entries an early broken build left behind).
 
-### 2.1 LANGIDs registered
-`0x0401` ar-SA, `0x0801` ar-IQ, `0x0C01` ar-EG, `0x1001` ar-LY, `0x1401` ar-DZ, `0x1801` ar-MA,
-`0x1C01` ar-TN, `0x2001` ar-OM, `0x2401` ar-YE, `0x2801` ar-SY, `0x2C01` ar-JO, `0x3001` ar-LB,
-`0x3401` ar-KW, `0x3801` ar-AE, `0x3C01` ar-BH, `0x4001` ar-QA.
-Rationale: the keyboard must appear under whichever Arabic variant the user already has; the chosen
-LANGID also seeds the dialect prior (`docs/03 §7.2`).
+### 2.1 LANGID registered (Owner decision O10, 2026-09-23)
+Exactly **one**: `0x0401` (ar-SA). Users must see a single entry, "Arabic · Type3arabi", in the input
+switcher. Dialects (LEV, EGY, GLF, IRQ, MAG, MSA) are an engine concern learned from what the user types
+(`docs/03 §7`), never a user-visible keyboard choice, and the LANGID does **not** seed the dialect prior.
+Windows has no country-neutral Arabic user language, so the language name shown is "Arabic (Saudi Arabia)".
+(Superseded: registering under all 16 Arabic LANGIDs flooded the switcher with 16 entries.)
 
 ### 2.2 Resources in the DLL (via `embed-resource` build-dep + `t3a-tip/res/t3a.rc`)
 - `IDI_BRAND` (id 101): black glyph **ع** in a white rounded box with 1-px 50%-black stroke; sizes
@@ -168,12 +172,12 @@ Latin mode: every printable key ⇒ Eat → insert the Latin-layout character di
 (`ITfInsertAtSelection::InsertTextAtSelection`, `TF_IAS_NOQUERY`), no composition, no popup. All
 other keys pass. Mode toggle works as above.
 
-### 5.3 Commit-and-reinject
-Used when a key must reach the app *after* we finalize the composition. In `OnKeyDown`: eat the
-key, run a sync edit session that commits, then `SendInput` the same key (down + up) with
-`dwExtraInfo = T3A_REINJECT_MAGIC` and the original modifier state. The reinjected key bypasses the
-router (§5.1-5). If `SendInput` fails (UIPI) the key is lost — acceptable only for navigation
-keys; log nothing (not user text, but noise).
+### 5.3 Commit-then-pass (was: commit-and-reinject)
+Used when a key must reach the app *after* we finalize the composition (arrows, Home/End, Delete,
+Ctrl/Alt combos). `OnTestKeyDown` returns eaten; `OnKeyDown` requests the commit edit session and then
+returns **not eaten** (`pfEaten = FALSE`), so the host processes the original key itself. No `SendInput`:
+synthesized keys are lost under UIPI and race with the host's own queue. `T3A_REINJECT_MAGIC` stays
+reserved (§13 RTL assist).
 
 ## 6. Latin layout translation (key → character)
 
@@ -214,6 +218,9 @@ direction switching. Record in `docs/spikes/S2-base-layout.md`.
   and add Settings → "Latin layout" writes the substitute via `ITfInputProcessorProfiles::SubstituteKeyboardLayout`
   (admin-elevated helper, M7) for AZERTY/QWERTZ users.
 - If S2 **fails**: ship with `hklSubstitute = 0`; document "password fields: switch keyboard with Win+Space".
+- **Current state (2026-09-23):** `hklSubstitute = 0`. S2 has **not** been run (the earlier write-up in
+  `docs/spikes/S2-base-layout.md` is not backed by code or evidence). Known effect: in password fields,
+  where TSF disables keyboard TIPs, keys produce Arabic 101 characters until S2 is done.
 
 ## 7. Context gating (when to be passive)
 

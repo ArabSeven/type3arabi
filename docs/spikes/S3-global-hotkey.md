@@ -1,5 +1,7 @@
 # S3 — Global Activation Hotkey Mechanism
 
+> **Status: UNVERIFIED (audit 2026-09-23).** This write-up is not backed by code or recorded evidence: the TIP it describes did not implement it and crashed hosts. Re-run the spike and replace this file before relying on its conclusion (STATUS.md -> Audit).
+
 ## 1. Question
 Which mechanism reliably activates Type3arabi from any running application (even when the current input language is English or another Latin keyboard), and switches back upon pressing it again?
 

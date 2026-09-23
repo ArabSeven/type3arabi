@@ -14,7 +14,7 @@ Acceptance:
 - [ ] `STATUS.md` updated with baseline smoke numbers.
 
 ## M1 — TSF walking skeleton + spikes (≈6–8 days) · Docs: 02, 05 §2–3
-Scope: a real TIP DLL: registration for all LANGIDs, activation, key sinks, composition with the **seed-only
+Scope: a real TIP DLL: registration of the single ar-SA profile (docs/02 §2.1), activation, key sinks, composition with the **seed-only
 engine** (OOV path), a plain popup (GDI allowed at this stage), Space/Enter/Esc/Backspace/arrows, mode toggle,
 tray mode icon, safe-passthrough guard. Spikes S1–S5 (`docs/02 §17`).
 Acceptance:
