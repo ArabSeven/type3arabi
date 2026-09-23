@@ -284,14 +284,36 @@ pub fn build_data(
     writer.add_parm(&parm_content);
     println!("  [PARM] Engine parameters stored");
 
-    // 9. META
-    let dist = if mode == "internal" {
+    // 9. META — distribution + the internal sources used (AGENTS.md R14). A release build may not
+    // contain any `internal` source.
+    let internal: Vec<String> = in_dir
+        .map(|d| d.join("sources_used.tsv"))
+        .and_then(|p| fs::read_to_string(p).ok())
+        .map(|t| {
+            t.lines()
+                .filter_map(|l| {
+                    let c: Vec<&str> = l.split('\t').collect();
+                    (c.len() >= 2 && c[1] == "internal").then(|| c[0].to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if mode == "release" && !internal.is_empty() {
+        return Err(format!(
+            "release build refused: internal sources were used ({}); rebuild the pipeline with --mode release",
+            internal.join(", ")
+        )
+        .into());
+    }
+    let dist = if mode == "internal" || !internal.is_empty() {
         "internal-only"
     } else {
         "release"
     };
+    let internal_json: Vec<String> = internal.iter().map(|i| format!("\"{i}\"")).collect();
     let meta_json = format!(
-        "{{\"format_version\": 1, \"distribution\": \"{dist}\", \"word_count\": {}, \"rule_count\": {}}}\n",
+        "{{\"format_version\": 1, \"distribution\": \"{dist}\", \"internal_sources\": [{}], \"word_count\": {}, \"rule_count\": {}}}\n",
+        internal_json.join(", "),
         words.len(),
         rules.len()
     );

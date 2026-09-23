@@ -71,6 +71,7 @@ def run(mode: str = "internal") -> int:
     align_dir.mkdir(parents=True, exist_ok=True)
     eval_dir.mkdir(parents=True, exist_ok=True)
     n_train = 0
+    used_for_rules: set[str] = set()
     with (align_dir / "train.tsv").open("w", encoding="utf-8", newline="\n") as train:
         for sid in sorted(rules_ok | eval_ok):
             counts = Counter()
@@ -86,6 +87,7 @@ def run(mode: str = "internal") -> int:
                 if split == "train" and sid in rules_ok:
                     train.write(f"{latin}\t{arabic}\t{dialect}\t{sid}\n")
                     n_train += 1
+                    used_for_rules.add(sid)
                 elif split in outs and (latin.lower(), arabic) not in seen:
                     seen.add((latin.lower(), arabic))
                     outs[split].write(f"{latin}\t{arabic}\t{dialect}\t{sid}\n")
@@ -96,4 +98,19 @@ def run(mode: str = "internal") -> int:
             if counts:
                 print(f"  [{sid}] word pairs: train {counts['train']}, dev {counts['dev']}, test {counts['test']}")
     print(f"  align/train.tsv: {n_train} pairs")
+    write_sources_used(used_for_rules)
     return 0
+
+
+def write_sources_used(rule_sources: set[str]) -> None:
+    """out/sources_used.tsv (id, status, roles used): build-data embeds the internal ids in META and
+    refuses a release build that contains any (AGENTS.md R14)."""
+    status = {s["id"]: s["status"] for s in sources.load()}
+    rows = []
+    if (RAW_DIR / "fineweb2").exists():
+        rows.append(("fineweb2", status.get("fineweb2", "unknown"), "lexicon,lm,charlm,diac"))
+    for sid in sorted(rule_sources):
+        rows.append((sid, status.get(sid, "unknown"), "rules,tuning"))
+    out = PIPELINE_DATA / "out" / "sources_used.tsv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("".join(f"{a}\t{b}\t{c}\n" for a, b, c in rows), encoding="utf-8")
