@@ -4,6 +4,7 @@
 //!   t3a-hotkey.exe --enable-profile   enable the Type3arabi keyboard for the signed-in user
 //!   t3a-hotkey.exe --disable-profile  remove it from the user's keyboards
 //!   t3a-hotkey.exe --restart-warning  explain what may not work until the next restart
+//!   t3a-hotkey.exe --list-profiles    print the user's input profiles (what Win+Space lists)
 //!
 //! Hotkey loop: a message-only window registers the hotkey (MOD_NOREPEAT); WM_HOTKEY switches the
 //! foreground window between the Arabic (Type3arabi) keyboard and the last non-Arabic one via
@@ -19,15 +20,19 @@ fn main() {
 }
 
 #[cfg(windows)]
+mod profile;
+
+#[cfg(windows)]
 mod win {
     use std::sync::atomic::{AtomicIsize, Ordering};
     use t3a_engine::Config;
     use t3a_hotkey::{parse, HotkeySpec};
-    use windows::core::{w, PCSTR, PCWSTR};
+    use windows::core::{w, PCWSTR};
     use windows::Win32::Foundation::{
         GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM,
     };
-    use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
+    use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::Threading::CreateMutexW;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         GetKeyboardLayout, GetKeyboardLayoutList, RegisterHotKey, UnregisterHotKey, HKL,
@@ -44,15 +49,16 @@ mod win {
     pub const WM_APP_RELOAD: u32 = WM_APP + 1;
     const HOTKEY_ID: i32 = 1;
     const LANG_ARABIC: u16 = 0x01;
-    const TIP: &str =
-        "0401:{8A4B9277-1E2E-45E0-92A2-83FED833D8BF}{90D49398-54D3-4F08-9C15-0B38D0820A87}";
-    const ILOT_UNINSTALL: u32 = 0x1;
 
     pub fn main() -> i32 {
         let arg = std::env::args().nth(1).unwrap_or_default();
         match arg.as_str() {
-            "--enable-profile" => install_layout_or_tip(0),
-            "--disable-profile" => install_layout_or_tip(ILOT_UNINSTALL),
+            "--enable-profile" => crate::profile::enable(),
+            "--disable-profile" => crate::profile::disable(),
+            "--list-profiles" => {
+                list_profiles();
+                0
+            }
             "--restart-warning" => {
                 restart_warning();
                 0
@@ -67,25 +73,32 @@ mod win {
             .unwrap_or_default()
     }
 
-    /// `input.dll!InstallLayoutOrTip` (no import library ships with the SDK: resolved at runtime).
-    fn install_layout_or_tip(flags: u32) -> i32 {
-        type Fn = unsafe extern "system" fn(PCWSTR, u32) -> i32;
-        let tip: Vec<u16> = TIP.encode_utf16().chain(std::iter::once(0)).collect();
-        // SAFETY: loads a system DLL and calls a documented export with a NUL-terminated string.
-        unsafe {
-            let Ok(lib) = LoadLibraryW(w!("input.dll")) else {
-                return 2;
-            };
-            let Some(proc) =
-                GetProcAddress(lib, PCSTR(c"InstallLayoutOrTip".as_ptr() as *const u8))
-            else {
-                return 3;
-            };
-            let f: Fn = std::mem::transmute(proc);
-            if f(PCWSTR(tip.as_ptr()), flags) != 0 {
-                0
-            } else {
-                1
+    /// Print every input profile (to the calling console; this is a GUI-subsystem exe).
+    fn list_profiles() {
+        use std::io::Write;
+        let mut out = String::from(
+            "lang  kind    enabled  name
+",
+        );
+        for p in crate::profile::list_profiles(0) {
+            out.push_str(&format!(
+                "{:04X}  {:<6}  {:<7}  {}
+",
+                p.lang,
+                if p.tip { "tip" } else { "layout" },
+                p.enabled,
+                p.name
+            ));
+        }
+        // Redirected output (pipe/file) works as is; a bare GUI-subsystem exe has to attach to the
+        // console it was started from.
+        if std::io::stdout().write_all(out.as_bytes()).is_err() {
+            // SAFETY: attaching to the parent console has no preconditions; failure = no console.
+            if unsafe { AttachConsole(ATTACH_PARENT_PROCESS) }.is_ok() {
+                let _ = std::fs::OpenOptions::new()
+                    .write(true)
+                    .open("CONOUT$")
+                    .and_then(|mut f| f.write_all(out.as_bytes()));
             }
         }
     }
