@@ -362,6 +362,18 @@ mod harness {
                 return 3;
             }
             let sink: ITfKeyEventSink = tip.cast().expect("key sink");
+            // Windows' keyboard options open our Settings through ITfFnConfigure (not called here:
+            // it would start the Settings app).
+            match tip
+                .cast::<windows::Win32::UI::TextServices::ITfFnConfigure>()
+                .and_then(|f| f.GetDisplayName())
+            {
+                Ok(name) if name == "Type3arabi Settings" => {}
+                other => {
+                    println!("FAIL: ITfFnConfigure: {other:?}");
+                    return 4;
+                }
+            }
 
             // (typed keys, expected text). "\x08" = Backspace, "\x1B" = Esc, "\n" = Enter.
             let scenarios: &[(&str, &str)] = &[

@@ -53,6 +53,12 @@ Order (mirror in unregister, reversed):
 4. The **installer** (not the DLL) then enables the keyboard for the user by adding the input-method tip
    `0401:{CLSID}{PROFILE}` to the ar-SA entry of the user language list (`Set-WinUserLanguageList`, or
    `InstallLayoutOrTip(tip, 0)`; note `ILOT_UNINSTALL = 0x1`, `ILOT_DEFPROFILE = 0x2`).
+   Windows adds the language's default keyboard (Arabic 101) whenever a TIP is enabled for a language
+   the user did not have, which costs an extra Win+Space stop. `t3a-hotkey --enable-profile` therefore
+   removes, with `InstallLayoutOrTip(layout, ILOT_UNINSTALL)`, every ar-SA layout that was not enabled
+   before, and unloads it from the running session (`UnloadKeyboardLayout`; otherwise it stays listed
+   until sign-out). Layouts the user already had are kept. `t3a-hotkey --list-profiles` prints what
+   the Win+Space flyout enumerates.
    Never write `HKCU\Keyboard Layout\Preload` or similar directly (the dev uninstall script is the one
    exception: it repairs Preload entries an early broken build left behind).
 
@@ -359,7 +365,9 @@ and the text before the caret on the line is empty. Sent via `SendInput` with th
 
 ## 14. Functions
 - `ITfFnConfigure::Show(hwndParent, langid, profile)`: if not AppContainer and not secure mode →
-  `ShellExecuteExW("open", "%ProgramFiles%\\Type3arabi\\Type3arabi Settings.exe")`; else `E_NOTIMPL`.
+  `ShellExecuteW("open", "<install>\Type3arabi Settings.exe")` (looked up next to and above the DLL);
+  else `E_NOTIMPL`. Windows calls this for the keyboard's options in its language settings and for
+  "Properties" in the classic Text Services dialog.
 - `ITfFnReconversion` — reserved for M9 (reconvert selected Arabic word to its candidates).
 
 ## 15. Error handling & safe passthrough

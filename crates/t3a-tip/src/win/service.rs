@@ -37,13 +37,13 @@ use windows::Win32::UI::TextServices::{
     CLSID_TF_CategoryMgr, IEnumTfDisplayAttributeInfo, ITfCategoryMgr, ITfComposition,
     ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextComposition,
     ITfDisplayAttributeInfo, ITfDisplayAttributeProvider, ITfDisplayAttributeProvider_Impl,
-    ITfDocumentMgr, ITfEditSession, ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl,
-    ITfKeystrokeMgr, ITfRange, ITfSource, ITfTextInputProcessor, ITfTextInputProcessorEx,
-    ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl, ITfThreadFocusSink,
-    ITfThreadFocusSink_Impl, ITfThreadMgr, ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl,
-    GUID_PROP_ATTRIBUTE, TF_AE_NONE, TF_ANCHOR_END, TF_ES_ASYNC, TF_ES_READWRITE, TF_ES_SYNC,
-    TF_IAS_QUERYONLY, TF_INVALID_COOKIE, TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION,
-    TF_SELECTIONSTYLE, TF_TMAE_SECUREMODE,
+    ITfDocumentMgr, ITfEditSession, ITfFnConfigure, ITfFnConfigure_Impl, ITfFunction_Impl,
+    ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfRange,
+    ITfSource, ITfTextInputProcessor, ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl,
+    ITfTextInputProcessor_Impl, ITfThreadFocusSink, ITfThreadFocusSink_Impl, ITfThreadMgr,
+    ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl, GUID_PROP_ATTRIBUTE, TF_AE_NONE,
+    TF_ANCHOR_END, TF_ES_ASYNC, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_QUERYONLY, TF_INVALID_COOKIE,
+    TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION, TF_SELECTIONSTYLE, TF_TMAE_SECUREMODE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetGUIThreadInfo, GetMessageExtraInfo, GUITHREADINFO,
@@ -289,7 +289,8 @@ enum DocOp {
     ITfThreadFocusSink,
     ITfKeyEventSink,
     ITfCompositionSink,
-    ITfDisplayAttributeProvider
+    ITfDisplayAttributeProvider,
+    ITfFnConfigure
 )]
 pub struct TextService {
     state: RefCell<State>,
@@ -684,6 +685,79 @@ impl ITfDisplayAttributeProvider_Impl for TextService_Impl {
             DisplayAttributeInfo::lookup(unsafe { &*guid }).ok_or_else(|| E_INVALIDARG.into())
         })
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Configuration entry point: Windows' keyboard options ("Options"/"Properties" of the keyboard in
+// the language settings and the Text Services dialog) call ITfFnConfigure::Show (docs/05 §9).
+
+impl ITfFunction_Impl for TextService_Impl {
+    fn GetDisplayName(&self) -> windows::core::Result<windows::core::BSTR> {
+        guard(Err(E_FAIL.into()), || {
+            Ok(windows::core::BSTR::from("Type3arabi Settings"))
+        })
+    }
+}
+
+impl ITfFnConfigure_Impl for TextService_Impl {
+    fn Show(
+        &self,
+        _hwndparent: windows::Win32::Foundation::HWND,
+        _langid: u16,
+        _rguidprofile: *const GUID,
+    ) -> windows::core::Result<()> {
+        guard(Err(E_FAIL.into()), || {
+            // docs/02 §14: never start a process from a sandboxed app or the secure desktop.
+            let secure = self
+                .state
+                .try_borrow()
+                .map(|s| s.secure_mode)
+                .unwrap_or(true);
+            if secure || t3a_paths::is_app_container() {
+                return Err(windows::Win32::Foundation::E_NOTIMPL.into());
+            }
+            if open_settings_app() {
+                Ok(())
+            } else {
+                Err(E_FAIL.into())
+            }
+        })
+    }
+}
+
+/// Start the Settings app installed next to this DLL (`<install>\x64\t3a_tip.dll` →
+/// `<install>\Type3arabi Settings.exe`). Runs in the configuring process, never on the key path.
+fn open_settings_app() -> bool {
+    let Some(dll) = dll::dll_path() else {
+        return false;
+    };
+    let Some(exe) = dll
+        .ancestors()
+        .skip(1)
+        .take(2)
+        .map(|d| d.join("Type3arabi Settings.exe"))
+        .find(|p| p.is_file())
+    else {
+        return false;
+    };
+    let wide: Vec<u16> = exe
+        .as_os_str()
+        .to_string_lossy()
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: NUL-terminated path; ShellExecuteW has no other preconditions.
+    let h = unsafe {
+        windows::Win32::UI::Shell::ShellExecuteW(
+            None,
+            windows::core::w!("open"),
+            windows::core::PCWSTR(wide.as_ptr()),
+            windows::core::PCWSTR::null(),
+            windows::core::PCWSTR::null(),
+            windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+        )
+    };
+    h.0 as usize > 32
 }
 
 // ---------------------------------------------------------------------------------------------
