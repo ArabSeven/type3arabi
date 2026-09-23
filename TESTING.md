@@ -17,6 +17,20 @@ your normal keyboards (e.g. English (United States)).
 
 ## 1. Install
 
+### Option A — the installer (what users will get)
+Build it (no admin needed), then run the MSI:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scriptsuild-installer.ps1
+```
+
+`target\installer\Type3arabi-0.1.0-x64.msi` installs to `C:\Program Files\Type3arabi`, adds **Arabic (Saudi
+Arabia) · Type3arabi**, starts the global hotkey (Ctrl+Alt+A) and adds **Type3arabi Settings** to the Start
+menu. The last page offers **Restart now (recommended)**. If you untick it, a message explains what may not
+work until you restart. If a dev build is installed, run `scripts\dev-uninstall.ps1` first.
+
+### Option B — the dev scripts
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\dev-install.ps1
 ```
@@ -46,12 +60,22 @@ To reinstall after code changes, run the same command again, then restart the ap
 | `hello` | Esc | `hello` stays Latin. Next time you type `hello`, the Latin form is ranked first (the list learns) |
 | `mar7a` | ↓ ↓ then Space | Inserts the highlighted row |
 | `mar7aba` | Enter, then Backspace | The word turns back into an editable `mar7aba` composition with its candidate list |
-| `shukran` | Tab, `a`, Enter | Tashkeel editor; `a` puts a fatha on the first letter → `شَكراً` |
+| `shukran` | Tab, `a`, Enter | Tashkeel editor; the first letter is highlighted; `a` puts a fatha on it → `شَكراً` |
+| `shukran` | Tab, Shift+← ←, `a` | Shift+arrows select several letters; one key marks them all |
+| (editor) | click a letter / Ctrl+click / drag | select one / add / a range; click a palette cell to apply it; **مسح الكل** clears all |
+| `hello` | Shift+Space | `hello ` stays Latin (no scrolling to the Latin row) |
+| `mar7aba` | mouse wheel / click a row | wheel moves the highlight; a click inserts that row |
+| `oktob`, `ekhtibar` | Space | `أكتب`, `اختبار` |
 | `3allam` | Ctrl+Enter | Harakat from your vowels, e.g. `عَلَّم` |
 | Ctrl+Space | | Toggles Arabic ↔ plain Latin typing |
 | While composing | ← / Ctrl+S / Home | Commits the word, then the key does its normal job |
 
 Please report: the app, what you typed, what you saw, and whether anything froze or closed.
+
+## 2b. Settings
+Start menu → **Type3arabi Settings** (or `target\settingselease	ype3arabi-settings.exe`). Every shortcut
+is on the **الاختصارات / Keyboard** page: click a field and press the new keys. Changes apply from the next
+word in every app. Diacritics style (Allah form, tanween, hamza), dialect and learning are on the other pages.
 
 ## 3. Known limitations of this build
 

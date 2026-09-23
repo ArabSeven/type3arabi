@@ -24,12 +24,21 @@ an approved source (R14). The pipeline is offline tooling; nothing here runs on 
 | 3 | `uv run t3ap count` | norm | `counts/<group>.uni.tsv`, `counts/all.bi.tsv`, `counts/chr5.tsv`, `counts/marked.tsv` |
 | 4 | `uv run t3ap lexicon` | counts, `data/seed/*` | `out/lexicon.tsv` (word, lp×6, flags), `out/bigrams.tsv`, `out/charlm.tsv` |
 | 5 | `uv run t3ap diac` | `counts/marked.tsv` | `out/diac.tsv` (base word → vocalized variants + lp) |
-| 6 | `uv run t3ap align` | approved parallel pairs + `data/seed/mappings.tsv` | `out/rules.tsv` (trained transliteration rules) |
-| 7 | `uv run t3ap tune` | dev splits, built data | `out/params.toml` (λ's, beams, penalties) |
+| 5b | `uv run t3ap pairs` | parallel `raw/<id>/pairs.tsv` | `align/train.tsv`, `eval/<id>.{dev,test}.tsv`, `out/sources_used.tsv` |
+| 6 | `cargo run --release -p t3a-cli -- train-rules` | `align/train.tsv` + `data/seed/mappings.tsv` | `out/rules.tsv` (trained transliteration rules) |
+| 7 | `cargo run --release -p t3a-cli -- tune pipeline_data/eval/*.dev.tsv --data target/type3arabi.dat` | dev splits, built data | `out/params.toml` (λ's, penalties) — then run stage 8 again to embed it |
 | 8 | `cargo run -p t3a-cli -- build-data --in pipeline_data/out --seed data/seed --out target/type3arabi.dat` | out/*, seed | `type3arabi.dat` |
 | 9 | `cargo run -p t3a-cli -- eval --data target/type3arabi.dat --sets data/eval/*.tsv,pipeline_data/test/*.tsv --report reports/` | | Markdown + JSON report |
 
-`uv run t3ap all` runs 1–7; CI runs 8–9 on a small fixture (`data/fixtures/mini/`) to keep the format honest.
+`uv run t3ap all` runs 1–5b and prints the Rust steps 6–8. Stages 6–7 are in Rust (Agent decision D8): they
+reuse the engine's own Latin normalization, alphabet and scorer, so training and runtime cannot drift.
+CI runs 8–9 on a small fixture (`data/fixtures/mini/`) to keep the format honest.
+
+**Current build (2026-09-23, `--mode internal`)**: FineWeb-2 streamed with per-group token caps (MSA 60M, LEV
+all 18.7M, EGY 50M, GLF 30M, IRQ all 3M, MAG 40M); after filtering 186M tokens; 600k words, 2.28M bigrams,
+600k char n-grams, 99k vocalized base words; rules trained on 48.8k word pairs (Talafha LEV, Elkababi MAG,
+Khanafer LEV, ArabiziKit). `type3arabi.dat` = 59.15 MB. Explicit web text is dropped via
+`data/seed/no_complete.tsv` (`drop:`/`prefix:` entries).
 
 ## 3. Arabic normalization (must match `t3a-engine::arabic::normalize_word` exactly — shared test vectors in `data/eval/normalization.tsv`)
 1. Unicode NFC first (input hygiene), then:
@@ -79,6 +88,14 @@ mixture score. Record the per-group token counts in the manifest.
 4. **Self-training (optional, M6)**: run the engine on approved monolingual Arabizi; keep outputs whose
    top-1 beats top-2 by ≥ 3.0 score; add as pairs with weight 0.3; one more EM round. Never on eval data.
 5. Output `out/rules.tsv`: same columns as `data/seed/mappings.tsv` plus `count` and per-dialect lp.
+6. **As implemented (2026-09-23, `t3a-cli train-rules`)**: only equal-token-count sentence pairs are used (the
+   DP aligner is backlog); one-symbol tokens are skipped (Moroccan `o` = و would teach "initial o → و");
+   tokens containing symbols the engine cannot type (`$` for ش) are skipped; the pooled `*` distribution is
+   estimated from all dialects **except MAG** (its conventions — o = و, ch = ش, 9 = ق — get MAG rows) and a
+   dialect gets its own rows at ≥ 50 occurrences of a chunk; dialects without data keep the seed's
+   dialect-specific rows. Discovered (non-seed) pairs need P ≥ 0.03. Tuning (§7) uses *lenient* matching
+   (hamza seat, final ة/ى folded) in oracle-dialect mode, so it never learns to drop hamza to match dialect
+   gold spellings.
 
 ## 7. Tuning (stage 7)
 Coordinate ascent over `λ_tm, λ_lm, λ_ctx, λ_chr, oov_penalty, gamma_completion, p_gem` on the **dev** split
