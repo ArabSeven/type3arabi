@@ -21,7 +21,7 @@ your normal keyboards (e.g. English (United States)).
 Build it (no admin needed), then run the MSI:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scriptsuild-installer.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1
 ```
 
 `target\installer\Type3arabi-0.1.0-x64.msi` installs to `C:\Program Files\Type3arabi`, adds **Arabic (Saudi
@@ -52,7 +52,7 @@ To reinstall after code changes, run the same command again, then restart the ap
 
 | Type | Then | Expected |
 |---|---|---|
-| `mar7aba` | Space | While typing, the word appears **dotted-underlined** and a candidate list opens under it. Space inserts `مرحبا ` |
+| `mar7aba` | Space | While typing, the word appears **dotted-underlined** and a candidate list opens under it. Space inserts `مرحباً ` |
 | `shukran` | Space | `شكراً ` (tanween) |
 | `allah` | Space | `اللّه ` (shadda); `الله` is offered as row 2 |
 | `3arabi` | Enter | `عربي` with no newline; press Enter again for a newline |
@@ -73,7 +73,7 @@ To reinstall after code changes, run the same command again, then restart the ap
 Please report: the app, what you typed, what you saw, and whether anything froze or closed.
 
 ## 2b. Settings
-Start menu → **Type3arabi Settings** (or `target\settingselease	ype3arabi-settings.exe`). Every shortcut
+Start menu → **Type3arabi Settings** (or `target\settings\release\type3arabi-settings.exe`). Every shortcut
 is on the **الاختصارات / Keyboard** page: click a field and press the new keys. Changes apply from the next
 word in every app. Diacritics style (Allah form, tanween, hamza), dialect and learning are on the other pages.
 
