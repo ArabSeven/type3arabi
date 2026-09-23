@@ -47,8 +47,8 @@ Trusted Root and Trusted Publishers; never used for public builds.
   `x64\t3a_tip.dll`, `x86\t3a_tip.dll` (same install folder; registered in the 32-bit registry view),
   `arm64\t3a_tip.dll` (only on ARM64 OS), `type3arabi.dat`, `t3a-hotkey.exe`,
   `Type3arabi Settings.exe`, `NOTICE.md`, `LICENSE`.
-- Registration (implemented): deferred elevated custom actions run `System32egsvr32.exe` on the x64 DLL and
-  `SysWOW64egsvr32.exe` on the x86 DLL, i.e. our `DllRegisterServer` / `DllUnregisterServer` (TSF APIs only,
+- Registration (implemented): deferred elevated custom actions run `System32\regsvr32.exe` on the x64 DLL and
+  `SysWOW64\regsvr32.exe` on the x86 DLL, i.e. our `DllRegisterServer` / `DllUnregisterServer` (TSF APIs only,
   R6). No separate helper binary (Agent decision D9).
 - Enable for the installing user: `t3a-hotkey.exe --enable-profile` (immediate, impersonated, after
   InstallFinalize) calls `InstallLayoutOrTip("0401:{CLSID}{PROFILE}", 0)` — one entry, ar-SA (ADR-0009).
