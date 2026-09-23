@@ -53,11 +53,11 @@ url = "https://huggingface.co/datasets/arbml/Arabizi_Transliteration"
 kind = "parallel"
 dialects = ["EGY"]
 license = "unstated (check dataset card and upstream origin)"
-status = "internal"
+status = "eval-only"
 roles = ["rules", "tuning", "eval"]
 citation = "ARBML. Arabizi Transliteration Dataset. Hugging Face Datasets (arbml/Arabizi_Transliteration)."
 attribution = "ARBML Project"
-notes = "Fields: Arabize, Arabic. Used as Egyptian external set by ArabiziKit. Split 80/10/10 train/dev/test; test held out."
+notes = "DUPLICATE (checked 2026-09-23): byte-identical mirror of talafha-jordanian (21,499 pairs), and the data is Jordanian (LEV), not Egyptian. Not fetched; talafha-jordanian is used instead."
 
 [[source]]
 id = "akhanafer-levantine"
@@ -96,7 +96,7 @@ status = "internal"
 roles = ["rules", "tuning", "eval"]
 citation = "Atlasia. ATAM: Arabizi-to-Arabic Mapping. Hugging Face Datasets (atlasia/ATAM), derived from DODa."
 attribution = "Atlasia / DODa contributors"
-notes = "Word-level Darija pairs incl. 8=ه, 9=ق, capital emphatics. Split 80/10/10 train/dev/test; test held out."
+notes = "Word-level Darija pairs incl. 8=ه, 9=ق, capital emphatics. UNAVAILABLE 2026-09-23: dataset is gated/private on the hub."
 
 [[source]]
 id = "doda"
@@ -146,7 +146,7 @@ status = "internal"
 roles = ["rules", "tuning", "eval"]
 citation = "UBC-NLP. NileChat Arabizi-EGY: Synthetic Arabizi Transliterations. Hugging Face Datasets (UBC-NLP/nilechat-arabizi-egy)."
 attribution = "UBC-NLP"
-notes = "Synthetic: weight 0.2 in EM. Split 80/10/10 train/dev/test; test held out."
+notes = "Synthetic: weight 0.2 in EM. UNAVAILABLE 2026-09-23: dataset is gated/private on the hub."
 
 [[source]]
 id = "arabizi-dataset-v2"
@@ -159,7 +159,7 @@ status = "internal"
 roles = ["rules", "eval"]
 citation = "Mohamedd123321. Arabizi-dataset-v2: Monolingual Arabizi Corpus. Hugging Face Datasets (Mohamedd123321/Arabizi-dataset-v2)."
 attribution = "Mohamedd123321"
-notes = "Candidate for self-training (docs/04 §6.4)."
+notes = "Candidate for self-training (docs/04 §6.4). UNAVAILABLE 2026-09-23: dataset removed or private."
 
 [[source]]
 id = "senzi"

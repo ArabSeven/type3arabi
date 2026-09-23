@@ -1,3 +1,45 @@
-# Words never offered as COMPLETIONS (docs/04 §5). Still valid exact matches. One base-form word per line.
-# OWNER: curate this list (offensive/sensitive words). Kept empty in the bootstrap.
+# Words never offered as COMPLETIONS (docs/04 §5). They stay valid exact matches (typing the whole word
+# still finds them). One base-form word per line.
+#   word            never a completion
+#   drop:word       never a completion AND the pipeline drops corpus lines containing it (explicit web text
+#                   must not skew the language model toward that register)
+#   prefix:stem     like drop:, for every token starting with stem
+# Only unambiguous explicit terms get drop:/prefix:. Words with ordinary meanings (e.g. شاذ "irregular",
+# مص "suck", عاهرة in news) are listed plainly or not at all. OWNER: review and extend.
 word
+drop:نيك
+drop:نيكها
+drop:نيكني
+drop:ينيك
+drop:ينيكها
+drop:انيك
+drop:نياك
+drop:منيوك
+drop:منيوكة
+drop:كس
+drop:كسها
+drop:كسك
+drop:كسمك
+drop:كسختك
+drop:زب
+drop:زبي
+drop:زبه
+drop:زبك
+drop:طيز
+drop:طيزها
+drop:شرموط
+drop:شرموطة
+drop:شراميط
+drop:قحبة
+drop:قحاب
+drop:سكس
+drop:سكسي
+drop:بورنو
+drop:ممحونة
+drop:هايجة
+عاهرة
+لوطي
+prefix:نيك
+prefix:كسم
+prefix:شرموط
+prefix:سكس
