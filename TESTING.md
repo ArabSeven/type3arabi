@@ -74,8 +74,17 @@ Please report: the app, what you typed, what you saw, and whether anything froze
 
 ## 2b. Settings
 Start menu → **Type3arabi Settings** (or `target\settings\release\type3arabi-settings.exe`). Every shortcut
-is on the **الاختصارات / Keyboard** page: click a field and press the new keys. Changes apply from the next
-word in every app. Diacritics style (Allah form, tanween, hamza), dialect and learning are on the other pages.
+is on the **الاختصارات / Keyboard** page: click a field and press the new keys; **Esc** (or clicking elsewhere)
+cancels and keeps the old shortcut. A shortcut that would get in the way of typing (a bare letter, plain Space,
+Esc) or that is already used is refused with a reason, and the field keeps waiting for another try. Changes
+apply from the next word in every app. Diacritics style (Allah form, tanween, hamza), dialect and learning are
+on the other pages. Windows' own keyboard options for Type3arabi (Settings → Time & language → Language &
+region → Arabic → Language options → Type3arabi → Options, or the classic Text Services dialog → Properties)
+also open this app.
+
+**One entry only**: after installing, `Win+Space` should list your languages plus exactly one
+**Arabic (Saudi Arabia) · Type3arabi**, no Arabic (101). To see what Windows lists:
+`& "C:\Program Files\Type3arabi\t3a-hotkey.exe" --list-profiles | Out-String` (lines with `True`).
 
 ## 3. Known limitations of this build
 

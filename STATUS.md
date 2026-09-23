@@ -273,6 +273,8 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - D11: Edit sessions stay FIFO: TF_ES_SYNC when nothing is queued; once TSF refuses sync (popup clicks) every later session is queued with TF_ES_ASYNC (never ASYNCDONTCARE) until the queue drains. Evidence: 96 parallel harness runs (4 processes at once) without a garbled word; before, `mar7aba` became `مرحةrبه`. Residual under parallel load: RichEdit sometimes ends a composition on focus loss (text kept, per docs/02 §8) — a harness artifact, not seen in 10 sequential x64/x86 runs.
 - D12: Settings UI is plain HTML/JS (no npm build step) instead of the planned vanilla TypeScript.
 - D13: Popup hints/chips are laid out piece by piece (Latin keycap + Arabic label): GDI DrawText ignored RTL order for mixed labels even with DT_RTLREADING + ARABIC_CHARSET + RLE.
+- D14: `--enable-profile` removes the ar-SA keyboard layouts Windows adds together with the TIP (Arabic 101) unless the user already had them, via InstallLayoutOrTip(ILOT_UNINSTALL), and unloads them from the session (UnloadKeyboardLayout). Evidence on the dev machine (`t3a-hotkey --list-profiles`): before — enabled 04090409, 04010401 (Arabic 101), Type3arabi; after — 04090409, Type3arabi; `Get-WinUserLanguageList` = en-US + ar-SA {Type3arabi only}.
+- D15: Shortcut rules tightened (`is_chord`): a letter/digit needs Ctrl or Alt, Space/Enter/Backspace need a modifier, Esc never — so no shortcut can break typing. Settings capture: Esc/click-away cancels, invalid or duplicate attempts are explained and never stored.
 - D0: Applied Owner decision (2026-09-22) — added `internal` source status, 80/10/10 deterministic split, pipeline modes, and citations in NOTICE.md.
 
 ## Conflicts found between docs
@@ -285,7 +287,9 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - M4: popup hover highlight, per-row ◌َ button; dark-theme popup; DPI-change handling.
 - M7: Owner-run MSI install/upgrade/uninstall on Win10/Win11; ARM64 DLL; code signing (O2); cargo-about NOTICE;
   Settings "My words" page; "enable for this user" button for other accounts; hotkey conflict shown in Settings.
-- M7: verify `InstallLayoutOrTip` from the MSI yields exactly one ar-SA entry when the user has no Arabic yet.
+- M7: verify on a fresh account that the MSI yields exactly one ar-SA entry (the enable step was verified on the dev machine only, D14).
+- M7: confirm where Windows 11 Settings surfaces ITfFnConfigure for a third-party keyboard (implemented + harness-checked via GetDisplayName; not yet seen in the Settings UI).
+- M1: Tray (input indicator) menu item "Type3arabi Settings" via ITfLangBarItemButton.
 - M1: Spike S2 for real (Latin base layout in password fields); re-run S1/S3/S4/S5 (all flagged UNVERIFIED).
 - M1: `ITfTextEditSink` (finalize when the caret is moved by mouse) and `ITfTextLayoutSink` (popup follows scrolling).
 - M1: Input-scope gating beyond the keyboard-disabled compartment (IS_EMAIL/IS_URL ⇒ Latin, IS_PRIVATE ⇒ no learning).
@@ -299,6 +303,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - M2: `data/eval/bench_keystrokes.tsv` (10k words from golden/FineWeb) replaces smoke as the default bench set.
 
 ## Session log
+- 2026-09-23 (evening) — Agent (Claude): Owner feedback: Arabic (101) stuck next to Type3arabi, Settings integration, shortcut capture bugs. Fixed the enable step (D14) and verified it on this machine; `t3a-hotkey --list-profiles` diagnostic; ITfFnConfigure → Settings app (docs/02 §14); capture rewrite + stricter shortcut rules (D15), exercised in the browser pane with a stubbed backend. Edit sessions FIFO (D11).
 - 2026-09-23 (later) — Agent (Claude): Owner review (6 points) implemented. Real data pipeline (FineWeb-2 202M tokens → 600k lexicon, bigrams, char LM; parallel pairs; EM rule training; tuning; honest held-out eval); four engine ranking bugs fixed; tashkeel editor redesign + selection model; mouse input; Shift+Space; configurable [keys]; Settings app (Tauri 2); t3a-hotkey companion; WiX MSI with restart prompt; R14 enforced in build-data. Next: Owner installs the MSI; EGY data; DP aligner; signing decision.
 - 2026-09-23 — Agent (Claude, took over from Gemini): the Owner's real test failed (16 switcher entries, Notepad crash). Audited and rebuilt the TIP (see Audit + Rebuild checklist), fixed the dev scripts, fixed two user-store bugs, added the `tsf_harness` + `popup_paint` examples, updated docs/02, docs/03, docs/09 and TESTING.md, flagged spikes UNVERIFIED. Next: Owner runs TESTING.md §0–2; then S2 and the M1 backlog.
 - 2026-09-23 — Agent: Local Testing & Packaging completed. Created comprehensive `TESTING.md` local testing guide. Automated `scripts/dev-install.ps1` (with automatic UAC elevation, Arabic language list management, and 64-bit/32-bit registration) and `scripts/dev-uninstall.ps1`. Installed and activated TIP on local Windows machine. Ready for real-app typing verification by the Owner.
