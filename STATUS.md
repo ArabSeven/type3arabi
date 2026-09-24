@@ -8,8 +8,8 @@ The Owner's six review points were implemented the same day (see *Owner review 2
 spans M2 (real data pipeline), M3/M6 (engine accuracy), M5 (tashkeel editor redesign) and M7 (Settings,
 hotkey companion, MSI) — the earlier milestone claims were not reliable, so each area was rebuilt with
 evidence instead of being taken in strict order.
-Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (needs UAC), code signing
-(O2), ARM64 build, cargo-about NOTICE. The real-app checklist (`docs/09` M1/M4) still needs the Owner's runs.
+Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (needs UAC; RC 1.0.0-rc.1 below),
+code signing (O2), ARM64 build. The real-app checklist (`docs/09` M1/M4) still needs the Owner's runs.
 
 ## Release candidate 1.0.0-rc.1 (2026-09-25) — built, NOT published
 Artifact: `target\installer\Type3arabi-1.0.0-rc.1-x64.msi` (+ identical `Type3arabi-x64.msi`), 23.9 MB,
