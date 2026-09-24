@@ -37,7 +37,14 @@ CI runs 8–9 on a small fixture (`data/fixtures/mini/`) to keep the format hone
 **Current build (2026-09-23, `--mode internal`)**: FineWeb-2 streamed with per-group token caps (MSA 60M, LEV
 all 18.7M, EGY 50M, GLF 30M, IRQ all 3M, MAG 40M); after filtering 186M tokens; 600k words, 2.28M bigrams,
 600k char n-grams, 99k vocalized base words; rules trained on 48.8k word pairs (Talafha LEV, Elkababi MAG,
-Khanafer LEV, ArabiziKit). `type3arabi.dat` = 59.15 MB. Explicit web text is dropped via
+Khanafer LEV, ArabiziKit). `type3arabi.dat` = 59.15 MB.
+**2026-09-24 (ADR-0010)**: rules retrained on 197.8k word pairs — adds DODa (Moroccan, CC BY-NC 4.0: human
+sentences + word lists with spelling variants; the synthetic DODa-500K rows are not used) and TArC (Tunisian,
+CC BY-NC-SA 4.0, sentence-aligned via its `<eos>` rows, `foreign` tokens dropped). Elkababi is retired: it is a
+re-spelled copy of DODa's sentences, and keeping both would put the same sentences in train and test.
+Splits use an explicit key where rows belong together (the Arabic sentence; `w:<arabic word>` for a word's
+spelling variants), so no spelling variant of a test item is trained on. `--exclude-nc` leaves out every
+`license_family = "nc"` source (the ADR-0010 exit path); `build-data` writes the model license into META. Explicit web text is dropped via
 `data/seed/no_complete.tsv` (`drop:`/`prefix:` entries).
 
 ## 3. Arabic normalization (must match `t3a-engine::arabic::normalize_word` exactly — shared test vectors in `data/eval/normalization.tsv`)

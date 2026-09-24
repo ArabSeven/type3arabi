@@ -284,20 +284,24 @@ pub fn build_data(
     writer.add_parm(&parm_content);
     println!("  [PARM] Engine parameters stored");
 
-    // 9. META — distribution + the internal sources used (AGENTS.md R14). A release build may not
-    // contain any `internal` source.
-    let internal: Vec<String> = in_dir
+    // 9. META — distribution, sources, model license (AGENTS.md R14, ADR-0010). A release build may
+    // not contain any `internal` source. `sources_used.tsv`: id, status, roles, license family.
+    let used: Vec<Vec<String>> = in_dir
         .map(|d| d.join("sources_used.tsv"))
         .and_then(|p| fs::read_to_string(p).ok())
         .map(|t| {
             t.lines()
-                .filter_map(|l| {
-                    let c: Vec<&str> = l.split('\t').collect();
-                    (c.len() >= 2 && c[1] == "internal").then(|| c[0].to_string())
-                })
+                .map(|l| l.split('\t').map(str::to_string).collect::<Vec<_>>())
+                .filter(|c| c.len() >= 2)
                 .collect()
         })
         .unwrap_or_default();
+    let internal: Vec<String> = used
+        .iter()
+        .filter(|c| c[1] == "internal")
+        .map(|c| c[0].clone())
+        .collect();
+    let model_license = model_license(&used);
     if mode == "release" && !internal.is_empty() {
         return Err(format!(
             "release build refused: internal sources were used ({}); rebuild the pipeline with --mode release",
@@ -310,10 +314,13 @@ pub fn build_data(
     } else {
         "release"
     };
-    let internal_json: Vec<String> = internal.iter().map(|i| format!("\"{i}\"")).collect();
+    let quoted = |v: &mut dyn Iterator<Item = &String>| {
+        v.map(|i| format!("\"{i}\"")).collect::<Vec<_>>().join(", ")
+    };
     let meta_json = format!(
-        "{{\"format_version\": 1, \"distribution\": \"{dist}\", \"internal_sources\": [{}], \"word_count\": {}, \"rule_count\": {}}}\n",
-        internal_json.join(", "),
+        "{{\"format_version\": 1, \"distribution\": \"{dist}\", \"license\": \"{model_license}\", \"sources\": [{}], \"internal_sources\": [{}], \"word_count\": {}, \"rule_count\": {}}}\n",
+        quoted(&mut used.iter().map(|c| &c[0])),
+        quoted(&mut internal.iter()),
         words.len(),
         rules.len()
     );
@@ -335,6 +342,20 @@ pub fn build_data(
     );
 
     Ok(())
+}
+
+/// The model's license from the license families of the sources used (ADR-0010): any non-commercial
+/// source makes it CC BY-NC-SA 4.0; permissive-only data (ODC-By, CC BY, MIT, …) gives CC BY 4.0.
+/// Rows: id, status, roles, license family.
+fn model_license(used: &[Vec<String>]) -> &'static str {
+    let nc = used
+        .iter()
+        .any(|c| c.get(3).is_some_and(|f| f == "nc" || f == "unknown"));
+    if nc || used.iter().any(|c| c.len() < 4) {
+        "CC-BY-NC-SA-4.0"
+    } else {
+        "CC-BY-4.0"
+    }
 }
 
 fn compile_rules(path: &Path) -> Result<(Vec<Chunk>, Vec<Rule>), Box<dyn std::error::Error>> {
@@ -765,5 +786,33 @@ impl TrieBuilder {
         }
 
         out
+    }
+}
+
+#[cfg(test)]
+mod license_tests {
+    use super::model_license;
+
+    fn row(id: &str, family: &str) -> Vec<String> {
+        [id, "approved", "rules", family]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn any_nc_or_unknown_source_makes_the_model_nc() {
+        assert_eq!(model_license(&[row("fineweb2", "permissive")]), "CC-BY-4.0");
+        assert_eq!(
+            model_license(&[row("fineweb2", "permissive"), row("doda", "nc")]),
+            "CC-BY-NC-SA-4.0"
+        );
+        // Internal (license still unknown) and old 3-column files are treated conservatively.
+        assert_eq!(
+            model_license(&[row("talafha", "unknown")]),
+            "CC-BY-NC-SA-4.0"
+        );
+        let old = vec!["x".to_string(), "approved".into(), "rules".into()];
+        assert_eq!(model_license(&[old]), "CC-BY-NC-SA-4.0");
     }
 }

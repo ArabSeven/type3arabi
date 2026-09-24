@@ -63,9 +63,9 @@ def word_pairs(source_id: str):
                     yield a, b, dialect, split
 
 
-def run(mode: str = "internal") -> int:
+def run(mode: str = "internal", exclude_nc: bool = False) -> int:
     print("=== pairs: word pairs for rule training + held-out eval sets ===")
-    rules_ok = {s["id"] for s in sources.allowed("rules", mode)}
+    rules_ok = {s["id"] for s in sources.allowed("rules", mode, exclude_nc)}
     eval_ok = {s["id"] for s in sources.load() if "eval" in s["roles"] and s["status"] != "blocked"}
     align_dir, eval_dir = PIPELINE_DATA / "align", PIPELINE_DATA / "eval"
     align_dir.mkdir(parents=True, exist_ok=True)
@@ -103,14 +103,19 @@ def run(mode: str = "internal") -> int:
 
 
 def write_sources_used(rule_sources: set[str]) -> None:
-    """out/sources_used.tsv (id, status, roles used): build-data embeds the internal ids in META and
-    refuses a release build that contains any (AGENTS.md R14)."""
-    status = {s["id"]: s["status"] for s in sources.load()}
+    """out/sources_used.tsv (id, status, roles used, license family): build-data embeds the ids in META,
+    derives the model license from the families (ADR-0010) and refuses a release build that contains an
+    internal source (AGENTS.md R14)."""
+    reg = {s["id"]: s for s in sources.load()}
     rows = []
     if (RAW_DIR / "fineweb2").exists():
-        rows.append(("fineweb2", status.get("fineweb2", "unknown"), "lexicon,lm,charlm,diac"))
+        rows.append(("fineweb2", "lexicon,lm,charlm,diac"))
     for sid in sorted(rule_sources):
-        rows.append((sid, status.get(sid, "unknown"), "rules,tuning"))
+        rows.append((sid, "rules,tuning"))
     out = PIPELINE_DATA / "out" / "sources_used.tsv"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("".join(f"{a}\t{b}\t{c}\n" for a, b, c in rows), encoding="utf-8")
+    lines = []
+    for sid, roles in rows:
+        r = reg.get(sid, {})
+        lines.append(f"{sid}\t{r.get('status', 'unknown')}\t{roles}\t{r.get('license_family', 'unknown')}\n")
+    out.write_text("".join(lines), encoding="utf-8")

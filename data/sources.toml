@@ -1,15 +1,20 @@
-# Dataset registry — the ONLY place that decides what data may be used and how (AGENTS.md R14).
+# Dataset registry — the ONLY place that decides what data may be used and how (AGENTS.md R14, ADR-0010).
+# DATASETS.md is generated from this file: `uv run t3ap datasets-md` (tools/pipeline).
+#
+# The shipped model (type3arabi.dat) is licensed CC BY-NC-SA 4.0; the code is Apache-2.0.
 #
 # status:
-#   approved        may influence shipped artifacts for the listed roles
-#   internal        publicly downloadable data with unstated/restrictive license; usable in local/internal builds
-#   eval-only       may be used for evaluation reports only (never training, never tuning)
+#   approved        may shape the shipped model for the listed roles (license compatible with CC BY-NC-SA 4.0)
+#   internal        license unstated; clearance requested; `--mode internal` builds only
+#   eval-only       evaluation reports only (never training, never tuning)
 #   owner-decision  treated as eval-only until the Owner records a decision in STATUS.md
-#   blocked         must not be downloaded by the pipeline
+#   blocked         never downloaded (incompatible license, unavailable, or superseded)
 # roles: lexicon | lm | charlm | diac | rules | tuning | eval | reference
-#
-# "license = 'unstated'" means we found no license. Default is eval-only; the action is to email the
-# authors asking for CC-BY (or similar) permission, then flip to approved with the evidence path.
+# license_family (approved sources): permissive (CC0/MIT/BSD/Apache/ODC-By/CC BY) | nc (CC BY-NC, CC BY-NC-SA)
+#   `t3ap --exclude-nc all` rebuilds without every `nc` source (ADR-0010 exit path).
+# Never in the model: CC BY-SA, ODbL, NoDerivatives, research-only, paid (LDC). Those may be eval-only.
+# Permission emails: kept privately in docs/evidence/licenses/<id>.* (gitignored: personal data); record
+#   "Permission granted <date> by <name>: <terms>" in notes, set license, license_family, status = "approved".
 
 [[source]]
 id = "fineweb2"
@@ -21,6 +26,7 @@ license = "ODC-By-1.0 (also subject to Common Crawl terms of use)"
 status = "approved"
 roles = ["lexicon", "lm", "charlm", "diac"]
 notes = "Subsets: arb_Arab, arz_Arab, apc_Arab, ajp_Arab, afb_Arab, ars_Arab, acq_Arab, acm_Arab, ary_Arab, arq_Arab, aeb_Arab, ayl_Arab, apd_Arab (use those that exist). Attribution in NOTICE.md."
+license_family = "permissive"
 
 [[source]]
 id = "golden"
@@ -32,6 +38,7 @@ license = "CC0-1.0 (contributor agreement)"
 status = "approved"
 roles = ["rules", "tuning", "eval"]
 notes = "dev split: rules+tuning; *.test.tsv: eval only."
+license_family = "permissive"
 
 [[source]]
 id = "talafha-jordanian"
@@ -44,7 +51,7 @@ status = "internal"
 roles = ["rules", "tuning", "eval"]
 citation = "Bashar Talafha, Analle Abu Ammar and Mahmoud Al-Ayyoub. Atar: Attention-based LSTM for Arabizi Transliteration. International Journal of Electrical and Computer Engineering (IJECE), June 2021."
 attribution = "Bashar Talafha, Analle Abu Ammar, Mahmoud Al-Ayyoub (2021)"
-notes = "~25k pairs, native-speaker checked; single most valuable LEV resource. Split 80/10/10 train/dev/test; test held out."
+notes = "Clearance requested 2026-09-24 (email to authors). ~25k pairs, native-speaker checked; single most valuable LEV resource. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "arbml-arabizi"
@@ -70,7 +77,7 @@ status = "internal"
 roles = ["rules", "tuning", "eval"]
 citation = "Ali Khanafer. Arabic to Arabizi Dataset. Hugging Face Datasets (akhanafer/arabic-to-arabizi)."
 attribution = "Ali Khanafer"
-notes = "Fields: arabizi, arabic. Split 80/10/10 train/dev/test; test held out."
+notes = "433 pairs. Clearance requested 2026-09-24 (HF discussion). Fields: arabizi, arabic. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "elkababi-darija"
@@ -79,11 +86,11 @@ url = "https://huggingface.co/datasets/elkababi2/Darija-Text-Ar-Arabizi"
 kind = "parallel"
 dialects = ["MAG"]
 license = "unstated (check dataset card)"
-status = "internal"
-roles = ["rules", "tuning", "eval"]
+status = "blocked"
+roles = []
 citation = "Elkababi. Darija-Text-Ar-Arabizi Dataset. Hugging Face Datasets (elkababi2/Darija-Text-Ar-Arabizi)."
 attribution = "Elkababi"
-notes = "Fields: darija_Latn, darija_Arab_new. Split 80/10/10 train/dev/test; test held out."
+notes = "SUPERSEDED 2026-09-24: a re-spelled revision of DODa sentences/sentences.csv (upstream CC BY-NC 4.0); DODa is used directly, since keeping both would put the same sentences in train and test. Was: Fields: darija_Latn, darija_Arab_new. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "atlasia-atam"
@@ -96,20 +103,21 @@ status = "blocked"
 roles = []
 citation = "Atlasia. ATAM: Arabizi-to-Arabic Mapping. Hugging Face Datasets (atlasia/ATAM), derived from DODa."
 attribution = "Atlasia / DODa contributors"
-notes = "Word-level Darija pairs incl. 8=ه, 9=ق, capital emphatics. UNAVAILABLE 2026-09-23: dataset is gated/private on the hub."
+notes = "Superseded by doda (its upstream). Word-level Darija pairs incl. 8=ه, 9=ق, capital emphatics. UNAVAILABLE 2026-09-23: dataset is gated/private on the hub."
 
 [[source]]
 id = "doda"
 name = "Darija Open Dataset (DODa)"
 url = "https://github.com/darija-open-dataset/dataset"
-kind = "lexicon"
+kind = "parallel"
 dialects = ["MAG"]
 license = "CC-BY-NC-4.0 (repository LICENSE, verified 2026-09-24)"
-status = "blocked"
-roles = []
+status = "approved"
+roles = ["rules", "tuning", "eval"]
 citation = "Darija Open Dataset (DODa). A Collaborative Open-Source Dataset for the Moroccan Darija Dialect."
 attribution = "DODa team"
-notes = "Darija lexicon with Latin and Arabic spellings. Split 80/10/10 train/dev/test; test held out."
+notes = "Used: sentences/sentences.csv (~48.8k human sentence pairs) + syntactic/semantic word lists (Latin spelling variants n1..n6 -> darija_ar). DODa-500K synthetic rows are NOT used. Split by the Arabic side. Darija lexicon with Latin and Arabic spellings. Split 80/10/10 train/dev/test; test held out."
+license_family = "nc"
 
 [[source]]
 id = "arabizikit"
@@ -121,6 +129,7 @@ license = "MIT"
 status = "approved"
 roles = ["reference"]
 notes = "Reference for context rules (2 as qaf vs hamza, final a as ة/ا, Maghrebi 9=ق, doubled consonants). Adapt ideas with attribution; its corpus (rabeeeehh/arabizi-kit-corpus) is LLM-annotated and listed separately."
+license_family = "permissive"
 
 [[source]]
 id = "arabizikit-corpus"
@@ -134,6 +143,7 @@ roles = ["rules", "tuning", "eval"]
 citation = "Rabeeh. ArabiziKit Corpus: LLM-Annotated Arabizi Sentences. Hugging Face Datasets (rabeeeehh/arabizi-kit-corpus)."
 attribution = "Rabeeh / ArabiziKit"
 notes = "Small (355 sentences), LLM references with low agreement. Split 80/10/10 train/dev/test; test held out."
+license_family = "permissive"
 
 [[source]]
 id = "nilechat-arabizi-egy"
@@ -142,11 +152,12 @@ url = "https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-egy"
 kind = "parallel"
 dialects = ["EGY"]
 license = "CC-BY-NC-4.0 (dataset card, verified 2026-09-24)"
-status = "blocked"
-roles = []
+status = "approved"
+roles = ["rules", "tuning", "eval"]
 citation = "UBC-NLP. NileChat Arabizi-EGY: Synthetic Arabizi Transliterations. Hugging Face Datasets (UBC-NLP/nilechat-arabizi-egy)."
 attribution = "UBC-NLP"
-notes = "Synthetic: weight 0.2 in EM. UNAVAILABLE 2026-09-23: dataset is gated/private on the hub."
+notes = "GATED: the Owner must accept the terms on the dataset page with their HF account; fetch then needs HF_TOKEN. Synthetic: weight 0.2 in EM. UNAVAILABLE 2026-09-23: dataset is gated/private on the hub."
+license_family = "nc"
 
 [[source]]
 id = "arabizi-dataset-v2"
@@ -179,11 +190,11 @@ url = "https://github.com/NNLP-IL/Arabic-Resources"
 kind = "lexicon"
 dialects = ["LEV"]
 license = "CC-BY-SA-4.0"
-status = "internal"
-roles = ["lexicon", "diac", "eval"]
+status = "eval-only"
+roles = ["eval"]
 citation = "Maknuune: Palestinian Arabic Lexicon with Phonological Transcriptions. NNLP-IL / Maknuune Project."
 attribution = "Maknuune Project"
-notes = "Excellent for LEV vocalizations (DIAC). CC BY-SA sources require release data build clearance or CC BY-SA."
+notes = "CC BY-SA cannot enter a CC BY-NC-SA model (ADR-0010): eval only. Excellent for LEV vocalizations (DIAC). CC BY-SA sources require release data build clearance or CC BY-SA."
 
 [[source]]
 id = "tashkeela"
@@ -196,7 +207,7 @@ status = "internal"
 roles = ["diac"]
 citation = "Taha Zerrouki and Amar Balla. Tashkeela: Novel Text Corpus for Arabic Vocalization. SourceForge (2017)."
 attribution = "Taha Zerrouki, Amar Balla"
-notes = "75M vocalized words, mostly classical. Statistics only (DIAC variants), never redistribute text."
+notes = "Not used. If the CC BY 4.0 of the article is confirmed by the authors -> approved/permissive. 75M vocalized words, mostly classical. Statistics only (DIAC variants), never redistribute text."
 
 [[source]]
 id = "wikipedia-ar"
@@ -205,11 +216,11 @@ url = "https://dumps.wikimedia.org/"
 kind = "mono_arabic"
 dialects = ["MSA", "EGY"]
 license = "CC-BY-SA-4.0"
-status = "internal"
-roles = ["lexicon", "lm", "charlm", "diac"]
+status = "blocked"
+roles = []
 citation = "Wikimedia Foundation. Arabic Wikipedia and Egyptian Arabic Wikipedia Database Dumps."
 attribution = "Wikipedia contributors"
-notes = "Word-frequency statistics only. CC BY-SA sources require release data build clearance or CC BY-SA."
+notes = "CC BY-SA cannot enter a CC BY-NC-SA model (ADR-0010); FineWeb-2 covers the same ground. Word-frequency statistics only. CC BY-SA sources require release data build clearance or CC BY-SA."
 
 [[source]]
 id = "bolt-egy"
@@ -243,6 +254,7 @@ license = "facts from public documentation"
 status = "approved"
 roles = ["reference"]
 notes = "Digit mappings (3'=غ, 6'=ظ, 7'=خ, 8=ق, 9=ص, 4=غ) and abbreviation ideas (ISA→إن شاء الله, S3→سلام عليكم). No code or data copied."
+license_family = "permissive"
 
 [[source]]
 id = "synthetic-llm"
@@ -254,3 +266,56 @@ license = "owned output (verify provider terms at generation time)"
 status = "owner-decision"
 roles = ["rules"]
 notes = "Only after Owner approval + budget; weight 0.3; never used in eval."
+
+[[source]]
+id = "tarc"
+name = "TArC — Tunisian Arabish Corpus (Gugliotta & Dinarelli)"
+url = "https://github.com/eligugliotta/tarc"
+kind = "parallel"
+dialects = ["MAG"]
+license = "CC-BY-NC-SA-4.0 (README, verified 2026-09-24)"
+license_family = "nc"
+status = "approved"
+roles = ["rules", "tuning", "eval"]
+citation = "Elisa Gugliotta and Marco Dinarelli. TArC: Incrementally and Semi-Automatically Collecting a Tunisian Arabish Corpus. LREC 2020."
+attribution = "Elisa Gugliotta, Marco Dinarelli"
+notes = "tarc.tsv: ~4.8k sentences / 31.5k Arabizi tokens with CODA Arabic spelling (token-aligned; `foreign` tokens dropped). Split by sentence."
+
+[[source]]
+id = "nilechat-arabizi-mor"
+name = "UBC-NLP/nilechat-arabizi-mor (synthetic Moroccan Arabizi)"
+url = "https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-mor"
+kind = "parallel"
+dialects = ["MAG"]
+license = "CC-BY-NC-4.0 (dataset card, verified 2026-09-24)"
+license_family = "nc"
+status = "approved"
+roles = ["rules", "tuning", "eval"]
+citation = "UBC-NLP. NileChat Arabizi-MOR. Hugging Face Datasets (UBC-NLP/nilechat-arabizi-mor)."
+attribution = "UBC-NLP"
+notes = "GATED like nilechat-arabizi-egy (Owner accepts terms; HF_TOKEN). Synthetic: evaluate before trusting."
+
+[[source]]
+id = "darija-arabizi-mt"
+name = "ilias-brh/english-darija-arabizi-sentence-pairs (Moroccan Arabizi, no Arabic script)"
+url = "https://huggingface.co/datasets/ilias-brh/english-darija-arabizi-sentence-pairs"
+kind = "mono_arabizi"
+dialects = ["MAG"]
+license = "CC-BY-NC-SA-4.0 (dataset card, verified 2026-09-24)"
+license_family = "nc"
+status = "approved"
+roles = ["rules"]
+citation = "ilias-brh. English-Darija Arabizi sentence pairs. Hugging Face Datasets."
+attribution = "ilias-brh"
+notes = "~280k Arabizi sentences (English side unused). Candidate for self-training (docs/04 §6.4, M6); no fetcher yet."
+
+[[source]]
+id = "romanized-arabic-5d"
+name = "Romanized Arabic Across Dialects (arXiv 2608.02555): Arabic ↔ multiple Arabizi, 5 dialects"
+url = "https://arxiv.org/abs/2608.02555"
+kind = "parallel"
+dialects = ["MAG", "EGY", "LEV"]
+license = "CC-BY-4.0 (paper states); dataset not yet released"
+status = "blocked"
+roles = []
+notes = "WATCH: Algerian, Egyptian, Lebanese, Moroccan, Tunisian, several speakers per sentence. Re-check for a data release; then approved/permissive."

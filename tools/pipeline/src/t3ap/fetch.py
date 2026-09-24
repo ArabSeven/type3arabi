@@ -10,6 +10,7 @@ Only sources whose status allows fetching in the chosen mode are touched (AGENTS
 import hashlib
 import io
 import json
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -121,12 +122,16 @@ def write_pairs(sid: str, rows, manifest: dict) -> None:
     out = out_dir / "pairs.tsv"
     n = {"train": 0, "dev": 0, "test": 0}
     with out.open("w", encoding="utf-8", newline="\n") as w:
-        for latin, arabic, dialect in rows:
+        for row in rows:
+            # (latin, arabic, dialect) or (latin, arabic, dialect, split_key): rows sharing a key (e.g. the
+            # spelling variants of one word, or one sentence) always land in the same split.
+            latin, arabic, dialect = row[:3]
             latin = " ".join(str(latin or "").split())
             arabic = " ".join(str(arabic or "").split())
             if not latin or not arabic or latin.lower() == "nan" or arabic.lower() == "nan":
                 continue
-            split = sources.split_row(latin + "\t" + arabic)
+            key = row[3] if len(row) > 3 else latin + "\t" + arabic
+            split = sources.split_row(key)
             n[split] += 1
             w.write(f"{latin}\t{arabic}\t{dialect}\t{split}\n")
     manifest["sources"][sid] = {"sha256": sha256_file(out), "pairs": n}
@@ -140,6 +145,98 @@ def hf_parquet_rows(dataset: str):
     for f in meta.get("parquet_files", []):
         table = pq.read_table(io.BytesIO(http_get(f["url"])))
         yield from table.to_pylist()
+
+
+def hf_gated_rows(dataset: str):
+    """Rows of a gated HF dataset: the Owner accepts its terms on the website, then sets HF_TOKEN."""
+    import os
+
+    if not os.environ.get("HF_TOKEN"):
+        raise RuntimeError(f"{dataset} is gated: accept its terms on huggingface.co and set HF_TOKEN")
+    from huggingface_hub import HfFileSystem
+    import pyarrow.parquet as pq
+
+    fs = HfFileSystem(token=os.environ["HF_TOKEN"])
+    files = sorted(fs.glob(f"datasets/{dataset}/**/*.parquet"))
+    if not files:
+        raise RuntimeError(f"{dataset}: no parquet files visible (terms not accepted?)")
+    for path in files:
+        with fs.open(path, "rb") as fh:
+            yield from pq.read_table(fh).to_pylist()
+
+
+def _script_share(text: str) -> tuple[float, float]:
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return 0.0, 0.0
+    arabic = sum("؀" <= c <= "ۿ" for c in letters)
+    latin = sum(c.isascii() for c in letters)
+    return arabic / len(letters), latin / len(letters)
+
+
+def script_pair(row: dict):
+    """(latin, arabic) from a row whose column names are not known in advance: the first string column that
+    is mostly Latin and the first that is mostly Arabic script."""
+    latin = arabic = None
+    for v in row.values():
+        if not isinstance(v, str) or not v.strip():
+            continue
+        ar, la = _script_share(v)
+        if arabic is None and ar > 0.8:
+            arabic = v
+        elif latin is None and la > 0.8:
+            latin = v
+    return latin, arabic
+
+
+DODA_RAW = "https://raw.githubusercontent.com/darija-open-dataset/dataset/main/"
+
+
+def doda_rows():
+    """DODa (CC BY-NC 4.0): human sentence pairs + word lists with Latin spelling variants. The synthetic
+    DODa-500K rows are not used."""
+    import csv
+
+    text = http_get(DODA_RAW + "sentences/sentences.csv").decode("utf-8")
+    for r in csv.DictReader(io.StringIO(text)):
+        yield r.get("darija"), r.get("darija_ar"), "MAG", r.get("darija_ar") or ""
+    listing = json.loads(http_get("https://api.github.com/repos/darija-open-dataset/dataset/git/trees/main?recursive=1"))
+    for item in listing.get("tree", []):
+        path = item.get("path", "")
+        if not path.endswith(".csv") or not path.startswith(("syntactic categories/", "semantic categories/")):
+            continue
+        rows = list(csv.DictReader(io.StringIO(http_get(DODA_RAW + path.replace(" ", "%20")).decode("utf-8"))))
+        if not rows or "darija_ar" not in rows[0]:
+            continue  # e.g. conjugation tables: Latin only
+        variant_cols = [c for c in rows[0] if re.fullmatch(r"n\d+", c or "")]
+        for r in rows:
+            ar = (r.get("darija_ar") or "").strip()
+            for c in variant_cols:
+                if (r.get(c) or "").strip():
+                    yield r[c], ar, "MAG", "w:" + ar
+
+
+def tarc_rows():
+    """TArC (CC BY-NC-SA 4.0): token rows (arabish, class, CODA) with `<eos>` between sentences. Only `arabizi`
+    tokens are kept, on both sides, so the sentence stays token-aligned."""
+    import csv
+
+    text = http_get("https://raw.githubusercontent.com/eligugliotta/tarc/master/tarc.tsv").decode("utf-8")
+    lat, ara = [], []
+    for r in csv.DictReader(io.StringIO(text), delimiter="\t"):
+        if r.get("arabish") == "<eos>":
+            if lat:
+                yield " ".join(lat), " ".join(ara), "MAG", " ".join(ara)
+            lat, ara = [], []
+            continue
+        a, c = (r.get("arabish") or "").strip(), (r.get("CODA") or "").strip()
+        # Skip user names / numbers glued to words (e.g. "m5abbi2361").
+        if r.get("class") != "arabizi" or not a or not c or " " in a or " " in c or re.search(r"\d{3}", a):
+            continue
+        lat.append(a)
+        ara.append(c)
+    if lat:
+        yield " ".join(lat), " ".join(ara), "MAG", " ".join(ara)
 
 
 def fetch_parallel(src: dict, manifest: dict) -> bool:
@@ -175,6 +272,13 @@ def fetch_parallel(src: dict, manifest: dict) -> bool:
                         a, b = b, a
                     yield a, b, "LEV"
         rows = xlsx_rows()
+    elif sid == "doda":
+        rows = doda_rows()
+    elif sid == "tarc":
+        rows = tarc_rows()
+    elif sid in ("nilechat-arabizi-egy", "nilechat-arabizi-mor"):
+        dialect = "EGY" if sid.endswith("egy") else "MAG"
+        rows = ((*script_pair(r), dialect) for r in hf_gated_rows("UBC-NLP/" + sid))
     else:
         return False
     write_pairs(sid, rows, manifest)

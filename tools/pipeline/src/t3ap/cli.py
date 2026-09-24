@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-from . import count, diac, fetch, lexicon, normalize, pairs, sources
+from . import count, datasets, diac, fetch, lexicon, normalize, pairs, sources
 
 STAGES = {
     "fetch": "Download approved/eval-only sources into pipeline_data/raw/<id>/ and write manifest.lock.json (M2).",
@@ -42,7 +42,7 @@ def cmd_all(args):
     code = diac.run()
     if code != 0:
         return code
-    code = pairs.run(mode=args.mode)
+    code = pairs.run(mode=args.mode, exclude_nc=args.exclude_nc)
     if code != 0:
         return code
     print("=== Python stages done. Next (repo root):")
@@ -61,8 +61,14 @@ def main(argv=None):
         default="internal",
         help="build mode: internal (approved + internal) or release (approved only)",
     )
+    p.add_argument(
+        "--exclude-nc",
+        action="store_true",
+        help="leave out non-commercial (license_family = nc) sources: the ADR-0010 exit path",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("sources", help="validate and list data/sources.toml")
+    sub.add_parser("datasets-md", help="regenerate DATASETS.md from data/sources.toml")
 
     p_fetch = sub.add_parser("fetch", help=STAGES["fetch"])
     p_fetch.add_argument("--only", help="fetch only this source ID")
@@ -90,7 +96,9 @@ def main(argv=None):
     elif args.cmd == "diac":
         return diac.run()
     elif args.cmd == "pairs":
-        return pairs.run(mode=args.mode)
+        return pairs.run(mode=args.mode, exclude_nc=args.exclude_nc)
+    elif args.cmd == "datasets-md":
+        return datasets.run()
     elif args.cmd == "all":
         return cmd_all(args)
 

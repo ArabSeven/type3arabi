@@ -7,6 +7,7 @@ REPO = Path(__file__).resolve().parents[4]
 SOURCES = REPO / "data" / "sources.toml"
 VALID_STATUS = {"approved", "internal", "eval-only", "owner-decision", "blocked"}
 VALID_ROLES = {"lexicon", "lm", "charlm", "diac", "rules", "tuning", "eval", "reference"}
+VALID_FAMILY = {"permissive", "nc"}
 
 
 def load():
@@ -20,13 +21,20 @@ def load():
         assert set(r["roles"]) <= VALID_ROLES, (r["id"], r["roles"])
         if r["status"] == "blocked":
             assert not r["roles"], f"{r['id']}: blocked sources have no roles"
+        if r["status"] == "approved":
+            # ADR-0010: every approved source declares whether it is non-commercial.
+            assert r.get("license_family") in VALID_FAMILY, f"{r['id']}: license_family missing"
     return rows
 
 
-def allowed(role: str, mode: str = "internal"):
-    """Sources that may feed `role` into SHIPPED artifacts."""
+def allowed(role: str, mode: str = "internal", exclude_nc: bool = False):
+    """Sources that may feed `role` into SHIPPED artifacts. `exclude_nc` drops non-commercial ones (ADR-0010)."""
     valid = {"approved", "internal"} if mode == "internal" else {"approved"}
-    return [r for r in load() if r["status"] in valid and role in r["roles"]]
+    return [
+        r
+        for r in load()
+        if r["status"] in valid and role in r["roles"] and not (exclude_nc and r.get("license_family") == "nc")
+    ]
 
 
 def fetchable(mode: str = "internal"):
