@@ -136,7 +136,8 @@ Doc map:
 ### 3.4 Code quality
 - **R15.** `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and
   `cargo test --workspace` pass before every commit. Windows-only crates are checked in the Windows CI job.
-- **R16.** `unsafe` only in `t3a-tip`, `t3a-ui`, `t3a-hotkey`, `t3a-paths`, and the mmap loader in `t3a-data`.
+- **R16.** `unsafe` only in `t3a-tip`, `t3a-ui`, `t3a-hotkey`, `t3a-paths`, the mmap loader in `t3a-data`, and the
+  C-ABI buffer handoff in `t3a-wasm` (the website's in-browser engine).
   Every `unsafe` block carries a `// SAFETY:` comment.
 - **R17.** Public items in `t3a-engine` are documented; every algorithmic constant lives in
   `EngineParams` (loaded from the data file's `PARM` section) — no magic numbers in search code.
@@ -196,6 +197,7 @@ crates/
   t3a-ui/                 ← candidate popup + tashkeel editor (Windows only, Direct2D/DirectWrite)
   t3a-hotkey/             ← optional tiny companion for the global activation hotkey (Windows only)
   t3a-paths/              ← shared Windows helpers: known folders, user dir + AppContainer ACL, error log
+  t3a-wasm/               ← the engine as WebAssembly for the website playground (C ABI, JSON out; no deps)
 apps/settings/            ← Tauri 2 settings app (created in M7)
 installer/                ← WiX MSI project (created in M7)
 tools/pipeline/           ← Python (uv) data pipeline: fetch, count, align, tune

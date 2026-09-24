@@ -1,0 +1,14 @@
+[package]
+name = "t3a-wasm"
+description = "The Type3arabi engine for the website's in-browser playground (WebAssembly, C ABI, JSON out)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+t3a-engine = { workspace = true }

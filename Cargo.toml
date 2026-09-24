@@ -8,6 +8,7 @@ members = [
     "crates/t3a-ui",
     "crates/t3a-hotkey",
     "crates/t3a-paths",
+    "crates/t3a-wasm",
 ]
 
 [workspace.package]
