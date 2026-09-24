@@ -66,11 +66,13 @@ user sees and feels. All dimensions are in DIPs at 96 DPI (scale by DPI/96).
 ### 3.3 Colors (tokens)
 | Token | Light | Dark | High contrast |
 |---|---|---|---|
-| bg | #FFFFFF | #2B2B2B | COLOR_WINDOW |
-| border | #D0D0D0 | #3F3F3F | COLOR_WINDOWTEXT |
-| text | #1A1A1A | #F2F2F2 | COLOR_WINDOWTEXT |
-| secondary | #666666 | #A0A0A0 | COLOR_GRAYTEXT |
-| accent | Windows accent (`HKCU\Software\Microsoft\Windows\DWM\AccentColor`) | same | COLOR_HIGHLIGHT (+ COLOR_HIGHLIGHTTEXT for text) |
+| bg | #FFFFFF | #23262F | COLOR_WINDOW |
+| border | #D6DCE8 | #3B404D | COLOR_WINDOWTEXT |
+| text | #0F1F3D (Deep Navy) | #F5F8FF (Soft Cloud) | COLOR_WINDOWTEXT |
+| secondary | #5B6478 | #A3AABB | COLOR_GRAYTEXT |
+| accent | #1F5BFF (Primary Blue) | #4A7DFF | COLOR_HIGHLIGHT (+ COLOR_HIGHLIGHTTEXT for text) |
+Brand palette (Owner brand kit, 2026-09-24; was Windows greys + the Windows accent). The website's popup replica
+(`website/src/styles.css`, `--p-*`) uses the same tokens and the same blends (selection = accent at 12 % over bg).
 Theme: `appearance.theme = "system"` reads `AppsUseLightTheme`; High Contrast via `SPI_GETHIGHCONTRAST` overrides.
 
 ### 3.4 Placement

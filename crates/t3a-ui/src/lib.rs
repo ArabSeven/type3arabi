@@ -107,19 +107,21 @@ pub struct Theme {
 }
 
 impl Theme {
+    /// Brand palette (Owner brand kit, 2026-09-24): Deep Navy text, Primary Blue accent.
     pub const LIGHT: Theme = Theme {
         bg: 0xFFFFFF,
-        border: 0xD0D0D0,
-        text: 0x1A1A1A,
-        secondary: 0x666666,
-        accent: 0x0067C0,
+        border: 0xD6DCE8,
+        text: 0x0F1F3D,
+        secondary: 0x5B6478,
+        accent: 0x1F5BFF,
     };
+    /// Dark: navy-tinted greys; the accent is Primary Blue lifted for contrast on a dark background.
     pub const DARK: Theme = Theme {
-        bg: 0x2B2B2B,
-        border: 0x3F3F3F,
-        text: 0xF2F2F2,
-        secondary: 0xA0A0A0,
-        accent: 0x4CC2FF,
+        bg: 0x23262F,
+        border: 0x3B404D,
+        text: 0xF5F8FF,
+        secondary: 0xA3AABB,
+        accent: 0x4A7DFF,
     };
 }
 

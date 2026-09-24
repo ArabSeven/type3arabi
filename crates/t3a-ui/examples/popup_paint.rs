@@ -71,10 +71,12 @@ fn main() {
         ),
     ];
     let mut p = PopupWindow::new().expect("popup");
-    // `--dark` renders the dark theme (the popup otherwise follows Windows' app mode).
+    // `--dark` / `--light` force a theme (the popup otherwise follows Windows' app mode).
     let dark = std::env::args().any(|a| a == "--dark");
     if dark {
         p.set_theme(Theme::DARK);
+    } else if std::env::args().any(|a| a == "--light") {
+        p.set_theme(Theme::LIGHT);
     }
     for (name, model) in models {
         let name = if dark {
