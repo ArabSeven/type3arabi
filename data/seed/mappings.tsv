@@ -63,11 +63,11 @@ i	ε	0.45	M	*	VOWEL
 i	ي	0.95	F	*	VOWEL	
 i	ى	0.05	F	*	VOWEL	
 ii	ي	1.00	MF	*	VOWEL	
-o	أ	0.40	I	*	VOWEL	
-o	ع	0.30	I	*	VOWEL	
-o	ا	0.15	I	*	VOWEL	
-o	أو	0.10	I	*	VOWEL	
-o	و	0.05	I	*	VOWEL	
+o	أ	0.50	I	*	VOWEL	initial o = alif + damma (oktob, okht, omm); ع is written 3, a dropped 3 is rare
+o	ا	0.35	I	*	VOWEL	initial o = alif + damma (oktob, okht, omm); ع is written 3, a dropped 3 is rare
+o	ع	0.06	I	*	VOWEL	initial o = alif + damma (oktob, okht, omm); ع is written 3, a dropped 3 is rare
+o	أو	0.06	I	*	VOWEL	initial o = alif + damma (oktob, okht, omm); ع is written 3, a dropped 3 is rare
+o	و	0.03	I	*	VOWEL	initial o = alif + damma (oktob, okht, omm); ع is written 3, a dropped 3 is rare
 o	و	0.50	M	*	VOWEL	
 o	ε	0.50	M	*	VOWEL	
 o	ه	0.50	F	*	VOWEL	final o is often the pronoun ه (3ando=عنده)
