@@ -42,4 +42,6 @@ windows = { workspace = true, features = [
 ] }
 windows-core = { workspace = true }
 
-# M1: add `embed-resource` as a build-dependency for res/t3a.rc (icons, VERSIONINFO) — ledger entry required.
+[build-dependencies]
+# Windows resources: brand icon + VERSIONINFO (docs/07 §1; ledger docs/01 §8).
+embed-resource = "3"

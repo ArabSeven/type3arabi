@@ -15,7 +15,8 @@
            Scope="perMachine"
            Compressed="yes">
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Type3arabi is already installed." />
+    <!-- Same-version upgrades: a release candidate (e.g. 1.0.0-rc.1, MSI 1.0.0) is replaced by the final 1.0.0. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Type3arabi is already installed." />
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="Type3arabi.ico" SourceFile="$(var.Payload)\icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="Type3arabi.ico" />
@@ -107,6 +108,9 @@
 
     <!-- ===== UI: license, progress, finish with the restart choice ===== -->
     <WixVariable Id="WixUILicenseRtf" Value="$(var.Payload)\License.rtf" />
+    <!-- Brand art (installer/*.bmp, from the brand kit): welcome/finish panel and the inner-page banner. -->
+    <WixVariable Id="WixUIDialogBmp" Value="$(var.Payload)\WixUIDialog.bmp" />
+    <WixVariable Id="WixUIBannerBmp" Value="$(var.Payload)\WixUIBanner.bmp" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT"
               Value="Restart now (recommended) — apps that are already open load Type3arabi after a restart." />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />

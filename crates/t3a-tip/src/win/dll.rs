@@ -36,6 +36,9 @@ pub const GUID_PROFILE_TYPE3ARABI: GUID = GUID::from_u128(GUID_PROFILE);
 /// Categories we register. Only capabilities the TIP really implements: claiming
 /// UIELEMENTENABLED / COMLESS / SECUREMODE / INPUTMODECOMPARTMENT without implementing them makes
 /// hosts call into interfaces we do not provide.
+/// Resource ID of the brand icon (build.rs: `101 ICON`), shown for the TSF profile (docs/02 §2).
+const IDI_BRAND: i32 = 101;
+
 const CATEGORIES: [GUID; 4] = [
     GUID_TFCAT_TIP_KEYBOARD,
     GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
@@ -207,7 +210,8 @@ pub unsafe extern "system" fn DllRegisterServer() -> HRESULT {
             &GUID_PROFILE_TYPE3ARABI,
             &desc,
             &path,
-            0,
+            // Negative = resource ID (SampleIME convention): the brand icon embedded by build.rs.
+            (-IDI_BRAND) as u32,
             HKL::default(),
             0,
             true,

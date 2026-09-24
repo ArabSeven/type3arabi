@@ -33,3 +33,7 @@ windows = { workspace = true, features = [
   "Win32_Security",
   "Win32_Graphics_Gdi",
 ] }
+
+[build-dependencies]
+# Windows resources: brand icon + VERSIONINFO (docs/07 §1; ledger docs/01 §8).
+embed-resource = "3"

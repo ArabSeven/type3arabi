@@ -107,7 +107,7 @@ This keeps the UI reusable by the Plan-B overlay front-end (`docs/11`).
 | `tauri-build` | 2.x | MIT/Apache-2.0 | apps/settings (build-dep) | Embeds `tauri.conf.json`, the `ui/` folder and the icon. |
 | `serde` | 1.x | MIT/Apache-2.0 | apps/settings | Settings ⇄ UI command payloads (engine/TIP stay serde-free, R12). |
 | `serde_json` | 1.x | MIT/Apache-2.0 | apps/settings | Same. |
-| `embed-resource` | 3.x | MIT | tip (build-dep) | Compile `res/t3a.rc` (icons, VERSIONINFO). *(planned, M1)* |
+| `embed-resource` | 3.0.11 | MIT | tip, hotkey (build-dep) | Compile the generated `.rc` (brand icon `IDI_BRAND` for the TSF profile, VERSIONINFO) — `build.rs` of each crate. |
 
 Dev-only (not shipped): `criterion` (bench), `proptest` (property tests), `cargo-fuzz`/`libfuzzer-sys` (fuzzing);
 `windows` features `Win32_Storage_Xps` (t3a-ui `popup_paint` example screenshots).
