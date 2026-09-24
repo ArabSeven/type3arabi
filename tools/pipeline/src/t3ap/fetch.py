@@ -148,15 +148,15 @@ def hf_parquet_rows(dataset: str):
 
 
 def hf_gated_rows(dataset: str):
-    """Rows of a gated HF dataset: the Owner accepts its terms on the website, then sets HF_TOKEN."""
-    import os
-
-    if not os.environ.get("HF_TOKEN"):
-        raise RuntimeError(f"{dataset} is gated: accept its terms on huggingface.co and set HF_TOKEN")
-    from huggingface_hub import HfFileSystem
+    """Rows of a gated HF dataset: the Owner accepts its terms on the website and signs in once on this PC
+    (`uv run hf auth login`, token saved by huggingface_hub) or sets HF_TOKEN."""
+    from huggingface_hub import HfFileSystem, get_token
     import pyarrow.parquet as pq
 
-    fs = HfFileSystem(token=os.environ["HF_TOKEN"])
+    token = get_token()  # HF_TOKEN if set, else the token saved by `hf auth login`
+    if not token:
+        raise RuntimeError(f"{dataset} is gated: accept its terms on huggingface.co, then run `uv run hf auth login`")
+    fs = HfFileSystem(token=token)
     files = sorted(fs.glob(f"datasets/{dataset}/**/*.parquet"))
     if not files:
         raise RuntimeError(f"{dataset}: no parquet files visible (terms not accepted?)")

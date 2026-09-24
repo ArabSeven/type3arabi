@@ -156,7 +156,7 @@ status = "approved"
 roles = ["rules", "tuning", "eval"]
 citation = "UBC-NLP. NileChat Arabizi-EGY: Synthetic Arabizi Transliterations. Hugging Face Datasets (UBC-NLP/nilechat-arabizi-egy)."
 attribution = "UBC-NLP"
-notes = "GATED: the Owner must accept the terms on the dataset page with their HF account; fetch then needs HF_TOKEN. Synthetic: weight 0.2 in EM. UNAVAILABLE 2026-09-23: dataset is gated/private on the hub."
+notes = "GATED: the Owner must accept the terms on the dataset page with their HF account; fetch then needs a Hugging Face login on the build PC (`uv run hf auth login`). Synthetic: weight 0.2 in EM. UNAVAILABLE 2026-09-23: dataset is gated/private on the hub."
 license_family = "nc"
 
 [[source]]
@@ -293,7 +293,7 @@ status = "approved"
 roles = ["rules", "tuning", "eval"]
 citation = "UBC-NLP. NileChat Arabizi-MOR. Hugging Face Datasets (UBC-NLP/nilechat-arabizi-mor)."
 attribution = "UBC-NLP"
-notes = "GATED like nilechat-arabizi-egy (Owner accepts terms; HF_TOKEN). Synthetic: evaluate before trusting."
+notes = "GATED like nilechat-arabizi-egy (Owner accepts terms; `uv run hf auth login`). Synthetic: evaluate before trusting."
 
 [[source]]
 id = "darija-arabizi-mt"

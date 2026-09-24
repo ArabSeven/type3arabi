@@ -269,7 +269,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 |---|---|---|
 | O1 | Project license: open source (which) or proprietary? | All rights reserved (`LicenseRef-Type3arabi-AllRightsReserved`) |
 | O2 | Code signing (also needed for the Store's MSI submission): apply to SignPath Foundation (free for OSS) or Certum Open Source Code Signing first (docs/07 §4 option 0) | Dev builds use a self-signed test cert |
-| O13 | NileChat EGY/MOR are gated: accept the terms on both dataset pages with your Hugging Face account and give the agent an HF read token (`HF_TOKEN`) | Built without them (no Egyptian parallel data yet) |
+| O13 | NileChat EGY/MOR are gated: accept the terms on both dataset pages with your Hugging Face account and sign in once on the dev PC: `cd tools/pipeline; uv run hf auth login` (Read token) | Built without them (no Egyptian parallel data yet) |
 | O5 | Recruit golden-set typists: ≥ 3 per dialect group (docs/04 §8) | M2 starts with LEV (Owner's own dialect) |
 | O6 | Default Allah form: `shadda` (اللّه) vs `shadda_fatha` (اللَّه) vs `shadda_dagger` (اللّٰه) vs plain | `shadda` |
 | O7 | Default global activation hotkey (Ctrl+Alt+A) and in-IME toggle (Ctrl+Space) OK? | as stated |
