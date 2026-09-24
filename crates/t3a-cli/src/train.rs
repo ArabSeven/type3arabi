@@ -27,6 +27,9 @@ const KEEP_P: f64 = 0.005;
 const KEEP_DISCOVERED: f64 = 0.03;
 const DISCOVER_MASS: f64 = 0.03;
 const POOLED: usize = 6;
+/// Count slots `PSEUDO + d`: self-trained (pseudo-labelled) evidence for dialect d. It shapes that
+/// dialect's own rows only, never the pooled `*` rows every other dialect backs off to (docs/04 §6.4).
+const PSEUDO: usize = POOLED + 1;
 /// Dialect indices whose data forms the pooled `*` distribution (all but MAG).
 const POOLED_FROM: [usize; 5] = [0, 1, 2, 3, 4];
 const POS_CLASSES: [u8; 3] = [POS_I, POS_M, POS_F];
@@ -60,6 +63,11 @@ struct Pair {
     syms: Vec<char>,
     codes: Vec<u8>,
     dialect: usize,
+    /// Weight of this pair's expected counts: 1 for parallel data, less for self-trained pairs
+    /// (docs/04 §6.4, optional 5th column).
+    weight: f64,
+    /// Weight < 1 marks a pseudo-label (self-training): counted for its own dialect only.
+    pseudo: bool,
 }
 
 fn uniform() -> Posterior {
@@ -98,16 +106,24 @@ fn run(pairs_path: &Path, seed_dir: &Path, out_path: &Path) -> Result<(), String
     )?;
     let params = EngineParams::default();
 
-    // ---- training pairs
-    let text =
-        fs::read_to_string(pairs_path).map_err(|e| format!("{}: {e}", pairs_path.display()))?;
+    // ---- training pairs: one or more comma-separated files (align/train.tsv, align/selftrain.tsv)
+    let mut text = String::new();
+    for p in pairs_path.to_string_lossy().split(',') {
+        text.push_str(&fs::read_to_string(p).map_err(|e| format!("{p}: {e}"))?);
+        text.push('\n');
+    }
     let mut pairs = Vec::new();
     let mut buf = LatinBuffer::new();
     for line in text.lines() {
         let c: Vec<&str> = line.split('\t').collect();
-        if c.len() < 3 {
+        if c.len() < 3 || line.starts_with('#') {
             continue;
         }
+        let weight = c
+            .get(4)
+            .and_then(|w| w.parse::<f64>().ok())
+            .filter(|w| *w > 0.0)
+            .unwrap_or(1.0);
         buf.set(c[0]);
         let syms = buf.syms().to_vec();
         let Some(codes) = alphabet::encode(&normalize_word(c[1])) else {
@@ -125,9 +141,15 @@ fn run(pairs_path: &Path, seed_dir: &Path, out_path: &Path) -> Result<(), String
             syms,
             codes,
             dialect: d.index(),
+            weight,
+            pseudo: weight < 1.0,
         });
     }
-    println!("train-rules: {} usable pairs", pairs.len());
+    let weighted: f64 = pairs.iter().map(|p| p.weight).sum();
+    println!(
+        "train-rules: {} usable pairs (weighted {weighted:.0})",
+        pairs.len()
+    );
 
     // ---- candidate chunks and outputs
     let mut allowed: BTreeMap<Chunk, Vec<Alpha>> = BTreeMap::new();
@@ -192,7 +214,7 @@ fn run(pairs_path: &Path, seed_dir: &Path, out_path: &Path) -> Result<(), String
             }
         }
         let p = vec![prior.clone(); POOLED + 1];
-        let counts = vec![[vec![0.0; n], vec![0.0; n], vec![0.0; n]]; POOLED + 1];
+        let counts = vec![[vec![0.0; n], vec![0.0; n], vec![0.0; n]]; PSEUDO + 6];
         dists.insert(
             chunk.clone(),
             Dist {
@@ -218,7 +240,7 @@ fn run(pairs_path: &Path, seed_dir: &Path, out_path: &Path) -> Result<(), String
         let mut aligned = 0usize;
         for pair in &pairs {
             if let Some(l) = expect(pair, &mut dists, max_chunk, params.p_gem as f64) {
-                ll += l;
+                ll += l * pair.weight;
                 aligned += 1;
             }
         }
@@ -236,7 +258,17 @@ fn run(pairs_path: &Path, seed_dir: &Path, out_path: &Path) -> Result<(), String
                     let c: f64 = POOLED_FROM.iter().map(|&s| d.counts[s][pi_idx][i]).sum();
                     *v = (c + KAPPA * d.prior[pi_idx][i]) / (pooled_total + KAPPA);
                 }
+                d.p[POOLED][pi_idx] = pooled.clone();
+                // keep pooled counts for the emission note
+                for i in 0..n {
+                    d.counts[POOLED][pi_idx][i] =
+                        POOLED_FROM.iter().map(|&s| d.counts[s][pi_idx][i]).sum();
+                }
                 for s in 0..6 {
+                    // a dialect's own evidence = real + pseudo-labelled counts
+                    for i in 0..n {
+                        d.counts[s][pi_idx][i] += d.counts[PSEUDO + s][pi_idx][i];
+                    }
                     let total: f64 = d.counts[s][pi_idx].iter().sum();
                     let probs: Vec<f64> = d.counts[s][pi_idx]
                         .iter()
@@ -244,12 +276,6 @@ fn run(pairs_path: &Path, seed_dir: &Path, out_path: &Path) -> Result<(), String
                         .map(|(c, p)| (c + KAPPA * p) / (total + KAPPA))
                         .collect();
                     d.p[s][pi_idx] = probs;
-                }
-                d.p[POOLED][pi_idx] = pooled;
-                // keep pooled counts for the emission note
-                for i in 0..n {
-                    d.counts[POOLED][pi_idx][i] =
-                        POOLED_FROM.iter().map(|&s| d.counts[s][pi_idx][i]).sum();
                 }
             }
         }
@@ -410,6 +436,7 @@ fn expect(
     let n = pair.syms.len();
     let m = pair.codes.len();
     let s = pair.dialect;
+    let slot = if pair.pseudo { PSEUDO + s } else { s };
     let mut arcs: Vec<Arc> = Vec::new();
     for i in 0..n {
         for a in 1..=max_chunk.min(n - i) {
@@ -500,7 +527,7 @@ fn expect(
             fwd[idx(arc.i, arc.j)] * arc.prob * bwd[idx(arc.i + arc.a, arc.j + arc.b)] / total;
         if post > 1e-9 {
             if let Some(d) = dists.get_mut(&arc.chunk) {
-                d.counts[s][arc.pos_idx][arc.alpha_idx] += post;
+                d.counts[slot][arc.pos_idx][arc.alpha_idx] += post * pair.weight;
             }
         }
     }

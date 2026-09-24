@@ -5,10 +5,12 @@
 //!   t3a-cli explain <arabizi> [--dialect LEV]
 //!   t3a-cli bench [<file.tsv>] [--iters 3]
 //!   t3a-cli build-data ...        (M2)
-//!   t3a-cli train-rules [--pairs pipeline_data/align/train.tsv] [--out pipeline_data/out/rules.tsv]
+//!   t3a-cli train-rules [--pairs pipeline_data/align/train.tsv[,more.tsv]] [--out pipeline_data/out/rules.tsv]
+//!   t3a-cli self-train --text <file>:<DIALECT>[:<source>]... [--data model.dat] (docs/04 §6.4)
 
 mod build;
 mod inspect;
+mod selftrain;
 mod train;
 
 use std::collections::BTreeMap;
@@ -63,6 +65,9 @@ fn main() {
         "picks" => picks(&args[1..]),
         "build-data" => cmd_build_data(&args[1..]),
         "train-rules" => train::train_rules(&args[1..]),
+        "self-train" => {
+            selftrain::self_train(&args[1..], load_engine(arg_value(&args[1..], "--data")))
+        }
         "tune" => tune(&args[1..]),
         "inspect" => cmd_inspect(&args[1..]),
         _ => {

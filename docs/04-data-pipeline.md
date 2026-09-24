@@ -94,6 +94,9 @@ mixture score. Record the per-group token counts in the manifest.
 3. **Pruning**: drop rules with `P < 0.005` unless in the seed file.
 4. **Self-training (optional, M6)**: run the engine on approved monolingual Arabizi; keep outputs whose
    top-1 beats top-2 by ≥ 3.0 score; add as pairs with weight 0.3; one more EM round. Never on eval data.
+   Implemented as `t3a-cli self-train` + weighted `train-rules --pairs a.tsv,b.tsv` (pseudo-labels count for their
+   own dialect only). Tried on NileChat EGY/MOR (2026-09-24, spike S6): dev-neutral, and frequent Egyptian words
+   regress (`kaman → كماً`), so it is **not used** in shipped models; see `docs/spikes/S6-nilechat-self-training.md`.
 5. Output `out/rules.tsv`: same columns as `data/seed/mappings.tsv` plus `count` and per-dialect lp.
 6. **As implemented (2026-09-23, `t3a-cli train-rules`)**: only equal-token-count sentence pairs are used (the
    DP aligner is backlog); one-symbol tokens are skipped (Moroccan `o` = و would teach "initial o → و");
