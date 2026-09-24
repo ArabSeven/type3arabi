@@ -18,6 +18,9 @@ user add any diacritic to any letter from inside the same popup. It is 100% offl
 and idle-cost-free. It is **free and open source**: code under **Apache-2.0**, the trained model
 (`type3arabi.dat`) under **CC BY-NC-SA 4.0**, distributed only through GitHub Releases and the Microsoft Store
 (ADR-0010).
+**Brand names** (Owner, 2026-09-24): English **Type3arabi**, Arabic **اكتب عربي** — wherever the app, installer,
+docs or website show an Arabic name. In running Arabic text write it as «اكتب عربي». The keyboard entry in the
+Windows switcher stays "Arabic · Type3arabi".
 
 ## 1. Owner, roles, and how decisions work
 

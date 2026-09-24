@@ -161,7 +161,7 @@ $("#wipe").addEventListener("click", async () => {
   if (!confirm("نسيان كل الكلمات والاختيارات المتعلَّمة؟\nForget every learned word and choice?")) return;
   try {
     await invoke("wipe_learning");
-    status("تم نسيان كل ما تعلّمه تعريب. Everything learned was forgotten.", "ok");
+    status("تم نسيان كل ما تعلّمه «اكتب عربي». Everything learned was forgotten.", "ok");
   } catch (e) {
     status(String(e), "err");
   }

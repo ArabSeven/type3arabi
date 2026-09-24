@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Type3arabi Settings — إعدادات تعريب",
+        "title": "Type3arabi Settings — إعدادات «اكتب عربي»",
         "width": 820,
         "height": 640,
         "minWidth": 640,

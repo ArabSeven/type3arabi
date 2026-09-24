@@ -108,8 +108,8 @@ mod win {
             Until you restart (or sign out and back in), apps that were already open may not \
             list Type3arabi, may keep an older version, or may need to be reopened. If typing \
             behaves oddly, restart first.\n\n\
-            تم تثبيت تعريب ويعمل في البرامج التي تفتحها من الآن.\n\
-            إلى أن تعيد تشغيل الجهاز (أو تسجّل الخروج ثم الدخول)، قد لا تظهر لوحة تعريب في البرامج \
+            تم تثبيت «اكتب عربي» ويعمل في البرامج التي تفتحها من الآن.\n\
+            إلى أن تعيد تشغيل الجهاز (أو تسجّل الخروج ثم الدخول)، قد لا تظهر لوحة «اكتب عربي» في البرامج \
             المفتوحة مسبقاً أو قد تستخدم نسخة أقدم. إذا لاحظت سلوكاً غريباً فأعد التشغيل أولاً.";
         let t: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
         // SAFETY: plain modal message box with NUL-terminated strings.
