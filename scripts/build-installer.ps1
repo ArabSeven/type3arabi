@@ -55,6 +55,18 @@ try {
     Copy-Item (Join-Path $RepoRoot "LICENSE") $Payload
     Copy-Item (Join-Path $RepoRoot "installer\License.rtf") $Payload
     Copy-Item (Join-Path $RepoRoot "apps\settings\icons\icon.ico") $Payload
+    # Third-party license notices of every compiled crate (docs/07 §6.6): cargo about, both workspaces.
+    $core = Join-Path $Payload "licenses-core.html"; $settings = Join-Path $Payload "licenses-settings.html"
+    cargo about generate about.hbs -o $core
+    if ($LASTEXITCODE -ne 0) { throw "cargo about (core) failed - cargo install cargo-about --features cli" }
+    cargo about generate -c about.toml --manifest-path apps\settings\Cargo.toml about.hbs -o $settings
+    if ($LASTEXITCODE -ne 0) { throw "cargo about (settings) failed" }
+    $body = { param($f) [regex]::Match((Get-Content $f -Raw -Encoding UTF8), '(?s)<body>(.*)</body>').Groups[1].Value }
+    $head = [regex]::Match((Get-Content $core -Raw -Encoding UTF8), '(?s)^(.*<body>)').Groups[1].Value
+    $html = $head + "`n<h1>Keyboard DLL and hotkey companion</h1>" + (& $body $core) + `
+        "`n<hr><h1>Type3arabi Settings app</h1>" + (& $body $settings) + "`n</body>`n</html>`n"
+    Set-Content -Path (Join-Path $Payload "THIRD-PARTY-LICENSES.html") -Value $html -Encoding UTF8
+    Remove-Item $core, $settings
     Copy-Item (Join-Path $RepoRoot "installer\WixUIDialog.bmp") $Payload
     Copy-Item (Join-Path $RepoRoot "installer\WixUIBanner.bmp") $Payload
 

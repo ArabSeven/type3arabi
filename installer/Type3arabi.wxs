@@ -46,6 +46,9 @@
       <Component Id="Datasets">
         <File Id="DatasetsFile" Source="$(var.Payload)\DATASETS.md" KeyPath="yes" />
       </Component>
+      <Component Id="ThirdPartyLicenses">
+        <File Id="ThirdPartyFile" Source="$(var.Payload)\THIRD-PARTY-LICENSES.html" KeyPath="yes" />
+      </Component>
       <Component Id="LicenseText">
         <File Id="LicenseFile" Name="LICENSE.txt" Source="$(var.Payload)\LICENSE" KeyPath="yes" />
       </Component>

@@ -11,6 +11,25 @@ evidence instead of being taken in strict order.
 Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (needs UAC), code signing
 (O2), ARM64 build, cargo-about NOTICE. The real-app checklist (`docs/09` M1/M4) still needs the Owner's runs.
 
+## Release candidate 1.0.0-rc.1 (2026-09-25) — built, NOT published
+Artifact: `target\installer\Type3arabi-1.0.0-rc.1-x64.msi` (+ identical `Type3arabi-x64.msi`), 23.9 MB,
+SHA-256 `d57621710c2a7ac2312f01b218765a590842728f420b0fad852ced50cc7b8dee`. Built with
+`scripts\build-installer.ps1 -Data target\type3arabi-release.dat`; `wix msi validate` clean except the expected
+ICE61 (same-version upgrades allowed on purpose). Draft notes: `docs/releases/v1.0.0-rc.1.md`.
+Release checklist (docs/07 §6):
+| # | Item | State |
+|---|---|---|
+| 1 | CI green on `main` | **not run** — branch not pushed; local gates green (fmt, clippy x64 + i686, 89 tests, deny) |
+| 2 | Eval report of the release data | release model held-out (`eval pipeline_data/eval/*.test.tsv --data target/type3arabi-release.dat --dialect oracle --lenient`): all 47.9% / 75.7% (LEV 61.4% / 87.4%, MAG 44.8% / 73.1%); regressions 9/11 (`oktob`, `ahlan` miss) |
+| 3 | App-compat matrix (Win10 22H2, Win11 24H2, ARM64) | **not run** — needs the Owner (install needs UAC) |
+| 4 | 8 h soak | **not run** |
+| 5 | Signed artifacts | **no** — O2 pending; the RC is unsigned (SmartScreen will warn) |
+| 6 | NOTICE + third-party licenses | done: `THIRD-PARTY-LICENSES.html` (cargo about 0.9.2, both workspaces) installed; fonts + brand in NOTICE.md |
+| 7 | `--mode release` data, META, DATASETS.md | done: META `"distribution": "release"`, `CC-BY-NC-SA-4.0`, sources fineweb2, arabizikit-corpus, doda, tarc; DATASETS.md regenerated, no diff |
+| 8 | Tag + GitHub Release | **not done** — Owner approval required (outward action) |
+| 9 | Microsoft Store submission | **not done** — needs signing (O2) |
+Also unverified until an install: the TSF profile's new brand icon (`-IDI_BRAND`; the harness does not register).
+
 ## Owner review 2026-09-23 — six points, all implemented
 | # | Request | What was found / done | Evidence |
 |---|---|---|---|
@@ -303,6 +322,10 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - D24: Seed prior for word-initial `o` corrected (أ .50, ا .35, ع .06, أو .06, و .03; was ع .30, ا .15): in non-Maghrebi Arabizi initial o is alif+damma; ع is written 3. Fixes `omm` → أم in the release model; internal model unchanged (held-out 50.4% / 78.9%, regressions 11/11).
 - D25: **Release-mode model** (approved data only, i.e. without Talafha/Khanafer) is noticeably weaker for Levantine: held-out LEV 61.4% vs 65.1%, and regressions 9/11 (`oktob` → وكتب, `ahlan` → الا). Clearing the Talafha data (or a golden set) matters for the first public release.
 - D26: Website playground runs the real engine as WebAssembly (`crates/t3a-wasm`, 279 KB, C ABI + JSON, no deps; panic=abort for that build only — R1 concerns the TIP). Web model = release mode, top 120k words, 150k char n-grams, no bigrams: 10.6 MB (4.5 MB gzipped, decompressed in the browser); held-out 44.5% / 70.5%. `build-data --max-words/--max-charlm`.
+- D27: NileChat self-training (docs/04 §6.4) implemented as `t3a-cli self-train` + weighted `train-rules`, **not used** in shipped models: dev-neutral (±0.2 pt) and frequent Egyptian words regress (`kaman → كماً`, `elly → إلي`, `enno → أن`). Spike S6 has the numbers; tooling kept, byte-identical output without pseudo pairs.
+- D28: Brand pass (Owner brand kit): popup tokens → brand palette (docs/05 §3.3 updated; was Windows greys + a fixed #0067C0 although the spec named the Windows accent); Settings restyled with bundled Kufam/Manrope (OFL); icons from the kit; TIP/hotkey embed icon + VERSIONINFO (embed-resource); WiX brand art.
+- D29: Version 1.0.0-rc.1; MSI ProductVersion is numeric (1.0.0) with `AllowSameVersionUpgrades` so the final 1.0.0 replaces the RC (ICE61 warning accepted). `build-installer.ps1` reads the version from Cargo.toml and takes `-Data` (public builds = release-mode model).
+- D30: `THIRD-PARTY-LICENSES.html` generated per build by cargo about (`about.toml`, `about.hbs`) for both workspaces and installed with the app (MIT/Apache notice requirements).
 - D0: Applied Owner decision (2026-09-22) — added `internal` source status, 80/10/10 deterministic split, pipeline modes, and citations in NOTICE.md.
 
 ## Conflicts found between docs
@@ -311,7 +334,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 ## Backlog (by milestone)
 - M2: DP sentence aligner for unequal token counts (docs/04 §6.1); Wikipedia/Maknuune/Tashkeela fetchers.
 - M1: `auto` prior from the Windows region (docs/03 §7.2, GetUserGeoID) is specified but not implemented (starts from the default prior). Persist π across sessions (§9.4).
-- M6: self-training on NileChat EGY/MOR Arabizi (fetched: raw/nilechat-*/arabizi.txt) — the realistic route to Egyptian coverage.
+- M6: NileChat (spike S6 done: rule self-training rejected). Next: NileChat on the LM side (pseudo-labelled Egyptian unigrams, rules untouched); a chunk-level guard (a dialect row is accepted only if the top-1 of that dialect's N most frequent words is unchanged); a real Egyptian dev/test set first (O5).
 - M2: EGY parallel data: NileChat EGY after O13; golden set (O5). Watch arXiv 2608.02555 (5-dialect Arabic↔Arabizi corpus, CC BY 4.0) for its data release.
 - M6: self-training on monolingual Moroccan Arabizi (`darija-arabizi-mt`, ~280k sentences, CC BY-NC-SA) — docs/04 §6.4.
 - M7: `cargo about` → THIRD-PARTY-LICENSES.html in the MSI (NOTICE.md references it); website (Cloudflare Pages) with the latest-download link; Store listing text.
@@ -335,6 +358,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - M2: `data/eval/bench_keystrokes.tsv` (10k words from golden/FineWeb) replaces smoke as the default bench set.
 
 ## Session log
+- 2026-09-25 — Agent (Claude): NileChat self-training built and evaluated honestly (spike S6: not shipped). Brand pass across the app (popup palette, Settings restyle with logo/fonts, icons, DLL/EXE VERSIONINFO, installer art). Release candidate 1.0.0-rc.1 built with the release-mode model, validated, license report included, draft notes in docs/releases. Website: "About" removed, header GitHub/Datasets + Control links, sticky glass header (fixed: body overflow broke sticky), all external links open in a new tab, `beshakel 3am` example, popup replica synced to the brand tokens. Next (Owner): install/uninstall/upgrade test of the RC MSI; decide signing (O2); approve publishing.
 - 2026-09-24 (night) — Agent (Claude): Owner review of the website. App: learning export/import (Settings, `.t3learn`, D22); popup follows Windows dark/light (D23); seed fix for initial o (D24); release-mode model measured (D25: Talafha clearance matters); engine as WebAssembly + compact web model (D26). Website: dark by default with light toggle, cinematic chapter list in the hero (7 chapters incl. Windows language + custom shortcut, pronounced diacritics), ~1.35x faster, real typing in "Try it" (in-browser engine), one dialect section (+ shloonak aghati → شلونك أغاتي), learning-transfer feature card.
 - 2026-09-24 (evening) — Agent (Claude): type3arabi.com built in `website/` (bilingual EN-left/AR-right, live demo replaying real engine lists for 6 dialects, interactive playground with real key semantics, tashkeel editor replica, 3D depth layer, OG image, CSP/_headers, Cloudflare Pages ready: 33 files, largest 496 KB). Arabic name → «اكتب عربي» in the app.
 - 2026-09-24 (later) — Agent (Claude): NileChat fetched with the Owner's HF login: it is monolingual synthetic Arabizi (552k EGY, 1.40M MOR), not parallel — stored for self-training. Auto dialect: posterior bug fixed + η 0.35 (D18); commit-path lexicon scan removed (D19); `t3a-cli adapt` added.
