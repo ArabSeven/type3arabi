@@ -122,7 +122,7 @@ the footer shows the current keys as keycaps: `Space إدراج · Tab تشكي�
 │ │ [a]││ [u]││ [i]││ [o]││ [w]││ [A]││ [U]││ [I]││ [^]││ [x]│            │  key as a keycap
 │ └────┘└────┘└────┘└────┘└────┘└────┘└────┘└────┘└────┘└────┘            │  (first cell at the right)
 ├────────────────────────────────────────────────────────────────────────┤
-│        [← →] حرف   [Shift+← →] تحديد   [Enter] إدراج   [Esc] رجوع        │  keycap hints, RTL
+│      [← →] حرف   [Shift+← →] تحديد   [Enter] إدراج   [Esc / Tab] رجوع      │  keycap hints, RTL
 └────────────────────────────────────────────────────────────────────────┘
 ```
 Letters in Arabic are joined, so letter "cells" are rectangles drawn behind each letter's shaped glyph
@@ -156,6 +156,7 @@ Arabic/Latin labels are laid out piece by piece (keycap + Arabic label) instead 
 | ↑ ↓ | move through quick picks, Enter inserts | |
 | Enter / Space | insert the edited word (Space adds a space) | |
 | Esc | back to the candidate list (edits discarded) | |
+| Tab (the open-editor key) | back to the candidate list, like Esc (Owner, 2026-09-25) | Shift+Tab: previous quick pick |
 Validity: marks allowed on every letter except ا and ى (ا accepts only fathatan, rendered per tanween style);
 one vowel/sukun/tanween per letter (new replaces old); shadda combinable with a vowel/tanween.
 Invalid key ⇒ brief palette flash, no change.

@@ -259,6 +259,8 @@ pub fn classify(s: &RouterState, key: Key, m: Mods) -> Decision {
     if s.composing && s.popup == Popup::Tashkeel {
         return eat(match key {
             _ if bound(s.keys.commit_latin) => Action::CommitRawSpace,
+            // The key that opened the editor closes it again (Owner, 2026-09-25): back to the list.
+            _ if bound(s.keys.open_tashkeel) => Action::Tashkeel(TashkeelCmd::Back),
             _ if m.command() && key != Key::Enter => Action::CommitAndReinject,
             Key::Char(c) => match c {
                 'a' => Action::Tashkeel(TashkeelCmd::Fatha),
@@ -491,6 +493,34 @@ mod tests {
         let off = st(ContextMode::Off, false, Popup::Hidden);
         assert_eq!(classify(&off, Key::Char('a'), NONE), PASS);
         assert_eq!(classify(&off, Key::Space, CTRL), PASS);
+    }
+
+    /// Owner report 2026-09-25: Tab opened the editor but pressing it again did not leave it. The
+    /// open-editor key now goes back to the list; Shift+Tab / Up / Down still cycle the vowellings.
+    #[test]
+    fn open_key_closes_the_tashkeel_editor() {
+        let s = st(ContextMode::Arabic, true, Popup::Tashkeel);
+        let back = eat(Action::Tashkeel(TashkeelCmd::Back));
+        assert_eq!(classify(&s, Key::Tab, NONE), back);
+        assert_eq!(
+            classify(&s, Key::Tab, SHIFT),
+            eat(Action::Tashkeel(TashkeelCmd::PickUp))
+        );
+        assert_eq!(
+            classify(&s, Key::Down, NONE),
+            eat(Action::Tashkeel(TashkeelCmd::PickDown))
+        );
+        // a custom open key closes it too, and Tab then cycles the vowellings
+        let custom = RouterState {
+            keys: KeyMap::from_config("Shift+Space", "Ctrl+T", "Ctrl+Enter"),
+            ..s
+        };
+        let ctrl_t = Mods { ctrl: true, ..NONE };
+        assert_eq!(classify(&custom, Key::Char('t'), ctrl_t), back);
+        assert_eq!(
+            classify(&custom, Key::Tab, NONE),
+            eat(Action::Tashkeel(TashkeelCmd::PickDown))
+        );
     }
 
     /// Owner request 2026-09-23: Shift+Space commits the typed Latin word without scrolling to it.
