@@ -248,14 +248,22 @@ fn score_rows(
 /// the scoring weights on dev splits (docs/04 §7). Objective = top1 + 0.25 · hit@5 (dialect = oracle:
 /// the steady state after the online posterior has converged on the user's dialect),
 /// lenient matching (hamza seat / final ة,ى folded) so tuning never learns to drop hamza to match
-/// dialect gold spellings.
+/// dialect gold spellings. A setting that loses any top-1 in `--guard` (default
+/// `data/eval/regressions.tsv`) is rejected (R18: fixed bugs stay fixed).
 fn tune(args: &[String]) -> i32 {
     let files: Vec<&String> = args.iter().take_while(|a| !a.starts_with("--")).collect();
     let out = arg_value(args, "--out").unwrap_or_else(|| "pipeline_data/out/params.toml".into());
     let mut engine = load_engine(arg_value(args, "--data"));
     let rows: Vec<Row> = files.iter().flat_map(|f| load_rows(f)).collect();
+    let guard_file =
+        arg_value(args, "--guard").unwrap_or_else(|| "data/eval/regressions.tsv".into());
+    let guard_rows: Vec<Row> = load_rows(&guard_file);
+    let guard_ok = |e: &Engine| {
+        let (n, t1, _, _) = score_rows(e, &guard_rows, "oracle", 5, false);
+        t1 == n
+    };
     if rows.is_empty() {
-        eprintln!("usage: t3a-cli tune <dev.tsv>... --data target/type3arabi.dat");
+        eprintln!("usage: t3a-cli tune <dev.tsv>... --data target/type3arabi.dat [--guard regressions.tsv]");
         return 2;
     }
     let objective = |e: &Engine| {
@@ -283,7 +291,7 @@ fn tune(args: &[String]) -> i32 {
                 *get(&mut p) = base * f;
                 engine.set_params(p.clone());
                 let o = objective(&engine);
-                if o > best + 1e-4 {
+                if o > best + 1e-4 && guard_ok(&engine) {
                     best = o;
                     best_p = p;
                     improved = true;
