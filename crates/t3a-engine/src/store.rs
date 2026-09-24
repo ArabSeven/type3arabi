@@ -167,6 +167,55 @@ impl UserStore {
         }
     }
 
+    /// Export what was learned (everything since the last wipe), plus optional settings, as a
+    /// `.t3learn` file (docs/03 §9.5).
+    pub fn export(&self, settings: Option<&str>) -> std::io::Result<Vec<u8>> {
+        let journal = match std::fs::read(self.dir.join("journal.t3j")) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => return Err(e),
+        };
+        let records = crate::learning_file::effective_records(&journal);
+        Ok(crate::learning_file::encode(&records, settings))
+    }
+
+    /// Import learned choices from a decoded `.t3learn` file. `replace` forgets the current learning
+    /// first; otherwise the file is merged in. Records go through the journal like normal commits, so
+    /// every running app picks them up. Returns the number of records imported.
+    pub fn import(
+        &self,
+        file: &crate::learning_file::LearningFile,
+        replace: bool,
+    ) -> std::io::Result<usize> {
+        if self.tx.is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "the learning store is read-only here",
+            ));
+        }
+        if replace {
+            self.wipe();
+        }
+        let mut n = 0;
+        for rec in &file.records {
+            let (Some(latin), Some(arabic)) = (rec.latin_str(), rec.arabic_str()) else {
+                continue;
+            };
+            if let Ok(mut user) = self.model.write() {
+                match rec.kind {
+                    KIND_CHOOSE => user.record(latin, arabic, 0, false, None),
+                    KIND_NEGATIVE => user.record_negative(latin, arabic),
+                    _ => continue,
+                }
+            }
+            if let Some(ref tx) = self.tx {
+                let _ = tx.send(*rec);
+            }
+            n += 1;
+        }
+        Ok(n)
+    }
+
     /// Wipe all user learning.
     pub fn wipe(&self) {
         if let Ok(mut user) = self.model.write() {
@@ -262,6 +311,37 @@ mod tests {
 
     /// Regression: a NEGATIVE journal record replayed as "user chose the empty string", which
     /// surfaced as a blank candidate that crashed the popup (DrawTextW on an empty buffer).
+    #[test]
+    fn export_then_import_moves_learning_to_another_store() {
+        let a = std::env::temp_dir().join("t3a_test_store_export_a");
+        let b = std::env::temp_dir().join("t3a_test_store_export_b");
+        let _ = std::fs::remove_dir_all(&a);
+        let _ = std::fs::remove_dir_all(&b);
+        let src = UserStore::open(&a, false).unwrap();
+        src.record("aghati", "أغاتي", 0, false, None); // U+0623 U+063A U+0627 U+062A U+064A
+        src.wipe();
+        src.record("shloonak", "شلونك", 1, true, Some("شلوونك"));
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let file = src.export(Some("[dialect]\nprofile = \"auto\"\n")).unwrap();
+        drop(src);
+
+        let parsed = crate::learning_file::decode(&file).unwrap();
+        assert_eq!(parsed.records.len(), 2); // choice + negative; the pre-wipe choice is gone
+        let dst = UserStore::open(&b, false).unwrap();
+        dst.record("other", "غير", 0, false, None);
+        assert_eq!(dst.import(&parsed, true).unwrap(), 2);
+        assert_eq!(dst.sticky("shloonak").as_deref(), Some("شلونك"));
+        assert!(dst.sticky("other").is_none()); // replace mode forgot the old learning
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        drop(dst);
+        // Persisted through the journal: a fresh reader sees the imported choice.
+        let reopened = UserStore::open(&b, true).unwrap();
+        assert_eq!(reopened.sticky("shloonak").as_deref(), Some("شلونك"));
+        assert!(reopened.sticky("aghati").is_none());
+        let _ = std::fs::remove_dir_all(&a);
+        let _ = std::fs::remove_dir_all(&b);
+    }
+
     #[test]
     fn navigated_choice_survives_reopen_without_empty_word() {
         let temp = std::env::temp_dir().join("t3a_test_store_negative");

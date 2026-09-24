@@ -52,3 +52,12 @@ footer { display: flex; gap: 8px; align-items: center; padding: 12px 28px; borde
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
 dt { color: var(--muted); }
 dd { margin: 0; direction: ltr; text-align: end; font-family: Consolas, monospace; }
+
+/* learning transfer */
+h2.sub { font-size: 15px; margin: 22px 0 6px; }
+h2.sub small { font-weight: 400; color: var(--muted); margin-inline-start: 6px; }
+label.check { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+label.check small { flex-basis: 100%; padding-inline-start: 26px; }
+.panel { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin: 6px 0 10px; display: grid; gap: 8px; }
+.panel__btns { display: flex; gap: 8px; }
+code { font-size: 12px; }

@@ -82,6 +82,10 @@ on the other pages. Windows' own keyboard options for Type3arabi (Settings → T
 region → Arabic → Language options → Type3arabi → Options, or the classic Text Services dialog → Properties)
 also open this app.
 
+**Moving to another PC**: Settings → التعلّم / Learning → **Export** saves a `.t3learn` file in Downloads (tick
+"Include my settings" to take your shortcuts too). On the other PC: **Import…**, choose Merge or Replace, and
+optionally restore the settings. Apps already open use the imported words from the next word you type.
+
 **One entry only**: after installing, `Win+Space` should list your languages plus exactly one
 **Arabic (Saudi Arabia) · Type3arabi**, no Arabic (101). To see what Windows lists:
 `& "C:\Program Files\Type3arabi\t3a-hotkey.exe" --list-profiles | Out-String` (lines with `True`).

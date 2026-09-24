@@ -100,6 +100,17 @@
       <div class="row"><label>التعلّم من اختياراتك<small>Learn from your choices</small></label><input type="checkbox" data-key="learning_enabled"></div>
       <div class="row"><label>تقديم آخر اختيار أولاً<small>Put your last choice first</small></label><input type="checkbox" data-key="sticky_last_choice"></div>
       <div class="row"><label>استخدام الكلمات السابقة لتحسين الاقتراح<small>Use the words before the cursor for context (never stored)</small></label><input type="checkbox" data-key="use_surrounding_text"></div>
+      <h2 class="sub">نقل التعلّم إلى جهاز آخر <small>Move your learning to another PC</small></h2>
+      <div class="row"><label>تصدير ما تعلّمه «اكتب عربي» إلى ملف<small>Export what Type3arabi learned to a file (saved in Downloads)</small></label><button id="export">تصدير / Export</button></div>
+      <div class="row"><label class="check"><input type="checkbox" id="export-settings" checked> مع إعداداتي واختصاراتي<small>Include my settings and shortcuts</small></label></div>
+      <div class="row"><label>استيراد ملف تعلّم (<code>.t3learn</code>)<small>Import a learning file from another PC or account</small></label><button id="import" class="secondary">استيراد / Import…</button><input type="file" id="import-file" accept=".t3learn" hidden></div>
+      <div id="import-panel" class="panel" hidden>
+        <p id="import-summary"></p>
+        <label class="check"><input type="radio" name="import-mode" value="merge" checked> دمج مع ما تعلّمه هذا الجهاز<small>Merge with what this PC learned</small></label>
+        <label class="check"><input type="radio" name="import-mode" value="replace"> استبدال ما تعلّمه هذا الجهاز<small>Replace what this PC learned</small></label>
+        <label class="check" id="import-settings-row"><input type="checkbox" id="import-settings"> استعادة الإعدادات والاختصارات من الملف<small>Also restore the settings and shortcuts in the file</small></label>
+        <div class="panel__btns"><button id="import-go">استيراد / Import</button><button id="import-cancel" class="secondary">إلغاء / Cancel</button></div>
+      </div>
       <div class="row danger"><label>نسيان كل ما تعلّمه «اكتب عربي»<small>Forget everything Type3arabi learned</small></label><button id="wipe">نسيان الكل / Forget</button></div>
     </section>
 

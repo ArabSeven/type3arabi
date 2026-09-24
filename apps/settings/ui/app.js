@@ -167,6 +167,52 @@ $("#wipe").addEventListener("click", async () => {
   }
 });
 
+// ---- move learning to another PC (export / import a .t3learn file)
+$("#export").addEventListener("click", async () => {
+  try {
+    const r = await invoke("export_learning", { includeSettings: $("#export-settings").checked });
+    status(`تم التصدير: ${r.records} اختياراً إلى ${r.path} — Exported ${r.records} choices to ${r.path}`, "ok");
+  } catch (e) {
+    status(String(e), "err");
+  }
+});
+
+let importBytes = null;
+$("#import").addEventListener("click", () => $("#import-file").click());
+$("#import-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    importBytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+    const p = await invoke("inspect_learning", { bytes: importBytes });
+    $("#import-summary").textContent =
+      `«${file.name}»: ${p.records} اختياراً متعلَّماً${p.has_settings ? " + إعدادات" : ""} — ${p.records} learned choices${p.has_settings ? " + settings" : ""}.`;
+    $("#import-settings-row").hidden = !p.has_settings;
+    $("#import-settings").checked = false;
+    $("#import-panel").hidden = false;
+    status("");
+  } catch (err) {
+    importBytes = null;
+    status(`لا يمكن قراءة الملف — ${String(err)}`, "err");
+  }
+});
+$("#import-cancel").addEventListener("click", () => { importBytes = null; $("#import-panel").hidden = true; });
+$("#import-go").addEventListener("click", async () => {
+  if (!importBytes) return;
+  const replace = document.querySelector('input[name="import-mode"]:checked').value === "replace";
+  if (replace && !confirm("استبدال كل ما تعلّمه هذا الجهاز بمحتوى الملف؟\nReplace everything this PC learned with the file?")) return;
+  try {
+    const r = await invoke("import_learning", { bytes: importBytes, replace, restoreSettings: $("#import-settings").checked });
+    importBytes = null;
+    $("#import-panel").hidden = true;
+    if (r.settings_restored) fill(await invoke("get_settings"));
+    status(`تم استيراد ${r.records} اختياراً${r.settings_restored ? " والإعدادات" : ""} — يطبَّق في كل البرامج من الكلمة التالية. Imported ${r.records} choices${r.settings_restored ? " and settings" : ""} — every app uses them from the next word.`, "ok");
+  } catch (err) {
+    status(String(err), "err");
+  }
+});
+
 // ---- startup
 (async () => {
   fill(await invoke("get_settings"));

@@ -186,6 +186,122 @@ fn wipe_learning() -> Result<(), String> {
     Ok(())
 }
 
+// ---- Move learning to another PC (docs/03 §9.5, docs/05 §7) ----
+
+#[derive(Serialize)]
+struct Exported {
+    path: String,
+    records: usize,
+}
+
+#[derive(Serialize)]
+struct LearningPreview {
+    records: usize,
+    has_settings: bool,
+}
+
+#[derive(Serialize)]
+struct Imported {
+    records: usize,
+    settings_restored: bool,
+}
+
+/// `Downloads` when it exists (where people look for a file they just saved), else the user folder.
+fn export_dir() -> std::path::PathBuf {
+    std::env::var_os("USERPROFILE")
+        .map(|p| std::path::PathBuf::from(p).join("Downloads"))
+        .filter(|p| p.is_dir())
+        .unwrap_or_else(t3a_paths::user_dir)
+}
+
+/// YYYY-MM-DD for today (UTC), without a date library.
+fn today() -> String {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() / 86_400)
+        .unwrap_or(0) as i64;
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+#[tauri::command]
+fn export_learning(include_settings: bool) -> Result<Exported, String> {
+    let store = UserStore::open(&t3a_paths::user_store_dir(), true).map_err(|e| e.to_string())?;
+    let settings = include_settings
+        .then(|| std::fs::read_to_string(t3a_paths::config_path()).ok())
+        .flatten();
+    let bytes = store
+        .export(settings.as_deref())
+        .map_err(|e| e.to_string())?;
+    let records = t3a_engine::learning_file::decode(&bytes)
+        .map(|f| f.records.len())
+        .unwrap_or(0);
+    let dir = export_dir();
+    let stem = format!("Type3arabi-learning-{}", today());
+    let ext = t3a_engine::learning_file::EXTENSION;
+    let mut path = dir.join(format!("{stem}.{ext}"));
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{stem}-{n}.{ext}"));
+        n += 1;
+    }
+    std::fs::write(&path, bytes).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    Ok(Exported {
+        path: path.display().to_string(),
+        records,
+    })
+}
+
+#[tauri::command]
+fn inspect_learning(bytes: Vec<u8>) -> Result<LearningPreview, String> {
+    let f = t3a_engine::learning_file::decode(&bytes)?;
+    Ok(LearningPreview {
+        records: f.records.len(),
+        has_settings: f.settings.is_some(),
+    })
+}
+
+/// Replay the file's choices through the journal (every running app picks them up). Settings are
+/// parsed and re-serialized, so only known keys with valid values are ever written.
+#[tauri::command]
+fn import_learning(
+    bytes: Vec<u8>,
+    replace: bool,
+    restore_settings: bool,
+) -> Result<Imported, String> {
+    let file = t3a_engine::learning_file::decode(&bytes)?;
+    let _ = t3a_paths::ensure_user_dir();
+    let store = UserStore::open(&t3a_paths::user_store_dir(), false).map_err(|e| e.to_string())?;
+    let records = store.import(&file, replace).map_err(|e| e.to_string())?;
+    drop(store); // the writer thread flushes the journal before exiting
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    let mut settings_restored = false;
+    if restore_settings {
+        if let Some(text) = &file.settings {
+            let c = Config::parse(text).0;
+            let path = t3a_paths::config_path();
+            let tmp = path.with_extension("toml.tmp");
+            std::fs::write(&tmp, c.to_toml()).map_err(|e| format!("cannot write settings: {e}"))?;
+            std::fs::rename(&tmp, &path).map_err(|e| format!("cannot save settings: {e}"))?;
+            notify_hotkey(c.global_hotkey_enabled);
+            settings_restored = true;
+        }
+    }
+    Ok(Imported {
+        records,
+        settings_restored,
+    })
+}
+
 #[derive(Serialize)]
 struct About {
     version: String,
@@ -248,6 +364,9 @@ fn main() {
             check_chord,
             save_settings,
             wipe_learning,
+            export_learning,
+            inspect_learning,
+            import_learning,
             about
         ])
         .run(tauri::generate_context!())
@@ -257,6 +376,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn today_is_an_iso_date() {
+        let t = today();
+        assert_eq!(t.len(), 10);
+        assert!(t.starts_with("20") && &t[4..5] == "-" && &t[7..8] == "-");
+    }
 
     #[test]
     fn defaults_are_valid() {

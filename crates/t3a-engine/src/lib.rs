@@ -21,6 +21,7 @@ pub mod config;
 pub mod dialect;
 pub mod display;
 pub mod journal;
+pub mod learning_file;
 pub mod normalize;
 pub mod oov;
 pub mod params;

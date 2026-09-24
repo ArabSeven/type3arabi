@@ -283,7 +283,14 @@ Files in `%LOCALAPPDATA%\Type3arabi\user\`:
 - AppContainer / secure desktop / IS_PRIVATE: read-only (snapshot + journal readable through the ACL),
   never write.
 
-### 9.5 Custom words
+### 9.5 Moving learning to another PC (`learning_file.rs`, Owner request 2026-09-24)
+Settings → Learning → **Export** writes `Type3arabi-learning-YYYY-MM-DD.t3learn` (Downloads): magic `T3LEARN `,
+version 1, the CHOOSE/NEGATIVE journal records after the last WIPE (same 128-byte format, CRC-checked), and
+optionally `config.toml`. **Import** validates the file, then either merges or replaces (a WIPE first) by
+replaying the records through the journal, so running apps pick them up at their next sync, with no restart.
+Restored settings are parsed and re-serialized, so only known keys with valid values are written.
+
+### 9.6 Custom words
 Added via Settings (Arabic + optional Latin spellings + dialect) or auto-learned (§9.3). They form an
 in-memory **user trie** searched with the main one; LM score = `params.custom_lm` (−9.0, a mid-frequency
 word) plus `KIND` bonus. Latin hints additionally act as exact phrase keys (rank 1).

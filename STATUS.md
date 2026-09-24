@@ -298,6 +298,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - D19: A word commit scanned all 600k lexicon entries to update the dialect posterior (commit p99 27 ms, max 40 ms: a visible stall on Space). Candidates now carry their lexicon index: commit p99 0.036 ms. `bench` now also times commits.
 - D20: Arabic brand name is «اكتب عربي» everywhere (Settings title/brand/about, learning-wipe text, restart warning); was «تعريب».
 - D21: Website lives in `website/` (gitignored, per Owner): static HTML/CSS/JS + esbuild, self-hosted Kufam/Manrope, three.js only as a lazy desktop layer. Its demo data is generated from the real engine (`python website/tools/gen_demo.py`, uses the new `t3a-cli picks`). NOT backed up by git — keep a copy elsewhere.
+- D22: Learning export/import (Owner request): `.t3learn` = journal records since the last wipe + optional config.toml; import replays through the journal (merge or replace), so running apps need no restart. Saved to Downloads (no file-dialog plugin; import uses the WebView's file picker). Tests: `learning_file::tests`, `store::tests::export_then_import_moves_learning_to_another_store`.
 - D0: Applied Owner decision (2026-09-22) — added `internal` source status, 80/10/10 deterministic split, pipeline modes, and citations in NOTICE.md.
 
 ## Conflicts found between docs

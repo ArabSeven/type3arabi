@@ -179,7 +179,7 @@ then corpus variants by probability (`docs/03 §10.5`). Max 8.
 | Typing | Latin keyboard layout (Auto/list); inline preview Arabic/Latin; article joining; Arabic punctuation; numerals Western/Eastern; predictive completions; candidates per page; Backspace re-edit; on focus loss keep preview/Latin; Latin in URL & e-mail fields |
 | Dialect | Auto (live bars of the detected mix) or fixed: شامي Levantine · مصري Egyptian · خليجي Gulf · عراقي Iraqi · مغاربي Maghrebi · فصحى MSA |
 | Diacritics & style | Allah form (4 radios with live preview); adverbial tanween on/off + style; hamza standard/relaxed; harakat from vowels light/full |
-| My words | custom words table (Arabic, Latin spellings, dialect) with add/edit/delete; import/export CSV; learned choices (search, delete); **Forget everything** |
+| My words | custom words table (Arabic, Latin spellings, dialect) with add/edit/delete; import/export CSV; learned choices (search, delete); **Export / Import learning** (`.t3learn`, optional settings; merge or replace; docs/03 §9.5); **Forget everything** |
 | Appearance | theme; font family & size (with preview of the popup); footer hints; dialect badge |
 | Apps | excluded apps (pick running exe); RTL assist on/off + window classes |
 | Practice | a text box with 10 guided prompts ("type: sba7 el 5er") and live feedback |
