@@ -41,3 +41,11 @@ generated for each release by `cargo about generate`. All of them are permissive
 `cargo deny`).
 
 - Microsoft Windows-classic-samples (SampleIME), MIT: structural reference for the TSF implementation.
+
+## Fonts and brand
+
+- The Settings app bundles **Kufam** (© 2019 The Kufam Project Authors) and **Manrope** (© 2019 The Manrope
+  Project Authors), both under the SIL Open Font License 1.1; the license texts ship next to the fonts
+  (`fonts/OFL-Kufam.txt`, `fonts/OFL-Manrope.txt` in the Settings app's resources).
+- The Type3arabi / «اكتب عربي» name and the t3 logo are the project's brand (Hassan Obaida). The code license
+  (Apache-2.0) does not grant trademark rights (Apache-2.0 §6): forks should use their own name and logo.

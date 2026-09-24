@@ -1,63 +1,126 @@
+/* Type3arabi Settings — brand kit (2026-09-24): Primary Blue #1F5BFF, Fresh Teal #1BC7C7, Warm Coral #FF795C,
+   Deep Navy #0F1F3D, Soft Cloud #F5F8FF; Kufam (Arabic) + Manrope (English), rounded, bilingual side by side.
+   Fonts are bundled (OFL-1.1, see fonts/OFL-*.txt): the app never loads anything from the network. */
+@font-face { font-family: "Kufam"; font-weight: 400; font-display: swap; src: url(fonts/kufam-arabic-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Kufam"; font-weight: 600; font-display: swap; src: url(fonts/kufam-arabic-600-normal.woff2) format("woff2"); }
+@font-face { font-family: "Kufam"; font-weight: 700; font-display: swap; src: url(fonts/kufam-arabic-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 400; font-display: swap; src: url(fonts/manrope-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 600; font-display: swap; src: url(fonts/manrope-latin-600-normal.woff2) format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 700; font-display: swap; src: url(fonts/manrope-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 800; font-display: swap; src: url(fonts/manrope-latin-800-normal.woff2) format("woff2"); }
+
 :root {
-  --bg: #ffffff; --panel: #f5f6f8; --text: #1a1a1a; --muted: #666; --border: #d0d0d0;
-  --accent: #0067c0; --danger: #c42b1c; --ok: #107c10;
+  --blue: #1F5BFF; --teal: #1BC7C7; --coral: #FF795C; --navy: #0F1F3D; --cloud: #F5F8FF;
+  --bg: var(--cloud); --panel: #FFFFFF; --tile: #FFFFFF; --text: var(--navy); --muted: #5B6478;
+  --border: #DCE3F0; --line: #E8EDF6; --accent: var(--blue); --accent-text: #1747D6; --tint: #E8EEFF;
+  --danger: #D93A2B; --danger-tint: #FFF1EE; --ok: #0E9F8F; --field: #F2F5FB;
+  --shadow: 0 1px 2px rgba(15, 31, 61, .06), 0 4px 14px rgba(15, 31, 61, .05);
+  --f: "Manrope", "Kufam", "Segoe UI", Tahoma, sans-serif;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #202020; --panel: #2b2b2b; --text: #f2f2f2; --muted: #a0a0a0; --border: #3f3f3f;
-          --accent: #4cc2ff; --danger: #ff99a4; --ok: #6ccb5f; }
+  :root {
+    --bg: #1B1D23; --panel: #21242C; --tile: #262A34; --text: #F5F8FF; --muted: #A3AABB;
+    --border: #353B4A; --line: #2E3340; --accent: #4A7DFF; --accent-text: #8FB0FF; --tint: #26314F;
+    --danger: #FF8A7A; --danger-tint: #3A2A2A; --ok: #3DD9C9; --field: #1E2129;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px rgba(0, 0, 0, .18);
+    color-scheme: dark;
+  }
 }
 * { box-sizing: border-box; }
-body { margin: 0; display: flex; height: 100vh; overflow: hidden; font: 14px "Segoe UI", Tahoma, sans-serif;
+[hidden] { display: none !important; }
+body { margin: 0; display: flex; height: 100vh; overflow: hidden; font: 14px/1.45 var(--f);
        background: var(--bg); color: var(--text); }
-small { display: block; color: var(--muted); font-size: 12px; font-weight: normal; }
-nav { flex: 0 0 210px; width: 210px; background: var(--panel); padding: 16px 8px; display: flex; flex-direction: column; gap: 4px;
-      border-inline-end: 1px solid var(--border); }
-.brand { font-size: 18px; font-weight: 600; padding: 4px 8px 16px; display: flex; gap: 8px; align-items: center; }
-.brand small { display: inline; }
-.logo { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 6px;
-        background: var(--accent); color: #fff; }
-nav button { text-align: start; background: none; border: 0; padding: 8px 10px; border-radius: 6px;
-             color: var(--text); font: inherit; cursor: pointer; }
-nav button.active { background: color-mix(in srgb, var(--accent) 14%, transparent); font-weight: 600; }
+small { display: block; color: var(--muted); font-size: 12px; font-weight: 500; }
+
+/* ---- navigation (right side: the page is RTL) */
+nav { flex: 0 0 224px; width: 224px; background: var(--panel); padding: 18px 12px; display: flex; flex-direction: column;
+      gap: 4px; border-inline-end: 1px solid var(--line); }
+.brand { display: flex; gap: 10px; align-items: center; padding: 2px 6px 18px; }
+.brand img { width: 40px; height: 40px; }
+.brand b { display: block; font: 700 19px/1.2 "Kufam", var(--f); }
+.brand b span { color: var(--teal); }
+.brand small { font: 700 12.5px/1.2 "Manrope", var(--f); color: var(--muted); letter-spacing: -.01em; }
+nav button { text-align: start; background: none; border: 0; padding: 9px 12px; border-radius: 12px;
+             color: var(--text); font: 600 14px/1.35 var(--f); cursor: pointer; transition: background .15s; }
+nav button small { font-weight: 500; }
+nav button:hover { background: var(--field); }
+nav button.active { background: var(--tint); color: var(--accent-text); }
+nav button.active small { color: var(--accent-text); opacity: .8; }
+.nav__foot { margin-top: auto; padding: 10px 8px 0; color: var(--muted); font-size: 11.5px; display: flex; gap: 6px; align-items: center; }
+.nav__foot i { width: 8px; height: 8px; border-radius: 3px; background: var(--coral); transform: rotate(45deg); flex: none; }
+
+/* ---- pages */
 main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; }
-.page { display: none; padding: 20px 28px; overflow: auto; flex: 1; min-height: 0; }
+.page { display: none; padding: 24px 28px 28px; overflow: auto; flex: 1; min-height: 0; }
 .page.active { display: block; }
-h1 { font-size: 22px; margin: 0 0 8px; }
-h1 small { display: inline; margin-inline-start: 8px; }
-h2 { font-size: 15px; margin: 22px 0 6px; }
-h2 small { display: inline; margin-inline-start: 6px; }
-.hint { color: var(--muted); margin: 0 0 12px; }
-.row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
-       padding: 10px 0; border-bottom: 1px solid var(--border); }
-.row label { flex: 1; }
+h1 { font: 700 24px/1.3 "Kufam", var(--f); margin: 0 0 6px; }
+h1 small { display: inline; margin-inline-start: 10px; font: 700 15px var(--f); color: var(--muted); }
+h2, h2.sub { font: 700 15px/1.4 "Kufam", var(--f); margin: 22px 0 8px; }
+h2 small, h2.sub small { display: inline; margin-inline-start: 8px; font-weight: 600; color: var(--muted); }
+.hint { color: var(--muted); margin: 0 0 14px; }
+
+/* each setting is a rounded tile */
+.row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; margin: 0 0 8px;
+       background: var(--tile); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+.row label { flex: 1; font-weight: 600; }
+.row label small { margin-top: 1px; }
+.row.danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); background: var(--danger-tint); }
 .row.danger label { color: var(--danger); }
 .chord { display: flex; gap: 6px; align-items: center; }
-input[readonly] { width: 170px; text-align: center; direction: ltr; font-family: Consolas, monospace;
-                  padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
-                  color: var(--text); cursor: pointer; }
-input[readonly].capturing { border-color: var(--accent); outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); }
-input[readonly].invalid { border-color: var(--danger); }
-select, input[type=number] { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
-                             background: var(--bg); color: var(--text); font: inherit; min-width: 170px; }
-input[type=checkbox] { width: 18px; height: 18px; }
-button { font: inherit; padding: 7px 16px; border-radius: 6px; border: 1px solid var(--accent);
-         background: var(--accent); color: #fff; cursor: pointer; }
+
+/* ---- controls */
+input[readonly] { width: 176px; text-align: center; direction: ltr; font: 700 13px var(--f);
+                  padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--field);
+                  color: var(--text); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+input[readonly].capturing { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+input[readonly].invalid { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent); }
+select, input[type=number] { padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px;
+                             background: var(--field); color: var(--text); font: 600 13.5px var(--f); min-width: 176px; }
+select:focus, input[type=number]:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); outline-offset: 1px; }
+/* checkboxes are switches */
+input[type=checkbox] { appearance: none; -webkit-appearance: none; flex: none; width: 40px; height: 22px; margin: 0;
+                       border-radius: 999px; background: var(--border); position: relative; cursor: pointer; transition: background .2s; }
+input[type=checkbox]::after { content: ""; position: absolute; top: 3px; inset-inline-start: 3px; width: 16px; height: 16px;
+                              border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: inset-inline-start .2s; }
+input[type=checkbox]:checked { background: var(--teal); }
+input[type=checkbox]:checked::after { inset-inline-start: 21px; }
+input[type=checkbox]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+
+button { font: 700 13.5px var(--f); padding: 8px 18px; border-radius: 999px; border: 1px solid var(--accent);
+         background: var(--accent); color: #fff; cursor: pointer; transition: filter .15s, transform .1s; }
+button:hover { filter: brightness(1.08); }
+button:active { transform: translateY(1px); }
 button.secondary, button.none { background: transparent; color: var(--text); border-color: var(--border); }
-button.none { padding: 5px 10px; }
+button.secondary:hover, button.none:hover { border-color: var(--accent); filter: none; }
+button.none { padding: 6px 12px; font-weight: 600; }
 #wipe { background: var(--danger); border-color: var(--danger); }
-footer { display: flex; gap: 8px; align-items: center; padding: 12px 28px; border-top: 1px solid var(--border); }
-#status { flex: 1; }
+
+footer { display: flex; gap: 8px; align-items: center; padding: 12px 28px; border-top: 1px solid var(--line); background: var(--panel); }
+#status { flex: 1; font-weight: 600; }
 #status.ok { color: var(--ok); }
 #status.err { color: var(--danger); white-space: pre-line; }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
-dt { color: var(--muted); }
-dd { margin: 0; direction: ltr; text-align: end; font-family: Consolas, monospace; }
 
-/* learning transfer */
-h2.sub { font-size: 15px; margin: 22px 0 6px; }
-h2.sub small { font-weight: 400; color: var(--muted); margin-inline-start: 6px; }
-label.check { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-label.check small { flex-basis: 100%; padding-inline-start: 26px; }
-.panel { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin: 6px 0 10px; display: grid; gap: 8px; }
+/* ---- about */
+.about { display: flex; gap: 18px; align-items: center; padding: 18px 20px; background: var(--tile); border: 1px solid var(--line);
+         border-radius: 18px; box-shadow: var(--shadow); margin: 8px 0 14px; }
+.about img { width: 64px; height: 64px; flex: none; }
+.about p { margin: 0; }
+.about .slogan { font: 700 16px/1.5 "Kufam", var(--f); }
+.about .slogan span { display: block; font: 600 13.5px var(--f); color: var(--muted); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; padding: 14px 18px; margin: 0;
+     background: var(--tile); border: 1px solid var(--line); border-radius: 14px; }
+dt { color: var(--muted); font-weight: 600; }
+dd { margin: 0; direction: ltr; text-align: end; font: 600 12.5px Consolas, monospace; }
+
+/* ---- learning transfer */
+label.check { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 600; }
+label.check small { flex-basis: 100%; padding-inline-start: 50px; }
+label.check input[type=radio] + * { margin: 0; }
+.panel { border: 1px solid var(--line); background: var(--tile); border-radius: 14px; padding: 14px 16px; margin: 0 0 8px;
+         display: grid; gap: 10px; box-shadow: var(--shadow); }
+.panel label.check small { padding-inline-start: 26px; }
 .panel__btns { display: flex; gap: 8px; }
-code { font-size: 12px; }
+code { font-size: 12px; background: var(--field); padding: 1px 5px; border-radius: 6px; }
+.panel label.check:has(input[type=checkbox]) small { padding-inline-start: 50px; }
