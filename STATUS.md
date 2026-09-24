@@ -22,7 +22,21 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 | 6 | All shortcuts editable; installer reboot prompt | `[keys]` config + Settings app (Keyboard page, key capture); MSI finish page "Restart now (recommended)" checked, else bilingual warning | `apps/settings` tests; `wix msi validate` clean; admin-extract layout |
 
 ### Accuracy (honest, held-out; `pipeline_data/eval/*.test.tsv`, never used for training or tuning)
-`cargo run --release -p t3a-cli -- eval <4 test files> --data target/type3arabi.dat --dialect oracle [--lenient]`
+**2026-09-24 build** (ADR-0010 data: + DODa, + TArC, − Elkababi; 197.8k training word pairs; params unchanged):
+`./target/release/t3a-cli eval pipeline_data/eval/*.test.tsv --data target/type3arabi.dat --dialect oracle --lenient`
+| Set | n | before (09-23 build) top-1 / hit@5 | now top-1 / hit@5 |
+|---|---|---|---|
+| LEV (Talafha + Khanafer + ArabiziKit) | 1971 | 63.1% / 90.4% | **65.1% / 90.8%** |
+| MAG (DODa + TArC tests) | 9251 | 43.5% / 71.6% | **47.1% / 76.3%** |
+| all | 11289 | 47.1% / 75.0% | **50.4% / 78.9%** (strict 47.9% / 78.2%) |
+The "before" column is the 09-23 model scored on the *new* test sets (the MAG set changed: DODa and TArC tests
+replace Elkababi's, so MAG numbers are not comparable with the 54.0% of the 09-23 table below).
+Regressions 11/11; `bench` p50 0.064 ms, p99 0.76 ms. A re-tune reached +0.4 pt but broke `ahlan → أهلا`,
+so it was rejected (tune now has a regression guard) and the previous params ship.
+META: `"license": "CC-BY-NC-SA-4.0"`, sources fineweb2, akhanafer-levantine, arabizikit-corpus, doda,
+talafha-jordanian, tarc (internal-only while Talafha/Khanafer are pending).
+
+09-23 build, for reference:
 | Set | n | top-1 strict | top-1 lenient* | hit@5 lenient |
 |---|---|---|---|---|
 | LEV (Talafha + Khanafer + ArabiziKit) | 1971 | 55.5% | 63.1% | 90.4% |
@@ -30,8 +44,6 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 | all | 3778 | 54.1% | 59.0% | 82.7% |
 *lenient = hamza seat, final ة/ه and ى/ي folded (dialect gold spellings are inconsistent; `orth_fold`).
 Session start (963-word fixture lexicon, same split family): LEV top-1 45% / hit@5 81%, MAG 38% / 66%.
-Auto-dialect mode: LEV 54.4% / 90.5%, MAG 44.4% / 65.9% (lenient) — the posterior adapts while typing.
-Latency: `bench --data target/type3arabi.dat` p50 0.065 ms, p99 0.90 ms (budget 0.8 / 3.0 ms).
 The old "Gate E2 86%" figure was measured on `data/eval/smoke.tsv`, whose answers `build-data` copied into
 the lexicon (R14 eval leakage — removed). Gate E2 targets (LEV/EGY ≥ 85% top-1) are **not met**; EGY has
 no usable parallel data (the "Egyptian" arbml set is a mirror of the Jordanian corpus).
@@ -237,6 +249,10 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - [x] Record baseline numbers in STATUS.md.
 
 ## Owner decisions recorded
+- **2026-09-24 (O12)**: Free and open source (ADR-0010). Code Apache-2.0; model CC BY-NC-SA 4.0 with full
+  provenance (DATASETS.md); downloads only via GitHub Releases (plus a version-free "latest" link for the website)
+  and the Microsoft Store; website on Cloudflare Pages; no accounts, telemetry or backend; optional donation.
+  Use the previously blocked NC datasets; research more data; clear the remaining unlicensed sources by email.
 - **2026-09-23 (O11)**: Owner review: `oktob → أكتب` by default; complete predictions for words like `ekhtibar`;
   palette cells show mark / Arabic name / key; visible letter selection with arrows, multi-select and clear-all;
   Shift+Space commits Latin; mouse wheel/click in the popup; every shortcut user-editable; installer offers a
@@ -252,7 +268,8 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | # | Question | Default applied |
 |---|---|---|
 | O1 | Project license: open source (which) or proprietary? | All rights reserved (`LicenseRef-Type3arabi-AllRightsReserved`) |
-| O2 | Code-signing certificate: buy an OV cloud-signing cert (docs/07 §4) — which CA / budget? | Dev builds use a self-signed test cert |
+| O2 | Code signing (also needed for the Store's MSI submission): apply to SignPath Foundation (free for OSS) or Certum Open Source Code Signing first (docs/07 §4 option 0) | Dev builds use a self-signed test cert |
+| O13 | NileChat EGY/MOR are gated: accept the terms on both dataset pages with your Hugging Face account and give the agent an HF read token (`HF_TOKEN`) | Built without them (no Egyptian parallel data yet) |
 | O5 | Recruit golden-set typists: ≥ 3 per dialect group (docs/04 §8) | M2 starts with LEV (Owner's own dialect) |
 | O6 | Default Allah form: `shadda` (اللّه) vs `shadda_fatha` (اللَّه) vs `shadda_dagger` (اللّٰه) vs plain | `shadda` |
 | O7 | Default global activation hotkey (Ctrl+Alt+A) and in-IME toggle (Ctrl+Space) OK? | as stated |
@@ -275,6 +292,8 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - D13: Popup hints/chips are laid out piece by piece (Latin keycap + Arabic label): GDI DrawText ignored RTL order for mixed labels even with DT_RTLREADING + ARABIC_CHARSET + RLE.
 - D14: `--enable-profile` removes the ar-SA keyboard layouts Windows adds together with the TIP (Arabic 101) unless the user already had them, via InstallLayoutOrTip(ILOT_UNINSTALL), and unloads them from the session (UnloadKeyboardLayout). Evidence on the dev machine (`t3a-hotkey --list-profiles`): before — enabled 04090409, 04010401 (Arabic 101), Type3arabi; after — 04090409, Type3arabi; `Get-WinUserLanguageList` = en-US + ar-SA {Type3arabi only}.
 - D15: Shortcut rules tightened (`is_chord`): a letter/digit needs Ctrl or Alt, Space/Enter/Backspace need a modifier, Esc never — so no shortcut can break typing. Settings capture: Esc/click-away cancels, invalid or duplicate attempts are explained and never stored.
+- D16: Elkababi retired: it is a re-spelled copy of DODa's sentences (24% verbatim, the rest lightly re-spelled); with both, test sentences leak into training. DODa (the licensed upstream) is used instead.
+- D17: The [dialect] profile setting was dead (parsed, never used). Now a fixed profile pins the posterior; the TIP harness pins LEV so list order is deterministic.
 - D0: Applied Owner decision (2026-09-22) — added `internal` source status, 80/10/10 deterministic split, pipeline modes, and citations in NOTICE.md.
 
 ## Conflicts found between docs
@@ -282,7 +301,9 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 
 ## Backlog (by milestone)
 - M2: DP sentence aligner for unequal token counts (docs/04 §6.1); Wikipedia/Maknuune/Tashkeela fetchers.
-- M2: EGY parallel data (none usable now); golden set (O5).
+- M2: EGY parallel data: NileChat EGY after O13; golden set (O5). Watch arXiv 2608.02555 (5-dialect Arabic↔Arabizi corpus, CC BY 4.0) for its data release.
+- M6: self-training on monolingual Moroccan Arabizi (`darija-arabizi-mt`, ~280k sentences, CC BY-NC-SA) — docs/04 §6.4.
+- M7: `cargo about` → THIRD-PARTY-LICENSES.html in the MSI (NOTICE.md references it); website (Cloudflare Pages) with the latest-download link; Store listing text.
 - M3: `bigrams.tsv` is used, but context (surrounding text, docs/02 §12.1) is only our own last commits.
 - M4: popup hover highlight, per-row ◌َ button; dark-theme popup; DPI-change handling.
 - M7: Owner-run MSI install/upgrade/uninstall on Win10/Win11; ARM64 DLL; code signing (O2); cargo-about NOTICE;
@@ -303,6 +324,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - M2: `data/eval/bench_keystrokes.tsv` (10k words from golden/FineWeb) replaces smoke as the default bench set.
 
 ## Session log
+- 2026-09-24 — Agent (Claude): ADR-0010 (Apache-2.0 code, CC BY-NC-SA 4.0 model, GitHub + Store) and governance amendments; license research (DODa, NileChat: CC BY-NC; TArC: CC BY-NC-SA; ArabiziKit corpus: MIT); DODa + TArC fetched and trained (MAG 43.5 → 47.1% top-1, LEV 63.1 → 65.1%); Elkababi retired (DODa copy); DATASETS.md generator, license families, --exclude-nc, model license in META; dialect-profile bug fixed; tune regression guard; git history pruned (549 MB of accidental build files, never pushed). Next: Owner sends the two clearance emails and accepts NileChat terms (O13).
 - 2026-09-23 (evening) — Agent (Claude): Owner feedback: Arabic (101) stuck next to Type3arabi, Settings integration, shortcut capture bugs. Fixed the enable step (D14) and verified it on this machine; `t3a-hotkey --list-profiles` diagnostic; ITfFnConfigure → Settings app (docs/02 §14); capture rewrite + stricter shortcut rules (D15), exercised in the browser pane with a stubbed backend. Edit sessions FIFO (D11).
 - 2026-09-23 (later) — Agent (Claude): Owner review (6 points) implemented. Real data pipeline (FineWeb-2 202M tokens → 600k lexicon, bigrams, char LM; parallel pairs; EM rule training; tuning; honest held-out eval); four engine ranking bugs fixed; tashkeel editor redesign + selection model; mouse input; Shift+Space; configurable [keys]; Settings app (Tauri 2); t3a-hotkey companion; WiX MSI with restart prompt; R14 enforced in build-data. Next: Owner installs the MSI; EGY data; DP aligner; signing decision.
 - 2026-09-23 — Agent (Claude, took over from Gemini): the Owner's real test failed (16 switcher entries, Notepad crash). Audited and rebuilt the TIP (see Audit + Rebuild checklist), fixed the dev scripts, fixed two user-store bugs, added the `tsf_harness` + `popup_paint` examples, updated docs/02, docs/03, docs/09 and TESTING.md, flagged spikes UNVERIFIED. Next: Owner runs TESTING.md §0–2; then S2 and the M1 backlog.
