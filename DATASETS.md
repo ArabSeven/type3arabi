@@ -20,10 +20,10 @@ Every release's data file records the exact sources it was built from (its `META
 | [Darija Open Dataset (DODa)](https://github.com/darija-open-dataset/dataset) | CC-BY-NC-4.0 (repository LICENSE, verified 2026-09-24) | rules, tuning, eval |
 | [ArabiziKit library, rule tables and benchmark code](https://github.com/rb2625/arabizi-kit) | MIT | reference |
 | [rabeeeehh/arabizi-kit-corpus (LLM-annotated Arabizi sentences)](https://huggingface.co/datasets/rabeeeehh/arabizi-kit-corpus) | MIT (dataset card, verified 2026-09-24) | rules, tuning, eval |
-| [UBC-NLP/nilechat-arabizi-egy (synthetic Arabizi)](https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-egy) | CC-BY-NC-4.0 (dataset card, verified 2026-09-24) | rules, tuning, eval |
+| [UBC-NLP/nilechat-arabizi-egy (synthetic Arabizi)](https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-egy) | CC-BY-NC-4.0 (dataset card, verified 2026-09-24) | rules |
 | [Microsoft Maren public usage documentation (digit table, abbreviations)](https://www.ujca.cz/resources/ime/maren) | facts from public documentation | reference |
 | [TArC — Tunisian Arabish Corpus (Gugliotta & Dinarelli)](https://github.com/eligugliotta/tarc) | CC-BY-NC-SA-4.0 (README, verified 2026-09-24) | rules, tuning, eval |
-| [UBC-NLP/nilechat-arabizi-mor (synthetic Moroccan Arabizi)](https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-mor) | CC-BY-NC-4.0 (dataset card, verified 2026-09-24) | rules, tuning, eval |
+| [UBC-NLP/nilechat-arabizi-mor (synthetic Moroccan Arabizi)](https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-mor) | CC-BY-NC-4.0 (dataset card, verified 2026-09-24) | rules |
 | [ilias-brh/english-darija-arabizi-sentence-pairs (Moroccan Arabizi, no Arabic script)](https://huggingface.co/datasets/ilias-brh/english-darija-arabizi-sentence-pairs) | CC-BY-NC-SA-4.0 (dataset card, verified 2026-09-24) | rules |
 
 ### Citations

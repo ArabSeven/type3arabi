@@ -149,14 +149,14 @@ license_family = "permissive"
 id = "nilechat-arabizi-egy"
 name = "UBC-NLP/nilechat-arabizi-egy (synthetic Arabizi)"
 url = "https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-egy"
-kind = "parallel"
+kind = "mono_arabizi"
 dialects = ["EGY"]
 license = "CC-BY-NC-4.0 (dataset card, verified 2026-09-24)"
 status = "approved"
-roles = ["rules", "tuning", "eval"]
+roles = ["rules"]
 citation = "UBC-NLP. NileChat Arabizi-EGY: Synthetic Arabizi Transliterations. Hugging Face Datasets (UBC-NLP/nilechat-arabizi-egy)."
 attribution = "UBC-NLP"
-notes = "GATED: the Owner must accept the terms on the dataset page with their HF account; fetch then needs a Hugging Face login on the build PC (`uv run hf auth login`). Synthetic: weight 0.2 in EM. UNAVAILABLE 2026-09-23: dataset is gated/private on the hub."
+notes = "NOT parallel (checked 2026-09-24): rows are either synthetic Arabizi or Arabic text, unlinked (552k EGY Arabizi docs). Input for self-training (docs/04 §6.4, M6). Gated: access granted to the Owner's HF account; the build PC needs `uv run hf auth login`."
 license_family = "nc"
 
 [[source]]
@@ -285,15 +285,15 @@ notes = "tarc.tsv: ~4.8k sentences / 31.5k Arabizi tokens with CODA Arabic spell
 id = "nilechat-arabizi-mor"
 name = "UBC-NLP/nilechat-arabizi-mor (synthetic Moroccan Arabizi)"
 url = "https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-mor"
-kind = "parallel"
+kind = "mono_arabizi"
 dialects = ["MAG"]
 license = "CC-BY-NC-4.0 (dataset card, verified 2026-09-24)"
 license_family = "nc"
 status = "approved"
-roles = ["rules", "tuning", "eval"]
+roles = ["rules"]
 citation = "UBC-NLP. NileChat Arabizi-MOR. Hugging Face Datasets (UBC-NLP/nilechat-arabizi-mor)."
 attribution = "UBC-NLP"
-notes = "GATED like nilechat-arabizi-egy (Owner accepts terms; `uv run hf auth login`). Synthetic: evaluate before trusting."
+notes = "NOT parallel (checked 2026-09-24): rows are either synthetic Arabizi or Arabic text, unlinked (1.40M MOR Arabizi docs). Input for self-training (docs/04 §6.4, M6). Gated: access granted to the Owner's HF account; the build PC needs `uv run hf auth login`."
 
 [[source]]
 id = "darija-arabizi-mt"

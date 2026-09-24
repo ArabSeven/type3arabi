@@ -174,19 +174,25 @@ def _script_share(text: str) -> tuple[float, float]:
     return arabic / len(letters), latin / len(letters)
 
 
-def script_pair(row: dict):
-    """(latin, arabic) from a row whose column names are not known in advance: the first string column that
-    is mostly Latin and the first that is mostly Arabic script."""
-    latin = arabic = None
-    for v in row.values():
-        if not isinstance(v, str) or not v.strip():
-            continue
-        ar, la = _script_share(v)
-        if arabic is None and ar > 0.8:
-            arabic = v
-        elif latin is None and la > 0.8:
-            latin = v
-    return latin, arabic
+def fetch_mono_arabizi(src: dict, manifest: dict) -> bool:
+    """Monolingual Arabizi (self-training input, docs/04 §6.4) -> raw/<id>/arabizi.txt, one text per line.
+    Rows that are mostly Arabic script are dropped."""
+    sid = src["id"]
+    if sid not in ("nilechat-arabizi-egy", "nilechat-arabizi-mor"):
+        return False
+    out_dir = RAW_DIR / sid
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / "arabizi.txt"
+    n = 0
+    with out.open("w", encoding="utf-8", newline="\n") as w:
+        for r in hf_gated_rows("UBC-NLP/" + sid):
+            text = " ".join(str(r.get("text") or "").split())
+            if text and _script_share(text)[1] > 0.8:
+                w.write(text + "\n")
+                n += 1
+    manifest["sources"][sid] = {"sha256": sha256_file(out), "texts": n}
+    print(f"  [{sid}] {n:,} Arabizi texts")
+    return True
 
 
 DODA_RAW = "https://raw.githubusercontent.com/darija-open-dataset/dataset/main/"
@@ -276,9 +282,6 @@ def fetch_parallel(src: dict, manifest: dict) -> bool:
         rows = doda_rows()
     elif sid == "tarc":
         rows = tarc_rows()
-    elif sid in ("nilechat-arabizi-egy", "nilechat-arabizi-mor"):
-        dialect = "EGY" if sid.endswith("egy") else "MAG"
-        rows = ((*script_pair(r), dialect) for r in hf_gated_rows("UBC-NLP/" + sid))
     else:
         return False
     write_pairs(sid, rows, manifest)
@@ -305,6 +308,8 @@ def run(mode: str = "internal", only: str | None = None) -> int:
             if sid == "fineweb2":
                 fetch_fineweb(manifest)
             elif s["kind"] == "parallel" and fetch_parallel(s, manifest):
+                pass
+            elif s["kind"] == "mono_arabizi" and fetch_mono_arabizi(s, manifest):
                 pass
             else:
                 print(f"  [{sid}] no automated fetcher (kind={s['kind']}); skipped")
