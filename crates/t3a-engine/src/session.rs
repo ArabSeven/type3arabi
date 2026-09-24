@@ -6,7 +6,7 @@
 
 use crate::alphabet;
 use crate::config::Config;
-use crate::dialect::{self, Posterior};
+use crate::dialect::{self, Dialect, Posterior};
 use crate::display::{self, AllahForm, TanweenStyle};
 use crate::normalize::{InputChar, LatinBuffer};
 use crate::oov::{self, Hyp};
@@ -108,6 +108,9 @@ pub struct EngineSettings {
     pub article_joining: bool,
     pub harakat: HarakatMode,
     pub sticky_last_choice: bool,
+    /// `[dialect] profile` other than `auto`: the posterior is pinned to this dialect and no longer
+    /// adapts (docs/03 §7, docs/13).
+    pub fixed_dialect: Option<Dialect>,
 }
 
 impl Default for EngineSettings {
@@ -126,6 +129,7 @@ impl From<&Config> for EngineSettings {
             article_joining: c.article_joining,
             harakat: c.harakat_mode(),
             sticky_last_choice: c.sticky_last_choice && c.learning_enabled,
+            fixed_dialect: Dialect::parse(&c.dialect_profile),
         }
     }
 }
@@ -220,13 +224,16 @@ const JOINER_CONJ: [&str; 3] = ["w", "wa", "we"];
 
 impl<'e> Session<'e> {
     pub fn new(engine: &'e Engine, settings: EngineSettings) -> Self {
+        let pi = settings
+            .fixed_dialect
+            .map_or(dialect::DEFAULT_PRIOR, dialect::fixed_profile);
         Self {
             engine,
             settings,
             buf: LatinBuffer::new(),
             list: CandidateList::default(),
             hyps: Vec::new(),
-            pi: dialect::DEFAULT_PRIOR,
+            pi,
             context: Vec::new(),
             lattice: crate::search::TrieLattice::new(),
         }
@@ -237,6 +244,11 @@ impl<'e> Session<'e> {
     }
 
     pub fn set_settings(&mut self, s: EngineSettings) {
+        if s.fixed_dialect != self.settings.fixed_dialect {
+            self.pi = s
+                .fixed_dialect
+                .map_or(dialect::DEFAULT_PRIOR, dialect::fixed_profile);
+        }
         self.settings = s;
     }
 
@@ -332,8 +344,9 @@ impl<'e> Session<'e> {
             CandidateKind::Number | CandidateKind::Laughter | CandidateKind::Joiner
         );
 
-        // Update dialect posterior if committing a lexicon word (docs/03 §7.2)
-        if c.kind == CandidateKind::Word {
+        // Update dialect posterior if committing a lexicon word (docs/03 §7.2), unless the user
+        // chose a fixed dialect profile.
+        if c.kind == CandidateKind::Word && self.settings.fixed_dialect.is_none() {
             if let Some(data) = self.engine.data() {
                 if let Ok(words) = data.words() {
                     if let Some(w_idx) = words.iter().position(|w| {
@@ -699,7 +712,7 @@ impl<'e> Session<'e> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dialect::{fixed_profile, Dialect};
+    use crate::dialect::fixed_profile;
     use crate::user::{MemoryUser, NoUser};
 
     fn type_word(s: &mut Session, w: &str, u: &dyn UserScorer) {
@@ -710,6 +723,23 @@ mod tests {
 
     fn texts(l: &CandidateList) -> Vec<String> {
         l.items.iter().map(|c| c.text.clone()).collect()
+    }
+
+    #[test]
+    fn dialect_profile_setting_pins_the_posterior() {
+        // Regression (2026-09-24): `[dialect] profile` was parsed but never reached the engine.
+        let e = Engine::builtin();
+        let mut c = Config::default();
+        assert_eq!(
+            Session::new(&e, EngineSettings::from(&c)).dialect(),
+            dialect::DEFAULT_PRIOR
+        );
+        c.dialect_profile = "MAG".into();
+        let mut s = Session::new(&e, EngineSettings::from(&c));
+        assert_eq!(s.dialect(), fixed_profile(Dialect::Mag));
+        c.dialect_profile = "auto".into();
+        s.set_settings(EngineSettings::from(&c));
+        assert_eq!(s.dialect(), dialect::DEFAULT_PRIOR);
     }
 
     #[test]

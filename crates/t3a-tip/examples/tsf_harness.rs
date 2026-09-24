@@ -241,6 +241,37 @@ mod harness {
         true
     }
 
+    /// The TIP's config inside the harness sandbox. Learning off: scenarios must not depend on each
+    /// other's commits (sticky choices). Fixed dialect: with `auto`, earlier scenarios would shift the
+    /// dialect estimate and reorder later lists.
+    const HARNESS_CONFIG: &str = "[learning]\nenabled = false\n\n[dialect]\nprofile = \"LEV\"\n";
+
+    /// Text of the 2nd candidate for `word` under HARNESS_CONFIG, as the TIP would commit it.
+    fn second_candidate(word: &str, dat: &std::path::Path) -> String {
+        let engine = match t3a_data::DataFile::open(dat) {
+            Ok(file) => {
+                let file: &'static t3a_data::DataFile = Box::leak(Box::new(file));
+                t3a_engine::Engine::new(file.view().expect("data view")).expect("engine")
+            }
+            Err(_) => t3a_engine::Engine::builtin(),
+        };
+        let settings = t3a_engine::Config::parse(HARNESS_CONFIG)
+            .0
+            .to_engine_settings();
+        let mut s = t3a_engine::session::Session::new(&engine, settings);
+        for ch in word.chars() {
+            s.push(
+                t3a_engine::normalize::InputChar::new(ch),
+                &t3a_engine::NoUser,
+            );
+        }
+        s.candidates()
+            .items
+            .get(1)
+            .map(|c| c.text.clone())
+            .unwrap_or_default()
+    }
+
     unsafe extern "system" fn on_exception(
         info: *mut windows::Win32::System::Diagnostics::Debug::EXCEPTION_POINTERS,
     ) -> i32 {
@@ -277,7 +308,7 @@ mod harness {
         // Learning off: scenarios must not depend on each other's commits (sticky choices).
         let _ = std::fs::write(
             sandbox.join("Type3arabi").join("config.toml"),
-            "[learning]\nenabled = false\n",
+            HARNESS_CONFIG,
         );
         std::env::set_var("LOCALAPPDATA", &sandbox);
         let code = run_in_sandbox();
@@ -375,6 +406,12 @@ mod harness {
                 }
             }
 
+            // The 2nd row depends on the data build (e.g. مرحبة vs مرحبه), not on the UI under test:
+            // ask the engine for it, with the same data file and default settings as the TIP.
+            let dat = std::env::current_exe()
+                .map(|p| p.with_file_name("type3arabi.dat"))
+                .unwrap_or_default();
+            let row2 = second_candidate("mar7aba", &dat) + " ";
             // (typed keys, expected text). "\x08" = Backspace, "\x1B" = Esc, "\n" = Enter.
             let scenarios: &[(&str, &str)] = &[
                 ("mar7aba ", "مرحباً "), // U+0645 U+0631 U+062D U+0628 U+0627 U+064B
@@ -393,10 +430,9 @@ mod harness {
                 // Owner requests 2026-09-23: Shift+Space commits the Latin word; mouse selection.
                 ("hello\u{E003}", "hello "),
                 // 2nd candidate three ways: ↓ + Space, click on row 2, wheel down + Space.
-                // مرحبة = U+0645 U+0631 U+062D U+0628 U+0629 (the list's 2nd row with learning off)
-                ("mar7aba\u{E006} ", "مرحبة "),
-                ("mar7aba\u{E001}", "مرحبة "),
-                ("mar7aba\u{E002} ", "مرحبة "),
+                ("mar7aba\u{E006} ", &row2),
+                ("mar7aba\u{E001}", &row2),
+                ("mar7aba\u{E002} ", &row2),
                 ("shukran\t\u{E004}\n", "شكرا"), // clear all diacritics (drops the tanween)
                 ("shukran\t\u{E005}\n", "شُكراً"), // U+0634 U+064F ...: damma on the 1st letter
             ];
