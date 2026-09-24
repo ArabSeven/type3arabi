@@ -90,12 +90,17 @@ fn cmd_build_data(args: &[String]) -> i32 {
         }
     });
     let mode = arg_value(args, "--mode").unwrap_or_else(|| "internal".to_string());
+    let limits = build::Limits {
+        max_words: arg_value(args, "--max-words").and_then(|v| v.parse().ok()),
+        max_charlm: arg_value(args, "--max-charlm").and_then(|v| v.parse().ok()),
+    };
 
     match build::build_data(
         in_dir.as_deref().map(Path::new),
         Path::new(&seed_dir),
         Path::new(&out_path),
         &mode,
+        limits,
     ) {
         Ok(()) => 0,
         Err(e) => {

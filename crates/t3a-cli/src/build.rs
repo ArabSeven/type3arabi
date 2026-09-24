@@ -13,12 +13,22 @@ use t3a_engine::dialect::Dialect;
 use t3a_engine::normalize::emphatic_symbol;
 use t3a_engine::seed::{POS_ANY, POS_F, POS_I, POS_M};
 
+/// Optional size limits, for the smaller model the website runs in the browser (website/README.md).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Limits {
+    /// Keep only the first N lexicon rows (`lexicon.tsv` is sorted by frequency rank).
+    pub max_words: Option<usize>,
+    /// Keep only the first N char-LM rows (lower orders come first).
+    pub max_charlm: Option<usize>,
+}
+
 /// Compile binary `type3arabi.dat`.
 pub fn build_data(
     in_dir: Option<&Path>,
     seed_dir: &Path,
     out_path: &Path,
     mode: &str,
+    limits: Limits,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Building type3arabi.dat ({mode} mode) ===");
 
@@ -65,7 +75,11 @@ pub fn build_data(
     let raw_words = if let Some(ref lf) = lexicon_file {
         if lf.exists() {
             println!("  [WREC+TRIE] Loading lexicon from {}", lf.display());
-            load_lexicon_tsv(lf)?
+            let mut rows = load_lexicon_tsv(lf)?;
+            if let Some(n) = limits.max_words {
+                rows.truncate(n);
+            }
+            rows
         } else {
             println!("  [WREC+TRIE] Compiling seed lexicon from smoke & phrases");
             collect_seed_lexicon(seed_dir)?
@@ -258,7 +272,11 @@ pub fn build_data(
     let chlm_rows = match chlm_file {
         Some(ref f) if f.exists() => {
             println!("  [CHLM] Loading char n-grams from {}", f.display());
-            load_charlm_tsv(f)?
+            let mut rows = load_charlm_tsv(f)?;
+            if let Some(n) = limits.max_charlm {
+                rows.truncate(n);
+            }
+            rows
         }
         _ => Vec::new(),
     };
