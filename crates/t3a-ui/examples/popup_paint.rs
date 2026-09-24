@@ -71,7 +71,17 @@ fn main() {
         ),
     ];
     let mut p = PopupWindow::new().expect("popup");
+    // `--dark` renders the dark theme (the popup otherwise follows Windows' app mode).
+    let dark = std::env::args().any(|a| a == "--dark");
+    if dark {
+        p.set_theme(Theme::DARK);
+    }
     for (name, model) in models {
+        let name = if dark {
+            format!("{name}-dark")
+        } else {
+            name.to_string()
+        };
         p.show(model, (700, 300, 720, 320));
         // SAFETY: plain GDI capture of our own window into a DIB, then written as a BMP file.
         unsafe {

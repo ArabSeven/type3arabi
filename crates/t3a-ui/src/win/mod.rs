@@ -41,8 +41,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     RegisterClassExW, SetWindowLongPtrW, SetWindowPos, ShowWindow, UnregisterClassW, CS_DROPSHADOW,
     CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MA_NOACTIVATE, SWP_NOACTIVATE,
     SWP_SHOWWINDOW, SW_HIDE, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETTINGCHANGE, WNDCLASSEXW, WS_CLIPSIBLINGS,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
@@ -180,7 +180,7 @@ impl PopupWindow {
 
             let state = Box::new(RefCell::new(PopupState {
                 model: PopupModel::Hidden,
-                theme: Theme::LIGHT,
+                theme: system_theme(),
                 dpi: GetDpiForWindow(hwnd).max(96),
                 targets: Vec::new(),
                 handler: None,
@@ -195,6 +195,13 @@ impl PopupWindow {
     pub fn set_handler(&mut self, handler: Handler) {
         if let Ok(mut s) = self.state.try_borrow_mut() {
             s.handler = Some(handler);
+        }
+    }
+
+    /// Override the theme that follows Windows (screenshots, tests).
+    pub fn set_theme(&mut self, theme: Theme) {
+        if let Ok(mut s) = self.state.try_borrow_mut() {
+            s.theme = theme;
         }
     }
 
@@ -669,10 +676,10 @@ impl PopupState {
             dc,
             clear_rc,
             self.px(8.0),
-            Some(blend(0xC42B1C, th.bg, 0.08)),
-            Some(blend(0xC42B1C, th.bg, 0.55)),
+            Some(blend(danger(th), th.bg, 0.08)),
+            Some(blend(danger(th), th.bg, 0.55)),
         );
-        SetTextColor(dc, to_colorref(0xC42B1C));
+        SetTextColor(dc, to_colorref(danger(th)));
         let icon_w = extent(dc, "\u{2715}");
         draw(
             dc,
@@ -1021,6 +1028,41 @@ fn mouse_event(
     Some((handler, event))
 }
 
+/// The Windows app theme (Settings → Personalization → Colors → "Choose your app mode"): the popup
+/// follows it like the apps around it. Read at creation and on WM_SETTINGCHANGE("ImmersiveColorSet"),
+/// never on the keystroke path.
+pub fn system_theme() -> Theme {
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    let mut v: u32 = 1;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: `v`/`size` describe a writable u32; the key and value names are static wide strings.
+    let r = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"),
+            w!("AppsUseLightTheme"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&mut v as *mut u32).cast()),
+            Some(&mut size),
+        )
+    };
+    if r.is_ok() && v == 0 {
+        Theme::DARK
+    } else {
+        Theme::LIGHT
+    }
+}
+
+/// "Clear all" red, readable on either theme.
+fn danger(th: Theme) -> u32 {
+    if th == Theme::DARK {
+        0xFF99A4
+    } else {
+        0xC42B1C
+    }
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const RefCell<PopupState>;
     // SAFETY (all arms): `ptr` is 0 or points into the owning PopupWindow's Box, and it is cleared
@@ -1054,6 +1096,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }));
             }
             LRESULT(0)
+        }
+        WM_SETTINGCHANGE => {
+            // lParam names the changed area; "ImmersiveColorSet" = light/dark app mode switched.
+            let area = PCWSTR(lparam.0 as *const u16);
+            if !ptr.is_null()
+                && !area.is_null()
+                && area.to_string().ok().as_deref() == Some("ImmersiveColorSet")
+            {
+                if let Ok(mut s) = (*ptr).try_borrow_mut() {
+                    s.theme = system_theme();
+                }
+                let _ = InvalidateRect(Some(hwnd), None, false);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_LBUTTONUP => {
             let _ = ReleaseCapture();
