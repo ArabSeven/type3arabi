@@ -54,7 +54,7 @@ impl Default for EngineParams {
             custom_bonus: 1.0,
             custom_lm: -9.0,
             unseen_dialect_lp: -18.0,
-            dialect_eta: 0.08,
+            dialect_eta: 0.35,
             dialect_floor: 0.02,
             user_half_life_days: 90.0,
             lambda_tm: 1.0,

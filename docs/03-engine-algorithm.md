@@ -212,9 +212,12 @@ Ties (|Δ| < 1e-4): higher `LM`, then shorter display string, then lexicographic
   → ISO country → `data/seed/region_priors.tsv`, then uniform with MSA 0.25 — the TIP's LANGID is
   always ar-SA (docs/02 §2.1) and is never used as a dialect signal); a fixed profile `"LEV"` etc. ⇒ `π = 0.8` on it, `0.15` MSA, rest spread.
 - **Update** after each commit of a lexicon/custom word `w` (not phrases, numbers, raw):
-  `π_d ← normalize( π_d^(1−η) · (P(w|d) + ε)^η )`, `η = params.dialect_eta` (0.08), `ε = 1e-7`,
+  `π_d ← normalize( π_d^(1−η) · P(w|d)^η )` (computed in log space), `η = params.dialect_eta` (0.35),
   then floor every `π_d` at `params.dialect_floor` (0.02) and MSA at 0.10; renormalize.
   Only in `"auto"`. `π` is persisted in the user snapshot (§9.4) when learning is allowed.
+  Measured with `t3a-cli adapt` (2026-09-24, LEV + MAG test sets): after a switch the new dialect leads within
+  a median of 3–5 words (max 22), and top-1 on a stream alternating dialects every 25 words is 55.2%, within
+  ~1 point of knowing the dialect in advance. η = 0.08 needed 6–17 words (and 76+ before the floor fix).
 - The `EffectiveRules` table (§4.2) is rebuilt when `π` moved by more than 0.02 (L1) since the last build.
 
 ### 7.3 Context bigram
@@ -383,7 +386,7 @@ base: Range<u32>, kind, score, word_id }` (the current `String` fields allocate;
 | `p_gem` / `p_waw_alif` | 0.75 / 0.25 | §4.3 / §4.4 |
 | `oov_penalty` / `custom_bonus` / `custom_lm` | 4.0 / 1.0 / −9.0 | §7.1 / §9.5 |
 | `unseen_dialect_lp` | −18.0 | §7.2 |
-| `dialect_eta` / `dialect_floor` | 0.08 / 0.02 | §7.2 |
+| `dialect_eta` / `dialect_floor` | 0.35 / 0.02 | §7.2 |
 | `user_half_life_days` | 90 | §9.2 |
 | `lambda_{tm,lm,ctx,usr,chr}` | 1.0 / 0.8 / 0.6 / 1.5 / 0.35 | §7.1 |
 | `max_candidates` | 21 | §8 |

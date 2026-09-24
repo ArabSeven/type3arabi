@@ -273,26 +273,29 @@ pub fn update_dialect_posterior(
     unseen_lp: f32,
     floor: f32,
 ) {
-    let eps = 1e-7f32;
-    let mut new_pi = [0.0f32; 6];
-    for (d, (item, &pi_d)) in new_pi.iter_mut().zip(pi.iter()).enumerate() {
+    // Geometric blend pi_d ∝ pi_d^(1-η) · P(w|d)^η in log space (word likelihoods are ~1e-5, so
+    // linear space underflows toward the floors). Normalize first, then apply the floors — a
+    // floor applied to unnormalized likelihoods froze the posterior at the floors (bug 2026-09-24).
+    let mut logit = [0.0f32; 6];
+    for (d, item) in logit.iter_mut().enumerate() {
         let lp = if q[d] == 255 {
             unseen_lp
         } else {
             dequantize_lp(q[d])
         };
-        let p_w_d = lp.exp();
-        *item = pi_d.powf(1.0 - eta) * (p_w_d + eps).powf(eta);
+        *item = (1.0 - eta) * pi[d].max(1e-9).ln() + eta * lp;
     }
+    let max = logit.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut new_pi = logit.map(|l| (l - max).exp());
+    let sum: f32 = new_pi.iter().sum();
+    new_pi.iter_mut().for_each(|p| *p /= sum);
     for (d, item) in new_pi.iter_mut().enumerate() {
         let fl = if d == 0 { 0.10 } else { floor };
         *item = item.max(fl);
     }
     let sum: f32 = new_pi.iter().sum();
-    if sum > 0.0 {
-        for (d, p) in pi.iter_mut().enumerate() {
-            *p = new_pi[d] / sum;
-        }
+    for (p, n) in pi.iter_mut().zip(new_pi) {
+        *p = n / sum;
     }
 }
 
@@ -592,6 +595,7 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
         };
         orth.push((g, msa_lp));
         scored_exact.push(Candidate {
+            word: Some(word_idx),
             text,
             base,
             kind: CandidateKind::Word,
@@ -640,6 +644,7 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
                             let mut text = surf.to_string();
                             text = display::style_sacred(&text, settings.allah_form);
                             completions.push(Candidate {
+                                word: Some(w_idx),
                                 text,
                                 base,
                                 kind: CandidateKind::Completion,
@@ -678,6 +683,7 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
         let hyp_idx = hyps.len();
         hyps.push(h);
         oov_cands.push(Candidate {
+            word: None,
             text: base.clone(),
             base,
             kind: CandidateKind::Oov,
@@ -704,8 +710,25 @@ pub fn search_trie(lattice: &mut TrieLattice, query: &SearchQuery<'_>) -> Search
 mod tests {
     use super::*;
 
+    #[test]
+    fn dialect_posterior_follows_words_and_keeps_floors() {
+        // Regression (2026-09-24): floors were applied before normalizing, so with realistic word
+        // likelihoods (~e^-12) every dialect sat on its floor and the posterior never moved.
+        let q = |lps: [f32; 6]| lps.map(t3a_data::quantize_lp);
+        let mag_word = q([-14.0, -14.0, -14.0, -14.0, -14.0, -9.0]);
+        let mut pi = crate::dialect::DEFAULT_PRIOR;
+        for _ in 0..4 {
+            update_dialect_posterior(&mut pi, mag_word, 0.35, -18.0, 0.02);
+        }
+        assert_eq!(crate::dialect::argmax(&pi), crate::dialect::Dialect::Mag);
+        assert!((pi.iter().sum::<f32>() - 1.0).abs() < 1e-4);
+        // Floors hold up to the final renormalization (MSA 0.10, others 0.02 before it).
+        assert!(pi[0] >= 0.08 && pi.iter().all(|&p| p >= 0.015));
+    }
+
     fn cand(base: &str, score: f32) -> Candidate {
         Candidate {
+            word: None,
             text: base.to_string(),
             base: base.to_string(),
             kind: CandidateKind::Word,

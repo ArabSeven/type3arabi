@@ -156,6 +156,9 @@ pub struct Candidate {
     pub kind: CandidateKind,
     pub score: f32,
     pub(crate) hyp: Option<usize>,
+    /// Lexicon word index (data file WREC) for Word/Completion candidates: lets a commit update the
+    /// dialect posterior without searching the lexicon (keystroke path, R3).
+    pub(crate) word: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -346,25 +349,20 @@ impl<'e> Session<'e> {
 
         // Update dialect posterior if committing a lexicon word (docs/03 §7.2), unless the user
         // chose a fixed dialect profile.
-        if c.kind == CandidateKind::Word && self.settings.fixed_dialect.is_none() {
-            if let Some(data) = self.engine.data() {
-                if let Ok(words) = data.words() {
-                    if let Some(w_idx) = words.iter().position(|w| {
-                        data.string(w.surface)
-                            .map(crate::arabic::strip_marks)
-                            .as_deref()
-                            == Ok(&c.base)
-                    }) {
-                        let w_rec = &words[w_idx];
-                        crate::search::update_dialect_posterior(
-                            &mut self.pi,
-                            w_rec.q,
-                            self.engine.params.dialect_eta,
-                            self.engine.params.unseen_dialect_lp,
-                            self.engine.params.dialect_floor,
-                        );
-                    }
-                }
+        // O(1): the candidate carries its lexicon index (a lexicon scan here cost up to 40 ms).
+        if self.settings.fixed_dialect.is_none() {
+            let rec = c.word.and_then(|i| {
+                let words = self.engine.data()?.words().ok()?;
+                words.get(i as usize).copied()
+            });
+            if let Some(w_rec) = rec {
+                crate::search::update_dialect_posterior(
+                    &mut self.pi,
+                    w_rec.q,
+                    self.engine.params.dialect_eta,
+                    self.engine.params.unseen_dialect_lp,
+                    self.engine.params.dialect_floor,
+                );
             }
         }
 
@@ -472,6 +470,7 @@ impl<'e> Session<'e> {
         let push = |items: &mut Vec<Candidate>, text: String, kind, score, hyp| {
             let base = crate::arabic::strip_marks(&text);
             items.push(Candidate {
+                word: None,
                 text,
                 base,
                 kind,
@@ -568,6 +567,7 @@ impl<'e> Session<'e> {
                         };
                         let score = p.lambda_tm * h.score + p.lambda_usr * user.usr(&key, &base);
                         Candidate {
+                            word: None,
                             text,
                             base,
                             kind: CandidateKind::Oov,
@@ -618,6 +618,7 @@ impl<'e> Session<'e> {
                 .iter()
                 .filter(|(_, d)| !*d)
                 .map(|(o, _)| Candidate {
+                    word: None,
                     text: o.clone(),
                     base: o.clone(),
                     kind: CandidateKind::Phrase,
@@ -678,6 +679,7 @@ impl<'e> Session<'e> {
                     styled.insert(
                         0,
                         Candidate {
+                            word: None,
                             text: w.clone(),
                             base: w,
                             kind: CandidateKind::Custom,
@@ -690,6 +692,7 @@ impl<'e> Session<'e> {
         }
         styled.truncate(p.max_candidates.saturating_sub(1));
         let raw_c = Candidate {
+            word: None,
             text: raw.clone(),
             base: raw.clone(),
             kind: CandidateKind::RawLatin,

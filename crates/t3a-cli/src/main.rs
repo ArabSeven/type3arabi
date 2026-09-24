@@ -59,6 +59,7 @@ fn main() {
         "eval" => eval(&args[1..]),
         "explain" => explain(&args[1..]),
         "bench" => bench(&args[1..]),
+        "adapt" => adapt(&args[1..]),
         "build-data" => cmd_build_data(&args[1..]),
         "train-rules" => train::train_rules(&args[1..]),
         "tune" => tune(&args[1..]),
@@ -456,6 +457,7 @@ fn bench(args: &[String]) -> i32 {
     let engine = load_engine(arg_value(args, "--data"));
     let mut s = Session::new(&engine, EngineSettings::default());
     let mut times = Vec::new();
+    let mut commits = Vec::new();
     for _ in 0..iters {
         for r in &rows {
             s.reset();
@@ -464,11 +466,130 @@ fn bench(args: &[String]) -> i32 {
                 s.push(InputChar::new(ch), &NoUser);
                 times.push(t.elapsed().as_secs_f64() * 1000.0);
             }
+            // Space commit: includes the dialect-posterior update (keystroke path, R3).
+            let t = Instant::now();
+            let _ = s.commit(0, CommitHow::Space);
+            commits.push(t.elapsed().as_secs_f64() * 1000.0);
         }
     }
-    times.sort_by(|a, b| a.total_cmp(b));
-    let pct = |p: f64| times[((times.len() as f64 - 1.0) * p) as usize];
-    println!("keystrokes: {}  p50: {:.3} ms  p95: {:.3} ms  p99: {:.3} ms  max: {:.3} ms  (budget P1: p50 ≤ 0.8, p99 ≤ 3.0)",
-        times.len(), pct(0.5), pct(0.95), pct(0.99), times.last().unwrap());
+    let report = |name: &str, v: &mut Vec<f64>| {
+        v.sort_by(|a, b| a.total_cmp(b));
+        let pct = |p: f64| v[((v.len() as f64 - 1.0) * p) as usize];
+        println!("{name}: {}  p50: {:.3} ms  p95: {:.3} ms  p99: {:.3} ms  max: {:.3} ms  (budget P1: p50 ≤ 0.8, p99 ≤ 3.0)",
+            v.len(), pct(0.5), pct(0.95), pct(0.99), v.last().unwrap());
+    };
+    report("keystrokes", &mut times);
+    report("commits", &mut commits);
+    0
+}
+
+/// `t3a-cli adapt <test.tsv>... --data F [--eta X]`: how fast the automatic dialect posterior follows
+/// a writer who switches dialect (docs/03 §7.2). For each ordered pair (A, B) of dialects present in
+/// the rows: type 40 words of A (committing the gold word when it is listed, like a user picking it),
+/// then words of B; report how many B words it takes until B is the most likely dialect.
+fn adapt(args: &[String]) -> i32 {
+    let files: Vec<&String> = args.iter().take_while(|a| !a.starts_with("--")).collect();
+    let mut engine = load_engine(arg_value(args, "--data"));
+    if let Some(eta) = arg_value(args, "--eta").and_then(|v| v.parse::<f32>().ok()) {
+        let mut p = engine.params().clone();
+        p.dialect_eta = eta;
+        engine.set_params(p);
+    }
+    let rows: Vec<Row> = files.iter().flat_map(|f| load_rows(f)).collect();
+    let mut by: std::collections::BTreeMap<String, Vec<&Row>> = Default::default();
+    for r in &rows {
+        by.entry(r.dialect.clone()).or_default().push(r);
+    }
+    by.retain(|_, v| v.len() >= 200);
+    let type_word = |s: &mut Session, r: &Row| {
+        s.reset();
+        for ch in r.arabizi.chars() {
+            s.push(InputChar::new(ch), &NoUser);
+        }
+        let idx = s
+            .candidates()
+            .items
+            .iter()
+            .position(|c| {
+                r.expected
+                    .iter()
+                    .any(|e| orth_fold(e) == orth_fold(&c.base))
+            })
+            .unwrap_or(0);
+        let _ = s.commit(idx, CommitHow::Space);
+    };
+    println!("dialect_eta = {}", engine.params().dialect_eta);
+    for (a, ra) in &by {
+        let mut s = Session::new(&engine, EngineSettings::default());
+        for i in 0..40 {
+            type_word(&mut s, ra[(i * 7) % ra.len()]);
+        }
+        let p = s.dialect();
+        println!(
+            "after 40 {a} words: MSA {:.2} LEV {:.2} EGY {:.2} GLF {:.2} IRQ {:.2} MAG {:.2}",
+            p[0], p[1], p[2], p[3], p[4], p[5]
+        );
+    }
+    // Accuracy while adapting: blocks of 25 words, dialects alternating, top-1 (lenient) is scored
+    // before each commit. Compare with `eval --dialect oracle` (the dialect known in advance).
+    {
+        let dialects: Vec<&Vec<&Row>> = by.values().collect();
+        let mut s = Session::new(&engine, EngineSettings::default());
+        let (mut n, mut hit) = (0u32, 0u32);
+        for block in 0..120usize {
+            let rs = dialects[block % dialects.len()];
+            for i in 0..25usize {
+                let r = rs[(block * 25 + i) * 13 % rs.len()];
+                s.reset();
+                for ch in r.arabizi.chars() {
+                    s.push(InputChar::new(ch), &NoUser);
+                }
+                if let Some(top) = s.candidates().items.first() {
+                    n += 1;
+                    hit += r
+                        .expected
+                        .iter()
+                        .any(|e| orth_fold(e) == orth_fold(&top.base))
+                        as u32;
+                }
+                type_word(&mut s, r);
+            }
+        }
+        println!(
+            "mixed stream (blocks of 25, dialects alternating): top-1 {:.1}% of {n}",
+            100.0 * hit as f64 / n.max(1) as f64
+        );
+    }
+    println!("| from → to | words until `to` leads (median of 20 runs) | max |");
+    println!("|---|---|---|");
+    for (a, ra) in &by {
+        for (b, rb) in &by {
+            if a == b {
+                continue;
+            }
+            let Some(target) = Dialect::parse(b) else {
+                continue;
+            };
+            let mut needed = Vec::new();
+            for run in 0..20usize {
+                let mut s = Session::new(&engine, EngineSettings::default());
+                for i in 0..40 {
+                    type_word(&mut s, ra[(run * 131 + i * 7) % ra.len()]);
+                }
+                let mut n = 0;
+                while n < 200 && t3a_engine::dialect::argmax(&s.dialect()) != target {
+                    type_word(&mut s, rb[(run * 97 + n * 11) % rb.len()]);
+                    n += 1;
+                }
+                needed.push(n);
+            }
+            needed.sort();
+            println!(
+                "| {a} → {b} | {} | {} |",
+                needed[needed.len() / 2],
+                needed.last().unwrap()
+            );
+        }
+    }
     0
 }

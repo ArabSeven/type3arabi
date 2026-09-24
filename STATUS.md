@@ -294,6 +294,8 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - D15: Shortcut rules tightened (`is_chord`): a letter/digit needs Ctrl or Alt, Space/Enter/Backspace need a modifier, Esc never — so no shortcut can break typing. Settings capture: Esc/click-away cancels, invalid or duplicate attempts are explained and never stored.
 - D16: Elkababi retired: it is a re-spelled copy of DODa's sentences (24% verbatim, the rest lightly re-spelled); with both, test sentences leak into training. DODa (the licensed upstream) is used instead.
 - D17: The [dialect] profile setting was dead (parsed, never used). Now a fixed profile pins the posterior; the TIP harness pins LEV so list order is deterministic.
+- D18: `auto` stays the default and recommended dialect setting (Owner, 2026-09-24). Its update rule floored unnormalized likelihoods, freezing the posterior; fixed (normalize, then floor) and η raised 0.08 → 0.35. `t3a-cli adapt`: a switch LEV↔MAG is followed within a median of 3–5 words (was 14–76+); mixed-stream top-1 55.2%, ~1 pt below knowing the dialect in advance. MSA↔dialect switching is not measured yet (only 20 MSA Arabizi test rows; golden set O5).
+- D19: A word commit scanned all 600k lexicon entries to update the dialect posterior (commit p99 27 ms, max 40 ms: a visible stall on Space). Candidates now carry their lexicon index: commit p99 0.036 ms. `bench` now also times commits.
 - D0: Applied Owner decision (2026-09-22) — added `internal` source status, 80/10/10 deterministic split, pipeline modes, and citations in NOTICE.md.
 
 ## Conflicts found between docs
@@ -301,6 +303,8 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 
 ## Backlog (by milestone)
 - M2: DP sentence aligner for unequal token counts (docs/04 §6.1); Wikipedia/Maknuune/Tashkeela fetchers.
+- M1: `auto` prior from the Windows region (docs/03 §7.2, GetUserGeoID) is specified but not implemented (starts from the default prior). Persist π across sessions (§9.4).
+- M6: self-training on NileChat EGY/MOR Arabizi (fetched: raw/nilechat-*/arabizi.txt) — the realistic route to Egyptian coverage.
 - M2: EGY parallel data: NileChat EGY after O13; golden set (O5). Watch arXiv 2608.02555 (5-dialect Arabic↔Arabizi corpus, CC BY 4.0) for its data release.
 - M6: self-training on monolingual Moroccan Arabizi (`darija-arabizi-mt`, ~280k sentences, CC BY-NC-SA) — docs/04 §6.4.
 - M7: `cargo about` → THIRD-PARTY-LICENSES.html in the MSI (NOTICE.md references it); website (Cloudflare Pages) with the latest-download link; Store listing text.
@@ -324,6 +328,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - M2: `data/eval/bench_keystrokes.tsv` (10k words from golden/FineWeb) replaces smoke as the default bench set.
 
 ## Session log
+- 2026-09-24 (later) — Agent (Claude): NileChat fetched with the Owner's HF login: it is monolingual synthetic Arabizi (552k EGY, 1.40M MOR), not parallel — stored for self-training. Auto dialect: posterior bug fixed + η 0.35 (D18); commit-path lexicon scan removed (D19); `t3a-cli adapt` added.
 - 2026-09-24 — Agent (Claude): ADR-0010 (Apache-2.0 code, CC BY-NC-SA 4.0 model, GitHub + Store) and governance amendments; license research (DODa, NileChat: CC BY-NC; TArC: CC BY-NC-SA; ArabiziKit corpus: MIT); DODa + TArC fetched and trained (MAG 43.5 → 47.1% top-1, LEV 63.1 → 65.1%); Elkababi retired (DODa copy); DATASETS.md generator, license families, --exclude-nc, model license in META; dialect-profile bug fixed; tune regression guard; git history pruned (549 MB of accidental build files, never pushed). Next: Owner sends the two clearance emails and accepts NileChat terms (O13).
 - 2026-09-23 (evening) — Agent (Claude): Owner feedback: Arabic (101) stuck next to Type3arabi, Settings integration, shortcut capture bugs. Fixed the enable step (D14) and verified it on this machine; `t3a-hotkey --list-profiles` diagnostic; ITfFnConfigure → Settings app (docs/02 §14); capture rewrite + stricter shortcut rules (D15), exercised in the browser pane with a stubbed backend. Edit sessions FIFO (D11).
 - 2026-09-23 (later) — Agent (Claude): Owner review (6 points) implemented. Real data pipeline (FineWeb-2 202M tokens → 600k lexicon, bigrams, char LM; parallel pairs; EM rule training; tuning; honest held-out eval); four engine ranking bugs fixed; tashkeel editor redesign + selection model; mouse input; Shift+Space; configurable [keys]; Settings app (Tauri 2); t3a-hotkey companion; WiX MSI with restart prompt; R14 enforced in build-data. Next: Owner installs the MSI; EGY data; DP aligner; signing decision.
