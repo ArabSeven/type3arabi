@@ -34,7 +34,7 @@ impl Dialect {
     }
     /// Arabic display name for the popup badge (docs/05 §7).
     pub fn arabic_name(self) -> &'static str {
-        ["فصحى", "شامي", "مصري", "خليجي", "عراقي", "مغاربي"][self as usize]
+        ["فصحى", "شامي", "مصري", "خليجي", "عراقي", "مغربي"][self as usize]
     }
     pub fn parse(s: &str) -> Option<Dialect> {
         ALL.iter()
