@@ -15,7 +15,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.95"
 # OWNER DECISION PENDING (STATUS.md): open-source license or proprietary. Until decided, all rights reserved.
-license = "LicenseRef-Type3arabi-AllRightsReserved"
+license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]

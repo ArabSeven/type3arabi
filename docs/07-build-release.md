@@ -27,7 +27,13 @@ VERSIONINFO, MSI ProductVersion and Settings About page. Data file has its own `
 Sign **every** PE (`t3a_tip.dll` ×3, `t3a-hotkey.exe`, `Type3arabi Settings.exe`, custom-action helper) and
 the MSI, SHA-256, RFC 3161 timestamp (`/tr http://timestamp.digicert.com /td sha256 /fd sha256`).
 
-Certificate options (Owner decision, see `STATUS.md`):
+Certificate options (Owner decision, see `STATUS.md`). Since ADR-0010 the project is free and open source, so try
+the open-source routes first:
+0. **SignPath Foundation** (free code signing for qualifying open-source projects; signs in CI from a public
+   repository) or **Certum Open Source Code Signing** (low-cost certificate for open-source developers). Check
+   eligibility and whether the certificate is issued to the individual developer before paying for option 2.
+   The Microsoft Store's MSI/EXE submission path needs an installer signed by a CA in the Microsoft Trusted Root
+   Program, so one of these is required for the Store too.
 1. **Azure Artifact Signing** (formerly Trusted Signing): ~$9.99/month, CI-friendly, no hardware token — but
    public-trust identity validation is available only to organizations in the USA, Canada, EU, UK, Australia,
    New Zealand, Japan, South Korea, Singapore, Switzerland, Norway, Israel, and to *individuals* in the USA/Canada.
@@ -56,8 +62,10 @@ Trusted Root and Trusted Publishers; never used for public builds.
 - **Restart** (Owner request 2026-09-23): the finish page has "Restart now (recommended)", checked by default
   (`shutdown /r /t 20`). Finishing with it unchecked runs `t3a-hotkey.exe --restart-warning`, a bilingual
   message explaining that already-open apps may not show or may keep an older Type3arabi until a restart.
-- Build: `scripts/build-installer.ps1` → `target\installer\Type3arabi-<ver>-x64.msi`; validate with
-  `wix msi validate`. Internal-data builds are named "Type3arabi (internal build)".
+- Build: `scripts/build-installer.ps1` → `target\installer\Type3arabi-<ver>-x64.msi` plus the version-free copy
+  `Type3arabi-x64.msi` (ADR-0010: the website links to `…/releases/latest/download/Type3arabi-x64.msi`); validate
+  with `wix msi validate`. Internal-data builds are named "Type3arabi (internal build)" and are never published.
+- Files also installed: `LICENSE.txt` (Apache-2.0), `NOTICE.md`, `DATASETS.md` (model license and provenance).
 - `HKLM\...\Run` value `Type3arabi Hotkey` → `t3a-hotkey.exe` (exits if disabled in the user's config).
 - Start menu: "Type3arabi Settings".
 - Uninstall: unregister DLLs, `InstallLayoutOrTip(... ILOT_UNINSTALL)` for the current user, remove Run value,
@@ -72,5 +80,11 @@ Trusted Root and Trusted Publishers; never used for public builds.
 4. Soak: 8 h scripted typing across 5 apps, 0 crashes, memory flat.
 5. Signed artifacts verified with `signtool verify /pa /v`.
 6. `NOTICE.md` lists every shipped dependency (cargo-about output) and data attribution (FineWeb-2 ODC-By…).
-7. No source with status `internal` in the release data build: each is cleared to `approved` with written permission or an explicit license, or removed and the data rebuilt with `--mode release`. CC BY-SA sources require the data file to be distributed under CC BY-SA.
-8. Tag `vX.Y.Z`, publish MSI + SHA-256 + release notes.
+7. The release data is built with `--mode release`: no `internal` source (each is cleared to `approved` with written
+   permission or an explicit license, or left out). META `license` is `CC-BY-NC-SA-4.0` (or `CC-BY-4.0` if no NC
+   source was used); `DATASETS.md` is current (`uv run t3ap datasets-md`; a pipeline test enforces it).
+8. Tag `vX.Y.Z` and publish on GitHub Releases: the versioned MSI, `Type3arabi-x64.msi` (same file), SHA-256 sums,
+   release notes. No other download host (ADR-0010).
+9. Microsoft Store: submit the signed MSI (MSI/EXE submission). The listing says "free and open source (Apache-2.0);
+   language model CC BY-NC-SA 4.0" and links to the repository, `DATASETS.md` and the privacy statement (offline,
+   no data collected).

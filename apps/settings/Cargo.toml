@@ -3,7 +3,7 @@ name = "type3arabi-settings"
 description = "Type3arabi Settings (Tauri 2, ADR-0007): edits the user config.toml"
 version = "0.1.0"
 edition = "2021"
-license = "LicenseRef-Type3arabi-AllRightsReserved"
+license = "Apache-2.0"
 publish = false
 
 # Separate workspace (STATUS D7): Tauri's large dependency tree stays out of the TIP's Cargo.lock.

@@ -6,7 +6,7 @@ all-features = true
 allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause",
          "ISC", "Zlib", "Unicode-3.0", "Unicode-DFS-2016", "Unlicense", "CC0-1.0", "MPL-2.0"]
 confidence-threshold = 0.9
-# Our own crates carry a placeholder license until the Owner decides (STATUS.md).
+# Our own crates are Apache-2.0 (ADR-0010) and unpublished.
 private = { ignore = true }
 
 [bans]

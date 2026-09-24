@@ -42,6 +42,12 @@
       <Component Id="Notice">
         <File Id="NoticeFile" Source="$(var.Payload)\NOTICE.md" KeyPath="yes" />
       </Component>
+      <Component Id="Datasets">
+        <File Id="DatasetsFile" Source="$(var.Payload)\DATASETS.md" KeyPath="yes" />
+      </Component>
+      <Component Id="LicenseText">
+        <File Id="LicenseFile" Name="LICENSE.txt" Source="$(var.Payload)\LICENSE" KeyPath="yes" />
+      </Component>
       <Component Id="Hotkey">
         <File Id="HotkeyExe" Source="$(var.Payload)\t3a-hotkey.exe" KeyPath="yes" />
         <!-- The companion exits at once if the user disabled the global hotkey (docs/02 §11). -->

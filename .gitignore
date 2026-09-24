@@ -1,13 +1,49 @@
+# Public repository (ADR-0010): nothing downloaded, generated from third-party data, or built is committed.
+
+# Build outputs
 /target
+/apps/settings/target
+/apps/settings/gen
+*.pdb
+*.msi
+*.msix
+*.wixpdb
+*.cab
+
+# Data pipeline: every downloaded dataset and everything derived from it
 /pipeline_data
 /reports
 *.dat
 !data/fixtures/**/*.dat
+*.parquet
+*.arrow
+*.zst
+*.xlsx
+*.jsonl
+/data/raw/
+/data/external/
+
+# Rights holders' permission emails (personal data): kept privately; summary in data/sources.toml
+/docs/evidence/licenses/
+
+# Third-party dependencies and tool caches
+node_modules/
 .venv/
 __pycache__/
-node_modules/
-*.pdb
+.pytest_cache/
+.ruff_cache/
+.cache/
+
+# Secrets and local settings
+.env
+.env.*
+*.pfx
+*.p12
+*.pem
+*.key
+.huggingface/
 *.user
+.vs/
+.idea/
 .DS_Store
-/apps/settings/gen
-/apps/settings/target
+Thumbs.db

@@ -15,7 +15,9 @@ as a real Windows keyboard under the Arabic language (one entry: **Arabic · Typ
 popup with the most likely Arabic word pre-selected, understands dialects (Levantine, Egyptian, Gulf,
 Iraqi, Maghrebi, MSA), applies critical diacritics automatically (e.g. **اللّه**, **شكراً**), and lets the
 user add any diacritic to any letter from inside the same popup. It is 100% offline, private,
-and idle-cost-free.
+and idle-cost-free. It is **free and open source**: code under **Apache-2.0**, the trained model
+(`type3arabi.dat`) under **CC BY-NC-SA 4.0**, distributed only through GitHub Releases and the Microsoft Store
+(ADR-0010).
 
 ## 1. Owner, roles, and how decisions work
 
@@ -36,6 +38,9 @@ and explicit Owner approval recorded in `STATUS.md → Owner decisions`):
 6. Fallback "Overlay mode" (global keyboard hook) is **not built** unless Gate G1 fails (see `docs/09-roadmap.md`). (ADR-0006)
 7. Settings app = **Tauri 2 (WebView2)**; it is the only component allowed to have a heavy UI stack. (ADR-0007)
 8. Installer = **WiX Toolset MSI**, per-machine, x86 + x64 + ARM64 DLLs, registration through TSF APIs only. (ADR-0008)
+9. **Free, open source, no servers**: code Apache-2.0; model CC BY-NC-SA 4.0 with full provenance in `DATASETS.md`;
+   binaries only on GitHub Releases + Microsoft Store; static website on Cloudflare Pages; no ads, paid tiers,
+   accounts or backend; donations optional and never tied to features. (ADR-0010)
 
 When the docs are silent, follow the **Default rule**: choose the simplest option that keeps every
 budget in `docs/06-performance-budget.md`, write it down in `STATUS.md → Agent decisions` (one line:
@@ -70,6 +75,8 @@ Doc map:
 | `docs/research/prior-art.md` | Yamli, Maren, Google IME, ArabiziKit, academic results — what we take from each |
 | `docs/adr/` | Architecture Decision Records |
 | `data/sources.toml` | Every dataset: URL, license, allowed role, status |
+| `DATASETS.md` | Public provenance of the model (generated from `data/sources.toml`) |
+| `LICENSE`, `NOTICE.md` | Apache-2.0 (code); model license and attributions |
 
 ## 3. Hard rules (violating any of these is a release blocker)
 
@@ -100,21 +107,28 @@ Doc map:
 - **R10. No telemetry.** No analytics, no crash upload. Ever. (Owner may revisit via ADR only.)
 
 ### 3.3 Dependencies & licensing
-- **R11. Allowed licenses for anything linked into a shipped binary:** MIT, Apache-2.0, BSD-2/3,
-  ISC, Zlib, Unicode-3.0, Unlicense, CC0, MPL-2.0 (file-level). **Forbidden:** GPL, LGPL, AGPL, SSPL,
-  any "non-commercial" or "research only" license. Enforced by `cargo deny check` in CI (`deny.toml`).
+- **R11. Code dependencies** (anything linked into a shipped binary) must be Apache-2.0-compatible:
+  MIT, Apache-2.0, BSD-2/3, ISC, Zlib, Unicode-3.0, Unlicense, CC0, MPL-2.0 (file-level). **Forbidden:** GPL,
+  LGPL, AGPL, SSPL, any "non-commercial" or "research only" license. Enforced by `cargo deny check` in CI
+  (`deny.toml`). Our own code is Apache-2.0 (`LICENSE`); new files need no per-file header.
 - **R12. `t3a-engine` and `t3a-data` must have zero platform dependencies** and build/test on Linux.
   Allowed deps there: `bytemuck`, `memmap2` (loader only). Anything else needs an ADR.
 - **R13. Every new dependency** gets one line in `docs/01-architecture.md §8 Dependency ledger`
   (crate, version, license, why, which binary). No line → PR rejected.
-- **R14. Data:** a dataset may enter a *shipped* artifact only if `data/sources.toml` marks it
-  `status = "approved"` and `role` includes that use. `eval-only` data must never influence shipped
-  weights (not even tuning — tuning uses `dev` splits of approved data). Unknown license ⇒ `blocked`.
-  *Owner amendment (2026-09-22):* Added status `internal`: publicly downloadable data whose license is
-  unstated or restrictive; usable for every listed role in local and internal builds; must be cleared (→ `approved`)
-  or removed, with the data rebuilt, before any public release. The pipeline supports `--mode internal` (approved + internal)
-  and `--mode release` (approved only). Every data file built with internal sources carries `"distribution": "internal-only"`
-  and the list of internal source ids in its `META` section.
+- **R14. Data** (ADR-0010). `data/sources.toml` is the only authority on what data may be used and how.
+  - `approved`: may shape the shipped model for the listed `roles`. This requires a license compatible with the
+    model's **CC BY-NC-SA 4.0**: CC0/public domain, MIT/BSD/Apache, ODC-By/PDDL, CC BY, CC BY-NC, CC BY-NC-SA,
+    or written permission from the rights holder (kept privately in the gitignored `docs/evidence/licenses/`;
+    the source's `notes` record who granted what, and when).
+  - **Never in the model**: CC BY-SA, ODbL, NoDerivatives, research-only or custom terms, paid (LDC). These may be `eval-only`.
+  - `internal`: license unstated, clearance requested. Only `--mode internal` builds may use it. Their `META` says
+    `"distribution": "internal-only"` and lists the source ids. Public releases use `--mode release` (approved only).
+  - `eval-only` data never influences shipped weights, not even tuning (tuning uses `dev` splits of approved data).
+    `blocked` sources are never downloaded. Unknown license ⇒ `internal` at most.
+  - Every approved source has `license_family` = `permissive` | `nc`, so `build-data --exclude-nc` can rebuild a
+    model without NC data (the ADR-0010 exit path). `DATASETS.md` is regenerated from the registry
+    (`uv run t3ap datasets-md`) whenever it changes.
+  - Nothing downloaded or derived from third-party data is committed to git. Releases carry the model.
 
 ### 3.4 Code quality
 - **R15.** `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and
@@ -164,6 +178,9 @@ Doc map:
 AGENTS.md                 ← this file
 STATUS.md                 ← living progress log (agents update)
 README.md                 ← human overview
+LICENSE                   ← Apache-2.0 (code)
+NOTICE.md                 ← attributions (code deps + data); model license
+DATASETS.md               ← model provenance (generated)
 Cargo.toml                ← workspace
 rust-toolchain.toml
 deny.toml                 ← license/advisory policy

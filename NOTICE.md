@@ -1,65 +1,43 @@
-# NOTICE — third-party software and data
+# NOTICE
 
-Generated for releases by `cargo about generate` (M7) plus the data attributions below. Keep this file
-in sync with `docs/01-architecture.md §8` and `data/sources.toml`.
+Type3arabi
+Copyright 2026 Hassan Obaida and Type3arabi contributors.
 
-## Data Attributions
-- **FineWeb-2** (HuggingFaceFW/fineweb-2) — Open Data Commons Attribution License (ODC-By) v1.0; also subject
-  to Common Crawl's Terms of Use. Word statistics derived from it are included in `type3arabi.dat`.
-- Transliteration conventions documented publicly for Microsoft Maren and in ArabiziKit (MIT) informed the
-  hand-written seed rules; no code or data was copied.
+This product includes software developed by the Type3arabi contributors, licensed under the Apache
+License, Version 2.0 (see `LICENSE`).
 
-## Data Citations
-The following datasets are used in internal and development builds under the Owner Decision of 2026-09-22:
+## The language model (`type3arabi.dat`)
 
-- **Arabizi-Arabic parallel corpus, Jordanian (talafha-jordanian)**:
-  > Bashar Talafha, Analle Abu Ammar and Mahmoud Al-Ayyoub. Atar: Attention-based LSTM for Arabizi Transliteration.
-  > International Journal of Electrical and Computer Engineering (IJECE), June 2021.
-  > URL: https://github.com/bashartalafha/Arabizi-Transliteration
+The word and spelling statistics in `type3arabi.dat` are licensed under the Creative Commons
+Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0,
+https://creativecommons.org/licenses/by-nc-sa/4.0/). They were learned from the datasets below. No dataset
+text is redistributed. The full provenance, including sources that are not used, is in `DATASETS.md`. Each
+data file lists the sources it was built from in its `META` section.
 
-- **arbml/Arabizi_Transliteration (arbml-arabizi)**:
-  > ARBML. Arabizi Transliteration Dataset. Hugging Face Datasets.
-  > URL: https://huggingface.co/datasets/arbml/Arabizi_Transliteration
+- **FineWeb-2** (HuggingFaceFW/fineweb-2): Open Data Commons Attribution License (ODC-By) v1.0, also subject
+  to Common Crawl's Terms of Use. Word, word-pair and character statistics.
+- **Darija Open Dataset (DODa)**, https://github.com/darija-open-dataset/dataset: CC BY-NC 4.0. Moroccan
+  Arabizi ↔ Arabic spelling rules. Changes: sentences tokenized and aligned word by word; only statistics kept.
+- **TArC, Tunisian Arabish Corpus**, Elisa Gugliotta and Marco Dinarelli (LREC 2020),
+  https://github.com/eligugliotta/tarc: CC BY-NC-SA 4.0. Tunisian Arabizi ↔ Arabic spelling rules.
+  Changes as above.
+- **ArabiziKit corpus** (rabeeeehh/arabizi-kit-corpus): MIT. Spelling rules.
+- **UBC-NLP NileChat Arabizi** (nilechat-arabizi-egy / -mor), when present in a build's META: CC BY-NC 4.0.
 
-- **akhanafer/arabic-to-arabizi (akhanafer-levantine)**:
-  > Ali Khanafer. Arabic to Arabizi Dataset. Hugging Face Datasets.
-  > URL: https://huggingface.co/datasets/akhanafer/arabic-to-arabizi
+Development builds may also contain statistics from datasets whose authors have been asked for permission.
+Those builds are marked `"distribution": "internal-only"` and are never published:
 
-- **elkababi2/Darija-Text-Ar-Arabizi (elkababi-darija)**:
-  > Elkababi. Darija-Text-Ar-Arabizi Dataset. Hugging Face Datasets.
-  > URL: https://huggingface.co/datasets/elkababi2/Darija-Text-Ar-Arabizi
+- Bashar Talafha, Analle Abu Ammar and Mahmoud Al-Ayyoub. Atar: Attention-based LSTM for Arabizi
+  Transliteration. IJECE, 2021. https://github.com/bashartalafha/Arabizi-Transliteration
+- Ali Khanafer. arabic-to-arabizi. https://huggingface.co/datasets/akhanafer/arabic-to-arabizi
 
-- **atlasia/ATAM (atlasia-atam)**:
-  > Atlasia. ATAM: Arabizi-to-Arabic Mapping (derived from DODa). Hugging Face Datasets.
-  > URL: https://huggingface.co/datasets/atlasia/ATAM
+Transliteration conventions documented publicly for Microsoft Maren, and in ArabiziKit (MIT), informed the
+hand-written seed rules. No code or data was copied.
 
-- **Darija Open Dataset (doda)**:
-  > Darija Open Dataset (DODa). A Collaborative Open-Source Dataset for the Moroccan Darija Dialect.
-  > URL: https://github.com/darija-open-dataset/dataset
+## Third-party software
 
-- **rabeeeehh/arabizi-kit-corpus (arabizikit-corpus)**:
-  > Rabeeh. ArabiziKit Corpus: LLM-Annotated Arabizi Sentences. Hugging Face Datasets.
-  > URL: https://huggingface.co/datasets/rabeeeehh/arabizi-kit-corpus
+The licenses of the Rust crates compiled into the binaries are listed in `THIRD-PARTY-LICENSES.html`,
+generated for each release by `cargo about generate`. All of them are permissive (AGENTS.md R11, enforced by
+`cargo deny`).
 
-- **UBC-NLP/nilechat-arabizi-egy (nilechat-arabizi-egy)**:
-  > UBC-NLP. NileChat Arabizi-EGY: Synthetic Arabizi Transliterations. Hugging Face Datasets.
-  > URL: https://huggingface.co/datasets/UBC-NLP/nilechat-arabizi-egy
-
-- **Mohamedd123321/Arabizi-dataset-v2 (arabizi-dataset-v2)**:
-  > Mohamedd123321. Arabizi-dataset-v2: Monolingual Arabizi Corpus. Hugging Face Datasets.
-  > URL: https://huggingface.co/datasets/Mohamedd123321/Arabizi-dataset-v2
-
-- **Maknuune (maknuune)**:
-  > Maknuune: Palestinian Arabic Lexicon with Phonological Transcriptions. NNLP-IL / Maknuune Project.
-  > URL: https://github.com/NNLP-IL/Arabic-Resources
-
-- **Tashkeela (tashkeela)**:
-  > Taha Zerrouki and Amar Balla. Tashkeela: Novel Text Corpus for Arabic Vocalization. SourceForge, 2017.
-  > URL: https://sourceforge.net/projects/tashkeela/
-
-- **Arabic Wikipedia & Egyptian Arabic Wikipedia (wikipedia-ar)**:
-  > Wikimedia Foundation. Arabic Wikipedia and Egyptian Arabic Wikipedia Database Dumps.
-  > URL: https://dumps.wikimedia.org/
-
-## Code references
-- Microsoft Windows-classic-samples (SampleIME) — MIT — structural reference for the TSF implementation.
+- Microsoft Windows-classic-samples (SampleIME), MIT: structural reference for the TSF implementation.

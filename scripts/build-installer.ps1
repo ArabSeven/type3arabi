@@ -47,6 +47,8 @@ try {
     Copy-Item (Join-Path $SettingsDir "release\type3arabi-settings.exe") (Join-Path $Payload "Type3arabi Settings.exe")
     Copy-Item $dat $Payload
     Copy-Item (Join-Path $RepoRoot "NOTICE.md") $Payload
+    Copy-Item (Join-Path $RepoRoot "DATASETS.md") $Payload
+    Copy-Item (Join-Path $RepoRoot "LICENSE") $Payload
     Copy-Item (Join-Path $RepoRoot "installer\License.rtf") $Payload
     Copy-Item (Join-Path $RepoRoot "apps\settings\icons\icon.ico") $Payload
 
@@ -59,7 +61,9 @@ try {
         -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext `
         -d "Payload=$Payload" -d "Version=$Version" -d "ProductName=$name" -o $Out
     if ($LASTEXITCODE -ne 0) { throw "wix build failed" }
-    Write-Host "=== Built $Out ===" -ForegroundColor Green
+    # Version-free copy for the website's ".../releases/latest/download/Type3arabi-x64.msi" link (ADR-0010).
+    Copy-Item $Out (Join-Path (Split-Path $Out) "Type3arabi-x64.msi") -Force
+    Write-Host "=== Built $Out (+ Type3arabi-x64.msi) ===" -ForegroundColor Green
 } finally {
     Pop-Location
 }
