@@ -60,6 +60,7 @@ fn main() {
         "explain" => explain(&args[1..]),
         "bench" => bench(&args[1..]),
         "adapt" => adapt(&args[1..]),
+        "picks" => picks(&args[1..]),
         "build-data" => cmd_build_data(&args[1..]),
         "train-rules" => train::train_rules(&args[1..]),
         "tune" => tune(&args[1..]),
@@ -590,6 +591,35 @@ fn adapt(args: &[String]) -> i32 {
                 needed.last().unwrap()
             );
         }
+    }
+    0
+}
+
+/// `t3a-cli picks <arabizi> [--dialect D] [--index N] --data F`: the tashkeel editor's quick picks
+/// for candidate N (what Tab shows), one per line; the first line says whether pick 1 comes from the
+/// typed vowels. Used by website/tools/gen_demo.py.
+fn picks(args: &[String]) -> i32 {
+    let Some(word) = args.iter().find(|a| !a.starts_with("--")) else {
+        eprintln!("usage: t3a-cli picks <arabizi> [--dialect D] [--index N] --data F");
+        return 2;
+    };
+    let engine = load_engine(arg_value(args, "--data"));
+    let idx: usize = arg_value(args, "--index")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let mut s = Session::new(&engine, EngineSettings::default());
+    s.set_dialect(prior_for(arg_value(args, "--dialect")));
+    for ch in word.chars() {
+        s.push(InputChar::new(ch), &NoUser);
+    }
+    let vh = s.vowel_harakat(idx);
+    let picks = s.vocalizations(idx);
+    println!(
+        "from_typing={}",
+        vh.is_some() && picks.first() == vh.as_ref()
+    );
+    for p in picks {
+        println!("{p}");
     }
     0
 }
