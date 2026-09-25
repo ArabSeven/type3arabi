@@ -265,6 +265,26 @@ need a manual check.
   Check the returned `hrSession`; if it indicates async scheduling, the session will run later — the
   engine state is already updated, so the session applies the *latest* state (sessions read state
   when they run, never capture stale text).
+- **Ordering and liveness** (fixed 2026-09-25 after the Owner saw the diacritics editor stop answering): a session is
+  requested synchronously when none is queued, else (or when TSF refuses a sync lock) with `TF_ES_ASYNC`. A session that
+  already ran is never queued again (a failed sync session used to be re-queued as an empty one that never counted
+  down, leaving every later edit queued). Queued sessions are counted by a token that is released when the session
+  runs *or* when TSF discards it.
+- **Dead or foreign compositions**: before routing a key, a composition the host ended while our state was busy is
+  dropped, and a composition living in another context than the key's (another field of the same window) is
+  finalized. `Preview` restarts the composition when `SetText` on it fails, and always refreshes the popup;
+  `Commit` inserts the word at the caret when its composition is gone. Recoveries write one rate-limited line (no text)
+  to the error log.
+- **Caret moved out of the word** (`ITfTextEditSink`, advised on the context we compose in): when an edit ends with
+  the selection outside our composition (a click elsewhere in the same field, the app moving the caret), the word is
+  finalized as shown and typing continues at the new caret. RichEdit ends the composition itself on a click; other
+  hosts may not, and then the next keys used to keep editing the word at its old place.
+- **Popup mouse capture**: only while dragging across the editor's letters, released when the popup hides (a
+  capture held by a hidden popup would swallow every click in the app).
+- **Settings tab**: `CreateProcessW` (no inherited handles), not `ShellExecuteW`, which blocked the host's UI thread
+  ~0.3 s.
+- **Safe passthrough** (R2): after a caught panic the popup is hidden and the composition ended once (edit sessions
+  still run for that), then the TIP does nothing more in that process.
 - **Start**: `ITfContextComposition::StartComposition(ec, insertionRange, self_as_ITfCompositionSink)`,
   where insertionRange = current selection (via `ITfInsertAtSelection::InsertTextAtSelection(ec, TF_IAS_QUERYONLY, …)`).
 - **Update**: `composition.GetRange()` → `SetText(ec, 0, preview)` → set `GUID_PROP_ATTRIBUTE` on the
@@ -327,7 +347,9 @@ Display attributes:
   menu, the desktop shortcut and Windows' keyboard options (§14).
 - Toggle hotkey: `ITfKeystrokeMgr::PreserveKey(tid, GUID_PRESERVED_TOGGLE, TF_PRESERVEDKEY{uVKey, uModifiers}, "Toggle Arabic/Latin")`.
   Default `Ctrl+Space` (`VK_SPACE`, `TF_MOD_CONTROL`). Config accepts `"Ctrl+Space" | "Shift+Space" | "Ctrl+Shift+Space" | "ShiftTap" | "none"`.
-  `ShiftTap` = press and release Shift alone within 300 ms with no other key: implemented in the key-up path, not as a preserved key.
+  `ShiftTap` = press and release Shift alone within 300 ms with no other key: implemented in the key-up path, not as a preserved key
+  (`keyrouter::shift_tap`, armed in OnTestKeyDown, fired in OnTestKeyUp; implemented 2026-09-25 — the option existed
+  in Settings before but did nothing).
 
 ## 11. Global activation hotkey (companion `t3a-hotkey.exe`)
 

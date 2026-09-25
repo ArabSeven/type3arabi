@@ -84,6 +84,12 @@ To reinstall after code changes, run the same command again, then restart the ap
 | `3allam` | Ctrl+Enter | Harakat from your vowels, e.g. `عَلَّم` |
 | Ctrl+Space | | Toggles Arabic ↔ plain Latin typing |
 | While composing | ← / Ctrl+S / Home | Commits the word, then the key does its normal job |
+| `shukran` | Tab, then just keep typing `bas` | The vowelled word is inserted and `bas` starts a new word (nothing is swallowed) |
+| (editor open) | click elsewhere in the same field, then type | The word stays as shown; typing continues where you clicked |
+| (editor open) | Ctrl+C / Ctrl+S | The word is inserted, then the app does the shortcut |
+| (editor open) | click palette cells several times, then click in the app | The app still takes clicks normally |
+| Settings › shortcut | try Ctrl+C, Win+Shift+S, Alt+Tab | Refused with the reason ("used by Windows to copy"…) |
+| Settings › toggle = Shift (tap) | tap Shift alone | Arabic ↔ Latin; holding Shift for a capital does not toggle |
 
 Please report: the app, what you typed, what you saw, and whether anything froze or closed.
 

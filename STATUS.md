@@ -13,7 +13,17 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 still needs the Owner's runs. **Next gate: the Owner's manual test of 1.0.0-rc.2.** Only after that: public
 repository, public unsigned release, SignPath inquiry, signing workflow, Microsoft Store (Owner, 2026-09-25).
 
-## Release candidate 1.0.0-rc.2 (2026-09-25) — built, NOT published, NOT signed
+## Release candidate 1.0.0-rc.3 (2026-09-25) — built, NOT published, NOT signed
+Fixes the Owner's RC2 report (frozen diacritics editor; Ctrl+C accepted as a shortcut): D45–D50.
+Artifact: `target\installer\Type3arabi-1.0.0-rc.3-x64.msi` (+ identical `Type3arabi-x64.msi`), 24,354,816 bytes,
+SHA-256 `3b31c29108bdefb9d318c79385c3227568e9b14ae52e12f096c3dbb6351462a1`. MSI ProductVersion 1.0.0.3. Same model as rc.2 (`data/model.lock.toml`).
+`scriptsalidate-msi.ps1 … -ModelSha256 …`: all checks pass. Gates: fmt; clippy x64 + i686; `cargo test --workspace`
+(engine 68, tip 16, …) all pass; Settings clippy + 6 tests; `cargo deny` both workspaces; `tsf_harness` 22 scenarios ×
+5 rounds on x64 and x86 + 4 parallel processes × 3 rounds on each: 0 failures; bench p99 0.747 ms, commits p99 0.033 ms.
+Not verified by the agent: real-app behavior of D45(3)/(4)/D46 (hosts that drop or keep compositions silently) — Owner.
+Draft notes: `docs/releases/v1.0.0-rc.3.md`.
+
+## Release candidate 1.0.0-rc.2 (2026-09-25) — superseded by rc.3
 Artifact: `target\installer\Type3arabi-1.0.0-rc.2-x64.msi` (+ identical `Type3arabi-x64.msi`), 24,297,472 bytes,
 SHA-256 `a7d588594b01d41c2c6c4861f28a410198d0bd1186b6e9f6ea11af8bb34e11f9`. MSI ProductVersion 1.0.0.2 (upgrades RC1 = 1.0.0 in place).
 Model `target\type3arabi-rc2.dat` = `data/model.lock.toml` (data_version 2026092502, SHA-256
@@ -341,6 +351,12 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O18 | Contact channel: the site lists GitHub issues + Linktree; add a public email address? | No email published |
 
 ## Agent decisions (one line each: what, why)
+- D45: Owner report 2026-09-25 (RC2): the diacritics editor stopped answering keys, clicks and shortcuts once. No panic was logged, so the cause is a state bug, not safe passthrough. Fixed every path found that can produce it: (1) letters that are not editor commands were silently swallowed (`TashkeelCmd::Ignore`) — they now insert the word and start a new one (`CommitThenType`); (2) a sync edit session that ran and failed was re-queued as an empty async session that never counted down, leaving every later edit queued — sessions are counted by a token released on run *or* discard, and never re-queued once run; (3) `Preview` returned before refreshing the popup when `SetText` failed on a composition the app had invalidated — it now restarts the composition and always refreshes; `Commit` inserts at the caret when the composition is gone; (4) keys arriving from another context than the composition's finalize it first; (5) OnCompositionTerminated while state was busy is no longer lost; (6) safe passthrough now hides the popup and ends the composition (R2); (7) popup mouse capture only while dragging letters, released on hide; (8) stale eaten key-ups cleared on focus changes. Recoveries write rate-limited, text-free lines to errors.log. Regressions: `keyrouter::editor_never_swallows_typing`, harness scenarios HOST_CLEAR / FOCUS_AWAY / `shukran\tb`.
+- D46: `ITfTextEditSink` (backlog M1): a caret moved out of the word finalizes it (RichEdit ends compositions on clicks itself, so the harness cannot show the difference; other hosts need the Owner's check).
+- D47: Shift-tap toggle (`mode_toggle = "ShiftTap"`, offered in Settings) was never implemented; now implemented per docs/02 §10 (300 ms, no other key, `keyrouter::shift_tap` unit test).
+- D48: Settings tab starts Settings with `CreateProcessW` (was `ShellExecuteW` on the host UI thread: ~0.27 s measured by the harness). Input scopes are read once per keystroke (OnTestKeyDown and OnKeyDown shared).
+- D49: Reserved shortcuts (Owner, 2026-09-25): `t3a_engine::config::reserved_shortcut` (Ctrl+C/V/X/Z/Y/A/S/P/F/N/O/W/T/R/B/I/U/K/L/H/D/E/G/J/Q/Tab/Backspace, Ctrl+Shift+Z/T/N/S/Tab, Alt+Tab/F4/Space/Enter, Ctrl+Space, every Win combination) with bilingual reasons; Settings refuses them during capture and on save, explains when Windows itself took a shortcut (the window lost focus); the companion never registers a reserved global hotkey, even from a hand-edited config (status "reserved"). Tests: engine + Settings.
+- D50: Editor fuzz test over every command, any letter index and quick picks of different lengths (24k commands, no panic).
 - D34: R9 input scopes implemented (`context::input_scopes` in a sync read-only edit session at word start, `keyrouter::classify_scopes`): password/PIN/number/phone/date/time/amount ⇒ Latin, URL/e-mail ⇒ Latin while `latin_in_url_email`, IS_PRIVATE ⇒ no learning. RichEdit (harness) does not report scope values (GetValue E_FAIL, also a plain EDIT control): end-to-end scope behavior needs a real app (Owner check).
 - D35: User store compaction + real snapshot (docs/03 §9.4): lock *file* instead of a named mutex (keeps t3a-engine platform-free, R12); snapshot stores `consumed` + journal prefix hash so interrupted compactions neither lose nor double records. Also fixed: tailing skipped another app's record when two apps appended close together (own records are now tracked by offset).
 - D36: MSI silent behavior: `MSIRESTARTMANAGERCONTROL=Disable` + `REBOOT=ReallySuppress` statically (the finish page already offers the restart; `/qn` returns 3010); taskkill/shutdown through WixQuietExec64 (no console flash); FilesInUse text says "Ignore"; disclosure page "What Type3arabi adds"; ARP links; HKLM\Software\Type3arabi removed on uninstall.
@@ -418,6 +434,10 @@ pass; the RC should change as little as possible between the Owner's test and re
 - M7: Store listing text; `docs/releases/` notes per release.
 
 ## Session log
+- 2026-09-25 (late night) — Agent (Claude): Owner test of rc.2: upgrade + restart fine, Arabic 101 removed at sign-in;
+  diacritics editor froze once; a screenshot shortcut could not be captured; Ctrl+C was accepted. Root-caused and fixed
+  (D45–D50): swallowed editor letters, edit-session re-queue leak, dead/foreign composition handling, passthrough
+  cleanup, popup capture, text-edit sink, Shift-tap toggle, non-blocking Settings launch, reserved shortcuts. RC 1.0.0-rc.3.
 - 2026-09-25 (night) — Agent (Claude): Owner-approved release hardening (O14, O15). R9 input scopes (D34); user-store
   snapshot + compaction and a tailing fix (D35); MSI silent/upgrade hardening, disclosure page, version mapping,
   metadata (D36–D38); quiet harness (D39); Settings add-keyboard + hotkey conflict (D40); deny ignores (D41); release

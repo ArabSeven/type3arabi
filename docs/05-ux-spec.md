@@ -105,7 +105,11 @@ Below the composition, right edges aligned (RTL), flip above near the screen bot
 | Ctrl+Space | Arabic ⇄ Latin typing |
 | Numpad digits | always numbers |
 
-Tab, Ctrl+Enter, Shift+Space and Ctrl+Space are user-editable (`docs/13 [keys]`, `general.mode_toggle`);
+Tab, Ctrl+Enter, Shift+Space and Ctrl+Space are user-editable (`docs/13 [keys]`, `general.mode_toggle`, which also
+offers a lone Shift tap);
+Settings refuses shortcuts that Windows or nearly every app already use, and says why ("used by Windows to copy
+(Ctrl+C)", Win+Shift+S, Alt+Tab…; `t3a_engine::config::reserved_shortcut`); the hotkey companion never registers one
+either, even from a hand-edited config;
 the footer shows the current keys as keycaps: `Space إدراج · Tab تشكيل · Shift+Space لاتيني`.
 
 ## 4. Tashkeel (diacritics) editor — inside the same popup
@@ -161,6 +165,8 @@ Arabic/Latin labels are laid out piece by piece (keycap + Arabic label) instead 
 | Enter / Space | insert the edited word (Space adds a space) | |
 | Esc | back to the candidate list (edits discarded) | |
 | Tab (the open-editor key) | back to the candidate list, like Esc (Owner, 2026-09-25) | Shift+Tab: previous quick pick |
+| any other letter or digit | insert the edited word, then start a new word with that key (typing is never swallowed; fix 2026-09-25) | |
+| Ctrl/Alt shortcuts | insert the edited word, then the app gets the shortcut | |
 Validity: marks allowed on every letter except ا and ى (ا accepts only fathatan, rendered per tanween style);
 one vowel/sukun/tanween per letter (new replaces old); shadda combinable with a vowel/tanween.
 Invalid key ⇒ brief palette flash, no change.
