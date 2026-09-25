@@ -21,13 +21,28 @@ your normal keyboards (e.g. English (United States)).
 Build it (no admin needed), then run the MSI:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -Data target\type3arabi-rc2.dat
 ```
 
-`target\installer\Type3arabi-0.1.0-x64.msi` installs to `C:\Program Files\Type3arabi`, adds **Arabic (Saudi
+`target\installer\Type3arabi-<version>-x64.msi` installs to `C:\Program Files\Type3arabi`, adds **Arabic (Saudi
 Arabia) · Type3arabi**, starts the global hotkey (Ctrl+Alt+A) and adds **Type3arabi Settings** to the Start
-menu. The last page offers **Restart now (recommended)**. If you untick it, a message explains what may not
-work until you restart. If a dev build is installed, run `scripts\dev-uninstall.ps1` first.
+menu. The page after the license lists what it adds. The last page offers **Restart now (recommended)**. If you
+untick it, a message explains what may not work until you restart. If a dev build is installed, run
+`scripts\dev-uninstall.ps1` first.
+
+Automated install checks (one UAC prompt; nothing is typed and no app is closed):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\validate-msi.ps1 target\installer\Type3arabi-1.0.0-rc.2-x64.msi   # static, no install
+powershell -ExecutionPolicy Bypass -File .\scripts\test-installer.ps1 -Msi target\installer\Type3arabi-1.0.0-rc.2-x64.msi   # silent upgrade
+powershell -ExecutionPolicy Bypass -File .\scripts\test-installer.ps1 -Msi target\installer\Type3arabi-1.0.0-rc.2-x64.msi -Uninstall
+```
+
+`test-installer.ps1` upgrades silently (`msiexec /qn`, like the Microsoft Store) while apps and a stand-in process
+hold the keyboard DLL, and checks that none of them is closed, that no restart is started, the installed state
+(version, files, x64/x86 COM, one TSF profile, startup entry, shortcuts, your keyboard list) and, with `-Uninstall`,
+that uninstalling removes everything but your settings and learned words before it reinstalls. Report:
+`%TEMP%\t3a-installer-test\report.txt`.
 
 ### Option B — the dev scripts
 
@@ -92,8 +107,9 @@ optionally restore the settings. Apps already open use the imported words from t
 
 ## 3. Known limitations of this build
 
-- **Password fields**: Windows disables input methods there, so keys come from the Arabic 101 layout
-  (you will type Arabic letters). Use `Win+Space` to switch to English for passwords. (Spike S2.)
+- **Password fields** (to verify, spike S2): where Windows disables input methods, keys go to the layout under the
+  keyboard, which since D14/D33 is Windows' hidden US layout, so Latin letters are expected. Fields an app marks as
+  password/PIN/number (input scopes) get Latin letters from Type3arabi itself. Please check a browser password field.
 - No tray Arabic/Latin indicator yet; Ctrl+Space toggles silently.
 - Clicking elsewhere mid-word keeps the word as shown (no learning); that is intended.
 - Candidate list is not yet announced by Narrator; no full-screen-game (UI-less) mode yet.
@@ -120,4 +136,6 @@ cargo run -p t3a-cli --release -- bench --data target/type3arabi.dat
 
 `tsf_harness` creates a TSF-enabled RichEdit window, activates the text service in-process against a
 private `%LOCALAPPDATA%`, types scenarios through the key sink and checks the resulting text. It must
-pass on both architectures before any TIP change is committed (AGENTS.md §5).
+pass on both architectures before any TIP change is committed (AGENTS.md §5). It runs quietly by default (its
+window is transparent and never activated, the popup is made transparent after a warm-up word, so only that first
+popup may flash once); `T3A_HARNESS_VISIBLE=1` shows everything and uses real focus changes.

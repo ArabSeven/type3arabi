@@ -8,10 +8,41 @@ The Owner's six review points were implemented the same day (see *Owner review 2
 spans M2 (real data pipeline), M3/M6 (engine accuracy), M5 (tashkeel editor redesign) and M7 (Settings,
 hotkey companion, MSI) — the earlier milestone claims were not reliable, so each area was rebuilt with
 evidence instead of being taken in strict order.
-Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (needs UAC; RC 1.0.0-rc.1 below),
-code signing (O2), ARM64 build. The real-app checklist (`docs/09` M1/M4) still needs the Owner's runs.
+Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (needs UAC; **RC 1.0.0-rc.2** below,
+`scripts/test-installer.ps1` automates it), code signing (O2), ARM64 build. The real-app checklist (`docs/09` M1/M4)
+still needs the Owner's runs. **Next gate: the Owner's manual test of 1.0.0-rc.2.** Only after that: public
+repository, public unsigned release, SignPath inquiry, signing workflow, Microsoft Store (Owner, 2026-09-25).
 
-## Release candidate 1.0.0-rc.1 (2026-09-25) — built, NOT published
+## Release candidate 1.0.0-rc.2 (2026-09-25) — built, NOT published, NOT signed
+Artifact: `target\installer\Type3arabi-1.0.0-rc.2-x64.msi` (+ identical `Type3arabi-x64.msi`), 24,297,472 bytes,
+SHA-256 `a7d588594b01d41c2c6c4861f28a410198d0bd1186b6e9f6ea11af8bb34e11f9`. MSI ProductVersion 1.0.0.2 (upgrades RC1 = 1.0.0 in place).
+Model `target\type3arabi-rc2.dat` = `data/model.lock.toml` (data_version 2026092502, SHA-256
+`20c60ad0…63d0`, META release / CC-BY-NC-SA-4.0, provisional sources talafha-jordanian + akhanafer-levantine, O14).
+Built with `scripts\build-installer.ps1 -Data target\type3arabi-rc2.dat`; `scripts\validate-msi.ps1 … -ModelSha256 …`:
+**all 58 checks pass** (identity, ProductVersion, ALLUSERS=1, MSIRESTARTMANAGERCONTROL=Disable, REBOOT=ReallySuppress,
+QuietExec for taskkill/shutdown, no restart action in the execute sequence, 4 PE files with the right machine type and
+VERSIONINFO — ProductName/CompanyName Type3arabi, ProductVersion/FileVersion 1.0.0-rc.2, OriginalFilename,
+LegalCopyright —, model META + SHA-256, Run entry, HKLM\Software\Type3arabi removal, no other registry values, no
+service, ICE clean except the expected ICE61/ICE69 warnings, WiX CA DLLs keep their WiX signatures). Our PE files and the
+MSI are **unsigned** (no signing mechanism configured; none fabricated).
+**Not verified by the agent** (needs the Owner's UAC, deferred per the Owner's instructions): real silent upgrade from
+RC1, "no app closed / no restart" under `/qn`, install state, clean uninstall — run
+`powershell -ExecutionPolicy Bypass -File .\scripts\test-installer.ps1 -Msi target\installer\Type3arabi-1.0.0-rc.2-x64.msi -Uninstall`.
+Draft notes: `docs/releases/v1.0.0-rc.2.md`.
+Release checklist (docs/07 §6):
+| # | Item | State |
+|---|---|---|
+| 1 | CI green on `main` | **not run on GitHub** (nothing pushed); local equivalent green: fmt, clippy x64 + i686 (tip/ui), `cargo test --workspace` (all pass; engine 66), Settings clippy + 5 tests, `cargo deny` both workspaces, pipeline pytest 11/11, `tsf_harness` x64 + x86 × 3 rounds × 18 scenarios, 0 failures |
+| 2 | Eval report of the release data | rc2 model held-out (`eval pipeline_data/eval/*.test.tsv --data target/type3arabi-rc2.dat --dialect oracle --lenient`): **all 50.4% / 78.9%** (LEV 65.1% / 90.8%, MAG 47.1% / 76.3%, EGY 70.2% / 83.0% n=47, MSA 60.0% / 85.0% n=20); strict all 47.9% / 78.2%; regressions **11/11**; smoke 84.7% / 97.4%; bench p50 0.059 ms, p99 0.750 ms, commits p99 0.036 ms |
+| 3 | App-compat matrix (Win10 22H2, Win11 24H2, ARM64) | **not run** — Owner |
+| 4 | 8 h soak | **not run** (needs real apps typing for hours; not safe to automate on the Owner's working PC) |
+| 5 | Signed artifacts | **no** — O2 pending; `validate-msi.ps1 -RequireSigned` is ready for when it is |
+| 6 | NOTICE + third-party licenses | done (+ WiX CA DLLs, MS-RL, in NOTICE.md and the ledger) |
+| 7 | `--mode release` data, META, DATASETS.md | done: META release, CC-BY-NC-SA-4.0, provisional sources listed; DATASETS.md regenerated (pipeline test enforces) |
+| 8 | Tag + GitHub Release | **not done** — Owner gate; `release.yml` drafts it (PUBLISH_ENABLED); model asset `model-2026092502` not uploaded yet |
+| 9 | Microsoft Store submission | **not done** — needs signing (O2) and a public versioned URL |
+
+## Release candidate 1.0.0-rc.1 (2026-09-25) — superseded by rc.2
 Artifact: `target\installer\Type3arabi-1.0.0-rc.1-x64.msi` (+ identical `Type3arabi-x64.msi`), 24.0 MB (rebuilt 2026-09-25: Tab fix, Settings review, desktop shortcut, LICENSE, popup Settings tab, Arabic 101 tidy-up),
 SHA-256 `e2ad28cc3cf2ddec4bab768a404e9255cbec7858d545eb772b65df8f5f7c962f`. Built with
 `scripts\build-installer.ps1 -Data target\type3arabi-release.dat`; `wix msi validate` clean except the expected
@@ -268,6 +299,14 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - [x] Record baseline numbers in STATUS.md.
 
 ## Owner decisions recorded
+- **2026-09-25 (O15)**: Release architecture from the release audit: one MSI for GitHub Releases and the Microsoft
+  Store's MSI/EXE route (MSIX does not fit a TSF input method); SignPath Foundation first, fallback signing only
+  without purchase for now. Implement the fixes that help regardless of signing, clear the backlog, prepare the
+  release workflow up to (not including) publication, deploy the website fixes live. Do not make the repo public,
+  publish a release, contact SignPath, configure certificates, submit to Microsoft or spend money. Next gate: the
+  Owner's manual test of the new RC.
+- **2026-09-25 (O14)**: Keep using the two datasets awaiting permission (Talafha et al., Khanafer) in releases; retrain
+  without them if permission is declined. Recorded as ADR-0011 (new registry status `provisional`, R14 amended).
 - **2026-09-25 (O13)**: After installing the RC: no tray (input indicator) button — removed; Settings opens from a
   small rounded tab attached to the top of the candidate popup instead. Arabic (101) must never come back next to
   Type3arabi. Keep the color icon unless Microsoft forbids it → Microsoft's IME requirements say IME icons "must be
@@ -291,16 +330,28 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 ## Owner decisions needed (defaults applied meanwhile)
 | # | Question | Default applied |
 |---|---|---|
-| O1 | Project license: open source (which) or proprietary? | All rights reserved (`LicenseRef-Type3arabi-AllRightsReserved`) |
 | O2 | Code signing (also needed for the Store's MSI submission): apply to SignPath Foundation (free for OSS) or Certum Open Source Code Signing first (docs/07 §4 option 0) | Dev builds use a self-signed test cert |
-| O13 | NileChat EGY/MOR are gated: accept the terms on both dataset pages with your Hugging Face account and sign in once on the dev PC: `cd tools/pipeline; uv run hf auth login` (Read token) | Built without them (no Egyptian parallel data yet) |
 | O5 | Recruit golden-set typists: ≥ 3 per dialect group (docs/04 §8) | M2 starts with LEV (Owner's own dialect) |
 | O6 | Default Allah form: `shadda` (اللّه) vs `shadda_fatha` (اللَّه) vs `shadda_dagger` (اللّٰه) vs plain | `shadda` |
 | O7 | Default global activation hotkey (Ctrl+Alt+A) and in-IME toggle (Ctrl+Space) OK? | as stated |
 | O8 | Native-speaker review of `data/eval/smoke.tsv` and `data/seed/phrases.tsv` | pending (M2 task) |
-| O9 | License clearance before public release: contacts/actions for each `internal` source (`talafha-jordanian`, `arbml-arabizi`, `akhanafer-levantine`, `elkababi-darija`, `atlasia-atam`, `doda`, `arabizikit-corpus`, `nilechat-arabizi-egy`, `arabizi-dataset-v2`, `maknuune`, `tashkeela`, `wikipedia-ar`) | Local test builds are internal only; release builds run `--mode release` until cleared |
+| O9 | Answers from the two provisional sources (Talafha et al.: email 2026-09-24; Khanafer: HF discussion #2, 2026-09-25) | Used under ADR-0011; on a decline: `blocked`, rebuild with `--exclude-provisional`, new release |
+| O16 | Make the repository public (the website's GitHub/Datasets/download links return 404 until then) and upload the model asset `model-2026092502/type3arabi.dat` | After the manual RC test (O15) |
+| O17 | SignPath inquiry: ask whether the CC BY-NC-SA model (incl. provisional sources) inside the MSI is acceptable under "OSI license for all components" | Not contacted (O15) |
+| O18 | Contact channel: the site lists GitHub issues + Linktree; add a public email address? | No email published |
 
 ## Agent decisions (one line each: what, why)
+- D34: R9 input scopes implemented (`context::input_scopes` in a sync read-only edit session at word start, `keyrouter::classify_scopes`): password/PIN/number/phone/date/time/amount ⇒ Latin, URL/e-mail ⇒ Latin while `latin_in_url_email`, IS_PRIVATE ⇒ no learning. RichEdit (harness) does not report scope values (GetValue E_FAIL, also a plain EDIT control): end-to-end scope behavior needs a real app (Owner check).
+- D35: User store compaction + real snapshot (docs/03 §9.4): lock *file* instead of a named mutex (keeps t3a-engine platform-free, R12); snapshot stores `consumed` + journal prefix hash so interrupted compactions neither lose nor double records. Also fixed: tailing skipped another app's record when two apps appended close together (own records are now tracked by offset).
+- D36: MSI silent behavior: `MSIRESTARTMANAGERCONTROL=Disable` + `REBOOT=ReallySuppress` statically (the finish page already offers the restart; `/qn` returns 3010); taskkill/shutdown through WixQuietExec64 (no console flash); FilesInUse text says "Ignore"; disclosure page "What Type3arabi adds"; ARP links; HKLM\Software\Type3arabi removed on uninstall.
+- D37: MSI ProductVersion X.Y.Z-rc.N → X.Y.Z.N (4th field ignored in comparisons; ARP shows the RC). PE numeric versions stay X.Y.Z.0 (Tauri drops pre-release numbers; one scheme for all four PEs), strings carry 1.0.0-rc.2.
+- D38: Settings exe metadata via tauri.conf (`productName` "Type3arabi", publisher, copyright) + `[package.metadata.tauri-winres]` (OriginalFilename, InternalName). FileDescription now "Type3arabi" (tauri-build derives it from productName).
+- D39: `tsf_harness` quiet by default (transparent, never-activated host; popup made transparent after a warm-up word; focus change simulated for the Settings-tab scenario). `T3A_HARNESS_VISIBLE=1` restores the old behavior.
+- D40: Settings › General: "Add" row when Type3arabi is not in this account's keyboards (`t3a_hotkey::profile` moved into the library); hotkey conflict shown from `hotkey-status.txt` written by the companion.
+- D41: `cargo deny` (Settings workspace) ignores six reviewed "unmaintained" advisories in Tauri's tree (proc-macro-error, unic-*; no vulnerability, no fix available); any other advisory still fails.
+- D42: Release plumbing: `data/model.lock.toml` + `scripts/fetch-model.ps1` (model pinned by SHA-256; `build-data` verified deterministic: identical bytes on rebuild; new `--data-version`), `scripts/validate-msi.ps1`, `scripts/test-installer.ps1`, `.github/workflows/release.yml` (signing and drafting behind repository variables), `.signpath/artifact-configuration.xml` (draft; MSI inner paths to verify with a test certificate), CI jobs settings / installer-smoke / DLL size / regsvr32 smoke.
+- D43: Eval nondeterminism (backlog M3) no longer reproduces: three separate processes give byte-identical `eval --misses` output (smoke) and two on the Talafha test set; final sorts are fully tie-broken.
+- D44: Website: `/privacy` and `/code-signing` pages (bilingual), shared `common.js` for theme/nav/reveal, links from the privacy card, download section and footer; states plainly that releases are not signed yet and SignPath has not accepted the project. Deployed to the existing Worker `type3arabi` (version 969e519d-1aec-47c9-b911-62e8bc31fde7).
 - D1: Commit-then-pass instead of SendInput reinjection (docs/02 §5.3): synthesized keys race the host queue and fail under UIPI.
 - D2: `hklSubstitute = 0` until spike S2 is actually run: an unloaded substitute HKL is riskier than Arabic 101 in password fields.
 - D3: Dev install copies DLLs to `%ProgramFiles%\Type3arabi\{x64,x86}` and builds into `target\tip`: registered DLLs get locked by every app.
@@ -340,32 +391,40 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - (none yet)
 
 ## Backlog (by milestone)
-- M2: DP sentence aligner for unequal token counts (docs/04 §6.1); Wikipedia/Maknuune/Tashkeela fetchers.
-- M1: `auto` prior from the Windows region (docs/03 §7.2, GetUserGeoID) is specified but not implemented (starts from the default prior). Persist π across sessions (§9.4).
-- M6: NileChat (spike S6 done: rule self-training rejected). Next: NileChat on the LM side (pseudo-labelled Egyptian unigrams, rules untouched); a chunk-level guard (a dialect row is accepted only if the top-1 of that dialect's N most frequent words is unchanged); a real Egyptian dev/test set first (O5).
-- M2: EGY parallel data: NileChat EGY after O13; golden set (O5). Watch arXiv 2608.02555 (5-dialect Arabic↔Arabizi corpus, CC BY 4.0) for its data release.
-- M6: self-training on monolingual Moroccan Arabizi (`darija-arabizi-mt`, ~280k sentences, CC BY-NC-SA) — docs/04 §6.4.
-- M7: `cargo about` → THIRD-PARTY-LICENSES.html in the MSI (NOTICE.md references it); website (Cloudflare Pages) with the latest-download link; Store listing text.
-- M3: `bigrams.tsv` is used, but context (surrounding text, docs/02 §12.1) is only our own last commits.
-- M4: popup hover highlight, per-row ◌َ button; dark-theme popup; DPI-change handling.
-- M7: Owner-run MSI install/upgrade/uninstall on Win10/Win11; ARM64 DLL; code signing (O2); cargo-about NOTICE;
-  Settings "My words" page; "enable for this user" button for other accounts; hotkey conflict shown in Settings.
-- M7: verify on a fresh account that the MSI yields exactly one ar-SA entry (the enable step was verified on the dev machine only, D14).
-- M7: confirm where Windows 11 Settings surfaces ITfFnConfigure for a third-party keyboard (implemented + harness-checked via GetDisplayName; not yet seen in the Settings UI).
-- M7: confirm after a real restart on the Owner's machine that Arabic 101 no longer appears (D33: reproduced by loading the layout in-session and running `--tidy`; not yet observed across a sign-in).
-- M1: Spike S2 for real (Latin base layout in password fields); re-run S1/S3/S4/S5 (all flagged UNVERIFIED).
-- M1: `ITfTextEditSink` (finalize when the caret is moved by mouse) and `ITfTextLayoutSink` (popup follows scrolling).
-- M1: Input-scope gating beyond the keyboard-disabled compartment (IS_EMAIL/IS_URL ⇒ Latin, IS_PRIVATE ⇒ no learning).
-- M1: Tray Arabic/Latin mode item + GUID_COMPARTMENT_KEYBOARD_OPENCLOSE (docs/02 §10).
-- M3: Eval is nondeterministic (85.5% vs 86.0% between runs): tie-breaking depends on HashMap order.
-- M3: `3ilm` ranks `عيلم` above `علم` (MSA top-1 78.9%).
-- M4: Real user-store snapshot + compaction (serialize MemoryUser); then re-enable compaction.
-- M4: Tests must not write to the real `%LOCALAPPDATA%` error log (t3a-paths / guard tests).
-- M4: Popup mouse selection (callback was never wired); DPI change handling; dark theme.
-- M8: UIElement (UI-less) candidate list; UIA provider (Narrator).
-- M2: `data/eval/bench_keystrokes.tsv` (10k words from golden/FineWeb) replaces smoke as the default bench set.
+Triage 2026-09-25 (Owner: "clear the backlog"): done items are in D34–D44 and removed here; the rest is deferred with a
+reason. New TSF sinks or UI in host processes are deferred past the manual RC test on purpose (each needs an app-compat
+pass; the RC should change as little as possible between the Owner's test and release).
+- M7 (Owner, needs UAC/real machines): install/upgrade/uninstall of rc.2 (`scripts/test-installer.ps1 -Uninstall`); fresh
+  second account shows exactly one ar-SA entry and the Settings "Add" row works; Arabic 101 does not return after a real
+  restart (D33); where Windows 11 Settings shows ITfFnConfigure; browser password field gets Latin (D34).
+- M7: ARM64 DLL — deferred: no ARM64 device to test, and an untested DLL loaded into every app is a crash risk; an
+  x64-only MSI on ARM64 works only in emulated x64 apps. Store listing must say x64 until then.
+- M7: Settings "My words" page (custom words) — deferred: the engine has no custom-word trie yet (docs/03 §9.6).
+- M8: 8-h soak, app-compat matrix — Owner/beta testers; UIElement (UI-less) list, UIA/Narrator provider, GDI fallback.
+- M1: `ITfTextEditSink` (finalize on mouse caret moves), `ITfTextLayoutSink` (popup follows scrolling) — deferred (new
+  sinks in host apps, post-RC). Spikes S1/S3/S4/S5 re-runs and S2 (password fields) — Owner real-app checks.
+- M1: `auto` prior from GetUserGeoID (docs/03 §7.2) and persisting π (KIND_DIALECT records) — deferred: changes first-word
+  ranking for every user; needs an eval design (O5 golden set) before shipping.
+- M1: tray Arabic/Latin mode item + OPENCLOSE compartment — **obsolete** (O13: no tray button).
+- M3: `3ilm` → now عالم, علم (#2), عيلم (#3) (was عيلم above علم): ranking retune deferred (re-tunes broke `ahlan`, D25).
+- M3: surrounding-text context (docs/02 §12.1) — only our own last commits are used; deferred.
+- M4: popup hover highlight and per-row ◌َ button; DPI-change handling — deferred (UI polish, post-RC). Dark theme and
+  mouse selection are done (D23, Owner review 2026-09-23).
+- M2: DP sentence aligner; Wikipedia/Maknuune/Tashkeela fetchers (licenses not cleared); EGY parallel data / golden set
+  (O5); watch arXiv 2608.02555 (CC BY 4.0) — data work, after release.
+- M2: `bench_keystrokes.tsv` from real text — cannot be committed (third-party data, R14); run `bench` against a local
+  held-out set instead when needed.
+- M6: NileChat on the LM side; Moroccan self-training (`darija-arabizi-mt`) — research, after release.
+- M7: Store listing text; `docs/releases/` notes per release.
 
 ## Session log
+- 2026-09-25 (night) — Agent (Claude): Owner-approved release hardening (O14, O15). R9 input scopes (D34); user-store
+  snapshot + compaction and a tailing fix (D35); MSI silent/upgrade hardening, disclosure page, version mapping,
+  metadata (D36–D38); quiet harness (D39); Settings add-keyboard + hotkey conflict (D40); deny ignores (D41); release
+  workflow, model lock, validators, installer test script, CI jobs (D42); eval determinism confirmed (D43); ADR-0011 +
+  provisional data, release model rebuilt with Talafha/Khanafer (LEV 65.1%, regressions 11/11); website privacy + code
+  signing pages deployed (D44). RC 1.0.0-rc.2 built and statically validated (58/58); install/upgrade/uninstall on a
+  real machine deferred to the Owner (UAC). Nothing pushed, published, signed or submitted.
 - 2026-09-25 (late) — Agent (Claude): Owner test of the RC. Tray button reverted (O13); Settings tab on the candidate popup (harness: click → Settings started, word finalized as shown; x64 + x86, 5 runs × 3 rounds each, 0 failures). Arabic 101 diagnosed (D33) and fixed in the companion (`tidy` at sign-in, `enable` keeps only saved layouts); verified in-session: stray `04010401` loaded → `t3a-hotkey --tidy` → gone, saved list and hidden base layout untouched; disable → enable leaves only Type3arabi. Keyboard icon stays black and white (Microsoft IME requirement). RC MSI rebuilt.
 - 2026-09-25 (evening) — Agent (Claude): Owner review of Settings: status fades after 5 s with the path once; export/import history (transfers.jsonl: counts, names, times only); "Keyboard shortcuts"; bidi-isolated English lines + RLM for Arabic lines in plain-text dialogs (periods no longer jump); About: copyright, Buy me a coffee, Linktree (links via a 4-URL allow-list, default browser). Installer: Options page, desktop shortcut on by default (ICE38/43/57 suppressed: per-machine false positives). Windows Settings cannot link to a third-party keyboard's options; the native route is an input-indicator (tray) menu item — not built (backlog M1). LICENSE: project header (code Apache-2.0 vs model CC BY-NC-SA 4.0, DATASETS.md, brand), appendix filled; README rewritten (no Store mention; unsigned-installer notice). RC MSI rebuilt.
 - 2026-09-25 (later) — Agent (Claude): Owner report on the website's tashkeel editor. Fixed on the site: an invisible input covered the popup (every click fell through), Tab did nothing in the editor, chips slid under «مسح الكل», letters/digits failed under a non-English Windows layout (fallback to the physical key + an IME hint), Space/Shift+Space/punctuation in the editor now follow the app. Verified with real mouse/keyboard events (headless Edge + CDP). App: the open-editor key now closes the editor (was: next vowelling); harness x64 + x86 green; RC MSI rebuilt.

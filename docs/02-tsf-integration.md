@@ -251,6 +251,13 @@ Compute `ContextMode` on focus change and on composition start, cache per contex
 
 Input scopes: read `GUID_PROP_INPUTSCOPE` property of the context's selection range →
 `ITfInputScope::GetInputScopes`. Failure ⇒ treat as no scope.
+Implementation (2026-09-25, `win/context.rs::input_scopes`, `keyrouter::classify_scopes`): read in a synchronous
+read-only edit session when a character key arrives outside a composition, cached for the word. Password / PIN /
+number / phone / date / time / amount ⇒ Latin (the TIP inserts the Latin characters, nothing is learned); URL /
+e-mail / login name ⇒ Latin while `typing.latin_in_url_email`; `IS_PRIVATE` ⇒ Arabic without learning. Verified:
+unit tests for the classification; the harness exercises the read at every word start (RichEdit reports no scope
+value — GetValue fails — which correctly means "no scope"); real apps that report scopes (browser password fields)
+need a manual check.
 
 ## 8. Composition & edit sessions
 

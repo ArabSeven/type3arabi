@@ -273,13 +273,20 @@ Files in `%LOCALAPPDATA%\Type3arabi\user\`:
   Kinds: `1 Choose`, `2 Negative`, `3 AddWord`, `4 DeleteWord`, `5 Dialect(pi as 6×f16 in arabic field)`, `6 Wipe`.
   Written by the per-process writer thread with one `WriteFile` on a handle opened with `FILE_APPEND_DATA`
   and `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`. Bad CRC ⇒ record skipped.
-- `snapshot.t3u`: compacted model (versioned, little-endian, length-prefixed strings), replaced atomically
-  (`write temp → MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)`).
+- `snapshot.t3u`: compacted model (magic `0x54335501`, little-endian, length-prefixed strings, FNV-1a-64 checksum;
+  layout in `user.rs`), replaced atomically (write temp + flush → rename over). It records `consumed` (journal bytes
+  merged into it) and a hash of the first ≤ 4 KB of that journal: a reader replays the journal from `consumed` if the
+  journal still starts with those bytes, else from 0 (already truncated to the unmerged tail) — so an interrupted
+  compaction neither loses nor double-counts a record.
 - **Tailing**: at composition start each TIP compares the journal size with its read offset; grows ⇒
-  read and apply new records; shrinks ⇒ reload snapshot and read the journal from 0.
-- **Compaction**: when the journal exceeds 256 KB, the writer thread try-locks the named mutex
-  `Local\Type3arabi.UserStore` (per session); on success merges snapshot + journal, evicts to caps
-  (50 000 keys LRU by `last_ts`, 5 000 custom words), writes the snapshot, truncates the journal.
+  read and apply new records, skipping the ones this process appended itself (their offsets are remembered, so
+  another app's record written in between is never missed); shrinks, or the snapshot changed ⇒ full reload.
+- **Compaction** (implemented 2026-09-25, `store::compact`): when the journal exceeds 256 KB, the writer thread
+  takes the lock file `user\compact.lock` (created exclusively; stale after 30 s; a lock *file* keeps the engine
+  free of platform APIs, R12 — writers wait up to 2 s while it exists); merges snapshot + journal, evicts to caps
+  (50 000 keys LRU by last use; custom words when they exist), writes the snapshot, then replaces the journal with
+  the records appended meanwhile. An export after a compaction writes the model as records (`to_records`, counts
+  capped at 16 per choice).
 - AppContainer / secure desktop / IS_PRIVATE: read-only (snapshot + journal readable through the ACL),
   never write.
 

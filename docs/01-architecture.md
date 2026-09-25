@@ -107,6 +107,7 @@ This keeps the UI reusable by the Plan-B overlay front-end (`docs/11`).
 | `tauri-build` | 2.x | MIT/Apache-2.0 | apps/settings (build-dep) | Embeds `tauri.conf.json`, the `ui/` folder and the icon. |
 | `serde` | 1.x | MIT/Apache-2.0 | apps/settings | Settings ⇄ UI command payloads (engine/TIP stay serde-free, R12). |
 | `serde_json` | 1.x | MIT/Apache-2.0 | apps/settings | Same. |
+| WiX Toolset UI + Util extensions | 5.0.2 | MS-RL (file-level, OSI-approved) | MSI (setup only) | Not a crate: the MSI embeds WiX's unmodified custom-action DLLs `WixUiCa_X64` (license page) and `Wix4UtilCA_X64` (QuietExec: runs `taskkill`/`shutdown` without a console window). Signed by WiX; never re-signed (docs/07 §4). |
 | `embed-resource` | 3.0.11 | MIT | tip, hotkey (build-dep) | Compile the generated `.rc` (brand icon `IDI_BRAND` for the TSF profile, VERSIONINFO) — `build.rs` of each crate. |
 
 Dev-only (not shipped): `criterion` (bench), `proptest` (property tests), `cargo-fuzz`/`libfuzzer-sys` (fuzzing);

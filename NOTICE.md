@@ -41,6 +41,9 @@ generated for each release by `cargo about generate`. All of them are permissive
 `cargo deny`).
 
 - Microsoft Windows-classic-samples (SampleIME), MIT: structural reference for the TSF implementation.
+- WiX Toolset v5 (© .NET Foundation and contributors, MS-RL): the installer is built with WiX, and the MSI embeds
+  two unmodified WiX custom-action DLLs (`WixUiCa`, `Wix4UtilCA`, signed by "WiX Toolset (.NET Foundation)") that
+  run only during setup. Source: https://github.com/wixtoolset/wix
 
 ## Fonts and brand
 

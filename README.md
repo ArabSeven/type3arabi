@@ -71,7 +71,8 @@ leaves your PC.
 
 ### Install
 
-1. Run the installer. On the *Options* page you can keep or untick the desktop shortcut to Settings.
+1. Run the installer. The page after the license, *What Type3arabi adds*, lists what it changes (below) and lets
+   you keep or untick the desktop shortcut to Settings.
 2. Restart when asked (recommended: apps that were already open only see a new keyboard after a restart).
 3. Press <kbd>Win</kbd>+<kbd>Space</kbd> and choose **Arabic · Type3arabi**, or press
    <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>A</kbd> from any keyboard.
@@ -79,6 +80,21 @@ leaves your PC.
 
 To remove it: *Settings → Apps → Installed apps → Type3arabi → Uninstall*. The words it learned stay in
 `%LOCALAPPDATA%\Type3arabi` until you erase them (Settings → Learning & privacy → Forget).
+
+### What the installer changes
+
+- Installs to `C:\Program Files\Type3arabi` and registers the **Arabic · Type3arabi** keyboard with Windows (a Text
+  Services Framework input method, 64- and 32-bit), then turns it on for the account that installed it. Other
+  accounts on the PC can add it from Type3arabi Settings → General.
+- Adds a small helper that starts when you sign in (`t3a-hotkey.exe`): it provides the global shortcut and removes
+  the extra *Arabic (101)* keyboard that Windows adds next to Type3arabi. With the shortcut turned off in Settings
+  it exits right after that tidy-up.
+- Adds *Type3arabi Settings* to the Start menu, and to the desktop unless you untick it.
+- Keeps your settings and learned words in `%LOCALAPPDATA%\Type3arabi`. Nothing is sent anywhere.
+- Never closes your apps and never restarts the PC by itself. Apps that are already open pick up a new version
+  after a restart, which the installer offers at the end (silent installs, e.g. from the Microsoft Store, return
+  "restart needed" instead).
+- Uninstalling removes all of the above except your settings and learned words.
 
 ## Features
 
@@ -154,7 +170,9 @@ word, in every app — no restart.
 - **Offline.** The keyboard has no network code at all. No account, no cloud, no telemetry, no crash upload.
 - **What it learns stays on your PC** (`%LOCALAPPDATA%\Type3arabi`): which Arabic word you chose for which
   Latin spelling. Not your sentences, not your documents. Export it, import it or erase it in Settings.
-- **Password fields are left alone**: Windows turns input methods off there, and Type3arabi respects it.
+- **Password fields are left alone**: where Windows turns input methods off, Type3arabi does nothing; fields an
+  app marks as password, PIN, number, phone, date or amount get plain Latin letters (no Arabic, nothing learned),
+  and private/incognito fields never teach it anything.
 - **Open source**, so anyone can check all of the above.
 
 ## How it works

@@ -15,17 +15,43 @@
 |---|---|---|
 | `portable` | ubuntu-latest | fmt, clippy (engine, data, cli), test, `cargo deny check`, bench (relative gate), mini data build + eval |
 | `windows` | windows-latest | clippy + build all crates for x64, i686, aarch64; unit tests (x64); DLL size check; `regsvr32` smoke register/unregister in the runner (admin) |
-| `installer` (tags + manual) | windows-latest | build release DLLs ×3, hotkey, settings; sign (§4); build MSI; sign MSI; upload artifacts |
+| `settings` | windows-latest | Settings workspace: clippy, tests, `cargo deny` |
+| `installer-smoke` | windows-latest | MSI with a seed-only test model; `scripts/validate-msi.ps1 -TestModel` |
+
+`windows` also gates the DLL size (P7) and registers/unregisters the x64 TIP with `regsvr32` on the admin runner
+(exactly one ar-SA profile, nothing left behind).
+
+**Release workflow** (`.github/workflows/release.yml`, tag `vX.Y.Z` or manual) — the architecture chosen in the
+2026-09-25 release audit (one MSI for GitHub Releases and the Microsoft Store's MSI/EXE route; MSIX does not fit a
+TSF input method, whose DLL must load into other apps' processes):
+
+| Job | Runner | Steps |
+|---|---|---|
+| `build` | windows-2025 (GitHub-hosted) | tag = workspace version; WiX 5.0.2 + cargo-about 0.9.2; model from `data/model.lock.toml` (`scripts/fetch-model.ps1`, SHA-256 checked); `scripts/build-installer.ps1`; `scripts/validate-msi.ps1`; upload the unsigned MSI |
+| `sign` | windows-2025 | only if `vars.SIGNPATH_ENABLED == 'true'`: SignPath signing request (`signpath/github-action-submit-signing-request@v2`, artifact configuration `.signpath/artifact-configuration.xml`, manual approval in SignPath); `validate-msi.ps1 -RequireSigned` |
+| `release` | ubuntu-latest | only for a `v*` tag with `vars.PUBLISH_ENABLED == 'true'` (unsigned also needs `ALLOW_UNSIGNED_RELEASE`): version-free copy, `SHA256SUMS.txt`, **draft** release; the Owner publishes it |
+
+The model is built locally (its inputs are too large for CI and never committed) with a deterministic
+`build-data`, uploaded once as release asset `model-<data_version>/type3arabi.dat`, and pinned by SHA-256 in
+`data/model.lock.toml`; the MSI is then reproducible from the tagged commit plus that file.
 
 ## 3. Versioning
-SemVer for the product `MAJOR.MINOR.PATCH`, same version in all crates (workspace `version`), in the DLL
-VERSIONINFO, MSI ProductVersion and Settings About page. Data file has its own `data_version` (date-based
+SemVer for the product `MAJOR.MINOR.PATCH` (pre-releases `X.Y.Z-rc.N`), same version in all crates
+(workspace `version`, `apps/settings` Cargo.toml and `tauri.conf.json`), in every PE's VERSIONINFO (ProductName and
+CompanyName "Type3arabi", ProductVersion/FileVersion strings = the version, numeric X.Y.Z.0, OriginalFilename,
+LegalCopyright) and the Settings About page. MSI ProductVersion is numeric: `X.Y.Z-rc.N` → `X.Y.Z.N`, `X.Y.Z` → `X.Y.Z`
+(Windows Installer ignores the 4th field when comparing, so RCs and the final release upgrade each other;
+Settings › Apps shows which RC is installed). Data file has its own `data_version` (date-based
 `YYYY.MM.DD.n`) embedded in its header and shown in About. MSI: `MajorUpgrade` with the fixed UpgradeCode
 (`docs/02 §1`), per-machine scope.
 
 ## 4. Code signing (required: Windows warns loudly on unsigned IMEs; AV heuristics distrust unsigned DLLs loaded everywhere)
-Sign **every** PE (`t3a_tip.dll` ×3, `t3a-hotkey.exe`, `Type3arabi Settings.exe`, custom-action helper) and
-the MSI, SHA-256, RFC 3161 timestamp (`/tr http://timestamp.digicert.com /td sha256 /fd sha256`).
+Sign **every** Type3arabi PE (`t3a_tip.dll` x64 + x86 (+ ARM64 when built), `t3a-hotkey.exe`, `Type3arabi Settings.exe`)
+and the MSI, SHA-256, RFC 3161 timestamp. WiX's custom-action DLLs inside the MSI (`WixUiCa_X64`,
+`Wix4UtilCA_X64`) are third-party and already signed by "WiX Toolset (.NET Foundation)": never re-sign them.
+Planned route: SignPath Foundation deep signing in the release workflow (§2); `.signpath/artifact-configuration.xml`
+is the draft configuration (to be verified with a test certificate first). The Microsoft Store's MSI/EXE route
+requires the MSI and all its PE files to chain to the Microsoft Trusted Root Program.
 
 Certificate options (Owner decision, see `STATUS.md`). Since ADR-0010 the project is free and open source, so try
 the open-source routes first:
@@ -53,6 +79,15 @@ Trusted Root and Trusted Publishers; never used for public builds.
   `x64\t3a_tip.dll`, `x86\t3a_tip.dll` (same install folder; registered in the 32-bit registry view),
   `arm64\t3a_tip.dll` (only on ARM64 OS), `type3arabi.dat`, `t3a-hotkey.exe`,
   `Type3arabi Settings.exe`, `NOTICE.md`, `LICENSE`.
+- **Silent install / upgrade** (`msiexec /i … /qn`, which is how the Microsoft Store runs an MSI): the keyboard DLL is
+  loaded by every app the user types in, so upgrades always find it in use. The package sets
+  `MSIRESTARTMANAGERCONTROL=Disable` (Restart Manager never closes apps) and `REBOOT=ReallySuppress` (Windows Installer
+  never restarts the PC; in-use files are replaced at the next restart and msiexec returns 3010). Interactive
+  installs offer the restart on the finish page; the FilesInUse dialog says nothing needs closing ("Ignore").
+  Console tools (`taskkill`, `shutdown`) run through WiX's QuietExec (no console window).
+- Disclosure: the page after the license, "What Type3arabi adds", lists every system change (keyboard registration,
+  the sign-in helper and its Arabic 101 tidy-up, Start menu/desktop shortcuts, local data path, no network) and what
+  uninstalling removes. Same list in README.md.
 - Registration (implemented): deferred elevated custom actions run `System32\regsvr32.exe` on the x64 DLL and
   `SysWOW64\regsvr32.exe` on the x86 DLL, i.e. our `DllRegisterServer` / `DllUnregisterServer` (TSF APIs only,
   R6). No separate helper binary (Agent decision D9).
@@ -77,22 +112,35 @@ Trusted Root and Trusted Publishers; never used for public builds.
   is per-user, which is false for a per-machine package (ALLUSERS=1 => Public desktop). ICE61 (same-version upgrades)
   and ICE69 (shortcut in its own component) are expected warnings.
 - Uninstall: unregister DLLs, `InstallLayoutOrTip(... ILOT_UNINSTALL)` for the current user, remove Run value,
-  **leave** `%LOCALAPPDATA%\Type3arabi` unless the user ticks "Remove my words and settings".
-- Files in use: TSF DLLs are loaded in running apps; use WiX `RestartManager`-friendly behavior and schedule
-  replacement on reboot when needed (standard MSI `FilesInUse`); the new version works in newly started apps.
+  shortcuts and `HKLM\Software\Type3arabi`; **leave** `%LOCALAPPDATA%\Type3arabi` (settings, learned words) — an
+  uninstall from Settings › Apps has no UI to ask, so the disclosure page says so and Settings › Forget everything
+  deletes the learning beforehand. Other accounts that enabled the keyboard keep a dangling list entry, which Windows
+  ignores once the TIP is unregistered.
+- Other accounts on a shared PC: the installer enables the keyboard for the installing user only; Settings › General
+  shows "Add" for any other account.
+- Files in use: TSF DLLs are loaded in running apps; the installer never closes them (above) and replaces the DLLs
+  at the next restart (standard MSI in-use handling); until then running apps keep the old version.
+- Validation: `scripts/validate-msi.ps1 <msi>` (static, no install: identity, version, silent properties, payload
+  architecture + version metadata, custom actions, registry, model META/SHA-256, ICE, signatures) and, on a test PC,
+  `scripts/test-installer.ps1 -Msi <msi> [-Uninstall]` (one UAC prompt: silent upgrade with apps holding the DLL, no
+  restart, installed state, clean uninstall, reinstall).
 
 ## 6. Release checklist
 1. `main` green on all CI jobs; `STATUS.md` milestone evidence complete.
 2. Eval report for the release data build attached; no golden-test regression.
 3. App-compat matrix (`docs/08 §5`) run on Win10 22H2 x64, Win11 24H2 x64, Win11 ARM64 — all Tier-1 pass.
 4. Soak: 8 h scripted typing across 5 apps, 0 crashes, memory flat.
-5. Signed artifacts verified with `signtool verify /pa /v`.
+5. Signed artifacts verified: `scripts/validate-msi.ps1 <msi> -RequireSigned` (MSI + every Type3arabi PE inside,
+   timestamped; WiX DLLs keep their own signature).
 6. `NOTICE.md` lists every shipped dependency (cargo-about output) and data attribution (FineWeb-2 ODC-By…).
 7. The release data is built with `--mode release`: no `internal` source (each is cleared to `approved` with written
    permission or an explicit license, or left out). META `license` is `CC-BY-NC-SA-4.0` (or `CC-BY-4.0` if no NC
    source was used); `DATASETS.md` is current (`uv run t3ap datasets-md`; a pipeline test enforces it).
-8. Tag `vX.Y.Z` and publish on GitHub Releases: the versioned MSI, `Type3arabi-x64.msi` (same file), SHA-256 sums,
-   release notes. No other download host (ADR-0010).
-9. Microsoft Store: submit the signed MSI (MSI/EXE submission). The listing says "free and open source (Apache-2.0);
+8. Model asset `model-<data_version>` uploaded and `data/model.lock.toml` current; tag `vX.Y.Z`; the release workflow
+   drafts the GitHub Release (versioned MSI, `Type3arabi-x64.msi` (same file), `SHA256SUMS.txt`, notes from
+   `docs/releases/`); the Owner publishes it. No other download host (ADR-0010).
+9. Microsoft Store: submit the signed MSI (MSI/EXE submission) by its **versioned** release URL (never the version-free
+   copy; the file behind the URL must never change). The Store runs it with `/qn` and does not update existing
+   installs (a new version is a new submission). The listing says "free and open source (Apache-2.0);
    language model CC BY-NC-SA 4.0" and links to the repository, `DATASETS.md` and the privacy statement (offline,
    no data collected).

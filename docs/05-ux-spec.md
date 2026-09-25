@@ -182,7 +182,7 @@ then corpus variants by probability (`docs/03 §10.5`). Max 8.
 ## 7. Settings app (Tauri 2, bilingual; Arabic UI when Windows display language is Arabic)
 | Page | Controls |
 |---|---|
-| General | Arabic⇄Latin toggle key (capture field); Global activation hotkey on/off + capture (shows conflicts); start companion at sign-in |
+| General | Arabic⇄Latin toggle key (capture field); Global activation hotkey on/off + capture (shows conflicts: the companion writes `hotkey-status.txt`, "taken"/"invalid" appear under the field); start companion at sign-in; "Add" row when Type3arabi is not in this account's keyboards (per-machine install enabled it for the installing account only) |
 | Typing | Latin keyboard layout (Auto/list); inline preview Arabic/Latin; article joining; Arabic punctuation; numerals Western/Eastern; predictive completions; candidates per page; Backspace re-edit; on focus loss keep preview/Latin; Latin in URL & e-mail fields |
 | Dialect | Auto (live bars of the detected mix) or fixed: شامي Levantine · مصري Egyptian · خليجي Gulf · عراقي Iraqi · مغربي Maghrebi · فصحى MSA |
 | Diacritics & style | Allah form (4 radios with live preview); adverbial tanween on/off + style; hamza standard/relaxed; harakat from vowels light/full |
