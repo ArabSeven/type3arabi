@@ -19,7 +19,7 @@ Owner approval 2026-09-25 (after testing rc.3): deploy the website, make the rep
 built by `.github/workflows/release.yml` run 36184819210 on a GitHub-hosted runner (signing skipped: ALLOW_UNSIGNED_RELEASE).
 `Type3arabi-1.0.0-x64.msi` = `Type3arabi-x64.msi`, 24,379,392 bytes, SHA-256
 `1c4eaf0343e56348f513ec6a1704b79fbb5333da668e5801b9d123357c49f9cb` (= SHA256SUMS.txt). Downloaded back and checked:
-`scriptsalidate-msi.ps1 … -ModelSha256 <lock>`: all checks pass (META release / CC-BY-NC-SA-4.0, model = lock); unsigned.
+`scripts\validate-msi.ps1 … -ModelSha256 <lock>`: all checks pass (META release / CC-BY-NC-SA-4.0, model = lock); unsigned.
 Code = rc.3 + two last-minute fixes found by CI: `fix(tip)` DllUnregisterServer also calls
 `ITfInputProcessorProfiles::Unregister`, so uninstall never leaves `CTF\TIP\{clsid}` behind (a ghost keyboard; seen once on
 a runner), and `build(ci)` Settings `cargo deny` moved to the Linux job. CI run 36183427263 all 6 jobs green; local
@@ -35,7 +35,7 @@ Before going public, commit author e-mails were rewritten to the GitHub noreply 
 Fixes the Owner's RC2 report (frozen diacritics editor; Ctrl+C accepted as a shortcut): D45–D50.
 Artifact: `target\installer\Type3arabi-1.0.0-rc.3-x64.msi` (+ identical `Type3arabi-x64.msi`), 24,354,816 bytes,
 SHA-256 `3b31c29108bdefb9d318c79385c3227568e9b14ae52e12f096c3dbb6351462a1`. MSI ProductVersion 1.0.0.3. Same model as rc.2 (`data/model.lock.toml`).
-`scriptsalidate-msi.ps1 … -ModelSha256 …`: all checks pass. Gates: fmt; clippy x64 + i686; `cargo test --workspace`
+`scripts\validate-msi.ps1 … -ModelSha256 …`: all checks pass. Gates: fmt; clippy x64 + i686; `cargo test --workspace`
 (engine 68, tip 16, …) all pass; Settings clippy + 6 tests; `cargo deny` both workspaces; `tsf_harness` 22 scenarios ×
 5 rounds on x64 and x86 + 4 parallel processes × 3 rounds on each: 0 failures; bench p99 0.747 ms, commits p99 0.033 ms.
 Not verified by the agent: real-app behavior of D45(3)/(4)/D46 (hosts that drop or keep compositions silently) — Owner.
