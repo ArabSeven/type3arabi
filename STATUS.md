@@ -12,8 +12,8 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 code signing (O2), ARM64 build. The real-app checklist (`docs/09` M1/M4) still needs the Owner's runs.
 
 ## Release candidate 1.0.0-rc.1 (2026-09-25) — built, NOT published
-Artifact: `target\installer\Type3arabi-1.0.0-rc.1-x64.msi` (+ identical `Type3arabi-x64.msi`), 24.0 MB (rebuilt 2026-09-25 with the Tab fix),
-SHA-256 `2741721ec7cd1f86d9b65b382b74cd496b9885df4edff6a341d3907908cbc9ec`. Built with
+Artifact: `target\installer\Type3arabi-1.0.0-rc.1-x64.msi` (+ identical `Type3arabi-x64.msi`), 24.0 MB (rebuilt 2026-09-25: Tab fix, Settings review, desktop shortcut, LICENSE),
+SHA-256 `5ee2e56629c2903f1c9dd84fc79af7c6788ad81613ebfa87f027e46d78d2fd79`. Built with
 `scripts\build-installer.ps1 -Data target\type3arabi-release.dat`; `wix msi validate` clean except the expected
 ICE61 (same-version upgrades allowed on purpose). Draft notes: `docs/releases/v1.0.0-rc.1.md`.
 Release checklist (docs/07 §6):
@@ -344,7 +344,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
   Settings "My words" page; "enable for this user" button for other accounts; hotkey conflict shown in Settings.
 - M7: verify on a fresh account that the MSI yields exactly one ar-SA entry (the enable step was verified on the dev machine only, D14).
 - M7: confirm where Windows 11 Settings surfaces ITfFnConfigure for a third-party keyboard (implemented + harness-checked via GetDisplayName; not yet seen in the Settings UI).
-- M1: Tray (input indicator) menu item "Type3arabi Settings" via ITfLangBarItemButton.
+- M1: Tray (input indicator) menu item "Type3arabi Settings" via ITfLangBarItemButton (GUID_LBI_INPUTMODE) — the only Windows-native way to reach a third-party keyboard's settings (Owner asked 2026-09-25; Windows Settings has no per-keyboard options link). Also: Microsoft's IME guidelines ask for black-and-white glyph icons in the input indicator; ours is the color brand mark.
 - M1: Spike S2 for real (Latin base layout in password fields); re-run S1/S3/S4/S5 (all flagged UNVERIFIED).
 - M1: `ITfTextEditSink` (finalize when the caret is moved by mouse) and `ITfTextLayoutSink` (popup follows scrolling).
 - M1: Input-scope gating beyond the keyboard-disabled compartment (IS_EMAIL/IS_URL ⇒ Latin, IS_PRIVATE ⇒ no learning).
@@ -358,6 +358,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - M2: `data/eval/bench_keystrokes.tsv` (10k words from golden/FineWeb) replaces smoke as the default bench set.
 
 ## Session log
+- 2026-09-25 (evening) — Agent (Claude): Owner review of Settings: status fades after 5 s with the path once; export/import history (transfers.jsonl: counts, names, times only); "Keyboard shortcuts"; bidi-isolated English lines + RLM for Arabic lines in plain-text dialogs (periods no longer jump); About: copyright, Buy me a coffee, Linktree (links via a 4-URL allow-list, default browser). Installer: Options page, desktop shortcut on by default (ICE38/43/57 suppressed: per-machine false positives). Windows Settings cannot link to a third-party keyboard's options; the native route is an input-indicator (tray) menu item — not built (backlog M1). LICENSE: project header (code Apache-2.0 vs model CC BY-NC-SA 4.0, DATASETS.md, brand), appendix filled; README rewritten (no Store mention; unsigned-installer notice). RC MSI rebuilt.
 - 2026-09-25 (later) — Agent (Claude): Owner report on the website's tashkeel editor. Fixed on the site: an invisible input covered the popup (every click fell through), Tab did nothing in the editor, chips slid under «مسح الكل», letters/digits failed under a non-English Windows layout (fallback to the physical key + an IME hint), Space/Shift+Space/punctuation in the editor now follow the app. Verified with real mouse/keyboard events (headless Edge + CDP). App: the open-editor key now closes the editor (was: next vowelling); harness x64 + x86 green; RC MSI rebuilt.
 - 2026-09-25 — Agent (Claude): NileChat self-training built and evaluated honestly (spike S6: not shipped). Brand pass across the app (popup palette, Settings restyle with logo/fonts, icons, DLL/EXE VERSIONINFO, installer art). Release candidate 1.0.0-rc.1 built with the release-mode model, validated, license report included, draft notes in docs/releases. Website: "About" removed, header GitHub/Datasets + Control links, sticky glass header (fixed: body overflow broke sticky), all external links open in a new tab, `beshakel 3am` example, popup replica synced to the brand tokens. Next (Owner): install/uninstall/upgrade test of the RC MSI; decide signing (O2); approve publishing.
 - 2026-09-24 (night) — Agent (Claude): Owner review of the website. App: learning export/import (Settings, `.t3learn`, D22); popup follows Windows dark/light (D23); seed fix for initial o (D24); release-mode model measured (D25: Talafha clearance matters); engine as WebAssembly + compact web model (D26). Website: dark by default with light toggle, cinematic chapter list in the hero (7 chapters incl. Windows language + custom shortcut, pronounced diacritics), ~1.35x faster, real typing in "Try it" (in-browser engine), one dialect section (+ shloonak aghati → شلونك أغاتي), learning-transfer feature card.
