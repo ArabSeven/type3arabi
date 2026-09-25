@@ -15,10 +15,20 @@ repository, public unsigned release, SignPath inquiry, signing workflow, Microso
 
 ## Release 1.0.0 (2026-09-25) — public, unsigned
 Owner approval 2026-09-25 (after testing rc.3): deploy the website, make the repository public, publish on GitHub Releases.
-1.0.0 = rc.3 code with the version set to 1.0.0 (the website's "latest" link skips pre-releases). Local build
-`target\installer\Type3arabi-1.0.0-x64.msi`, 24,350,720 bytes, SHA-256 `9b3c37488a2757409f1360ed04c02f3817ce06ffd09b19fedf9072dc06223469`,
-validate-msi all checks pass; `cargo test --workspace`, fmt, pipeline tests green. The published MSI is built by
-`.github/workflows/release.yml` on a GitHub-hosted runner (its SHA-256 is in the release's SHA256SUMS.txt).
+**Published:** https://github.com/ArabSeven/type3arabi/releases/tag/v1.0.0 (latest, not a pre-release), tag `v1.0.0` on `2c86a7f`,
+built by `.github/workflows/release.yml` run 36184819210 on a GitHub-hosted runner (signing skipped: ALLOW_UNSIGNED_RELEASE).
+`Type3arabi-1.0.0-x64.msi` = `Type3arabi-x64.msi`, 24,379,392 bytes, SHA-256
+`1c4eaf0343e56348f513ec6a1704b79fbb5333da668e5801b9d123357c49f9cb` (= SHA256SUMS.txt). Downloaded back and checked:
+`scriptsalidate-msi.ps1 … -ModelSha256 <lock>`: all checks pass (META release / CC-BY-NC-SA-4.0, model = lock); unsigned.
+Code = rc.3 + two last-minute fixes found by CI: `fix(tip)` DllUnregisterServer also calls
+`ITfInputProcessorProfiles::Unregister`, so uninstall never leaves `CTF\TIP\{clsid}` behind (a ghost keyboard; seen once on
+a runner), and `build(ci)` Settings `cargo deny` moved to the Linux job. CI run 36183427263 all 6 jobs green; local
+`cargo test --workspace` + `tsf_harness` x64 and x86: 0 failures. **Not verified by the agent:** uninstall of 1.0.0 on a real
+PC after the unregister fix (needs UAC) — Owner. The earlier local build (`9b3c3748…3469`) predates the fix and is superseded.
+Website: deployed to the Worker "type3arabi" (version f54072d4-e975-4668-88d2-627f12925620); every page, asset and outbound
+link returns 200 (incl. `releases/latest/download/Type3arabi-x64.msi`), CSP/nosniff/referrer headers served, mobile 375 px:
+no horizontal overflow, 3D canvas and fonts load. Finding: Cloudflare Web Analytics auto-injection is on for the zone
+(beacon script added for browser user agents; our CSP blocks it, so nothing is collected) — Owner to disable it (O-question).
 Before going public, commit author e-mails were rewritten to the GitHub noreply address (Owner, 2026-09-25).
 
 ## Release candidate 1.0.0-rc.3 (2026-09-25) — superseded by 1.0.0
@@ -354,11 +364,14 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O7 | Default global activation hotkey (Ctrl+Alt+A) and in-IME toggle (Ctrl+Space) OK? | as stated |
 | O8 | Native-speaker review of `data/eval/smoke.tsv` and `data/seed/phrases.tsv` | pending (M2 task) |
 | O9 | Answers from the two provisional sources (Talafha et al.: email 2026-09-24; Khanafer: HF discussion #2, 2026-09-25) | Used under ADR-0011; on a decline: `blocked`, rebuild with `--exclude-provisional`, new release |
-| O16 | Make the repository public (the website's GitHub/Datasets/download links return 404 until then) and upload the model asset `model-2026092502/type3arabi.dat` | After the manual RC test (O15) |
+| O16 | Make the repository public (the website's GitHub/Datasets/download links return 404 until then) and upload the model asset `model-2026092502/type3arabi.dat` | **Done 2026-09-25**: repo public, model asset uploaded, v1.0.0 published |
 | O17 | SignPath inquiry: ask whether the CC BY-NC-SA model (incl. provisional sources) inside the MSI is acceptable under "OSI license for all components" | Not contacted (O15) |
 | O18 | Contact channel: the site lists GitHub issues + Linktree; add a public email address? | No email published |
+| O19 | Cloudflare Web Analytics auto-injects its beacon into type3arabi.com (found 2026-09-25 after deploy). Disable it: dashboard → Analytics & Logs → Web Analytics → type3arabi.com → disable (or turn off automatic setup) | Left on; our CSP blocks the script, so nothing is collected (R10 holds) |
 
 ## Agent decisions (one line each: what, why)
+- D53: CI `settings` job ran the container action cargo-deny-action on Windows (unsupported); Settings `cargo deny` moved to the Linux `portable` job.
+- D52: DllUnregisterServer also calls `ITfInputProcessorProfiles::Unregister(clsid)` (TSF API, R6): the x64 CI smoke once found `CTF\TIP\{clsid}` left after `regsvr32 /u`, which on a user PC would be a ghost keyboard after uninstall. Regression check: ci.yml regsvr32 smoke.
 - D51: Owner confirmed on rc.3 (2026-09-25): the keyboard steps aside by itself in the browser's address bar (Latin) and in password fields (D34 input scopes verified in a real app); Settings shortcut refusal confirmed; the Owner could not break the editor any more. Website: new hero chapter 02 "Steps aside by itself" (a browser: address bar, e-mail, password typed Latin with no switch, then Arabic again) and feature card #2; README feature row 2. Website deploy pending the Owner's review.
 - D45: Owner report 2026-09-25 (RC2): the diacritics editor stopped answering keys, clicks and shortcuts once. No panic was logged, so the cause is a state bug, not safe passthrough. Fixed every path found that can produce it: (1) letters that are not editor commands were silently swallowed (`TashkeelCmd::Ignore`) — they now insert the word and start a new one (`CommitThenType`); (2) a sync edit session that ran and failed was re-queued as an empty async session that never counted down, leaving every later edit queued — sessions are counted by a token released on run *or* discard, and never re-queued once run; (3) `Preview` returned before refreshing the popup when `SetText` failed on a composition the app had invalidated — it now restarts the composition and always refreshes; `Commit` inserts at the caret when the composition is gone; (4) keys arriving from another context than the composition's finalize it first; (5) OnCompositionTerminated while state was busy is no longer lost; (6) safe passthrough now hides the popup and ends the composition (R2); (7) popup mouse capture only while dragging letters, released on hide; (8) stale eaten key-ups cleared on focus changes. Recoveries write rate-limited, text-free lines to errors.log. Regressions: `keyrouter::editor_never_swallows_typing`, harness scenarios HOST_CLEAR / FOCUS_AWAY / `shukran\tb`.
 - D46: `ITfTextEditSink` (backlog M1): a caret moved out of the word finalizes it (RichEdit ends compositions on clicks itself, so the harness cannot show the difference; other hosts need the Owner's check).
