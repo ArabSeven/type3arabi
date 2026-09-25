@@ -1,16 +1,36 @@
-//! Persistent, multi-process user store with journal, snapshot, and tailing (docs/03 §9.4).
+//! Persistent, multi-process user store with journal, snapshot, tailing and compaction (docs/03 §9.4).
+//!
+//! Every process that loads the keyboard has its own `UserStore` over the same two files in
+//! `%LOCALAPPDATA%\Type3arabi\user\`: the append-only `journal.t3j` (one 128-byte record per commit,
+//! appended by each process's writer thread) and `snapshot.t3u` (the compacted model, see
+//! `user::MemoryUser::encode_snapshot`). When the journal passes `COMPACT_AT_BYTES`, the writer that
+//! notices merges both into a new snapshot and truncates the journal to what was appended meanwhile.
+//! Compaction and appends are serialized by a lock *file* (`compact.lock`), which keeps this crate free
+//! of platform APIs (R12); a stale lock (crashed process) expires after `LOCK_STALE`.
 
 use crate::journal::{JournalRecord, KIND_CHOOSE, KIND_NEGATIVE, KIND_WIPE, RECORD_SIZE};
-use crate::user::{MemoryUser, UserScorer};
+use crate::user::{MemoryUser, SnapshotMark, UserScorer};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const SNAPSHOT_MAGIC: u32 = 0x54335501; // 'T3U' ver 1
+const JOURNAL: &str = "journal.t3j";
+const SNAPSHOT: &str = "snapshot.t3u";
+const LOCK: &str = "compact.lock";
+/// docs/03 §9.4: compact once the journal exceeds 256 KB (≈ 2,000 commits).
+pub const COMPACT_AT_BYTES: u64 = 256 * 1024;
+/// docs/03 §9.4: at most 50,000 keys survive a compaction (LRU by last use).
+pub const MAX_KEYS: usize = 50_000;
+/// A lock file older than this belongs to a process that died while compacting.
+const LOCK_STALE: Duration = Duration::from_secs(30);
+/// How long a writer waits for a running compaction before appending anyway.
+const LOCK_WAIT: Duration = Duration::from_secs(2);
+/// Repeats per learned choice when a compacted model is exported (`MemoryUser::to_records`).
+const EXPORT_MAX_REPEAT: u32 = 16;
 
 /// Persistent user store managing learning, journal append, and cross-process tailing.
 pub struct UserStore {
@@ -18,7 +38,13 @@ pub struct UserStore {
     read_only: bool,
     model: Arc<RwLock<MemoryUser>>,
     tx: Option<Sender<JournalRecord>>,
+    /// Journal bytes already applied to `model`.
     last_journal_offset: Arc<AtomicU64>,
+    /// Offsets of records this process appended (already applied in memory when committed), skipped
+    /// when tailing so that other processes' records around them are neither missed nor doubled.
+    own: Arc<Mutex<Vec<u64>>>,
+    /// (length, mtime) of the snapshot last loaded: a change means another process compacted.
+    snapshot_stamp: Mutex<Option<(u64, SystemTime)>>,
 }
 
 fn current_timestamp() -> u32 {
@@ -28,6 +54,144 @@ fn current_timestamp() -> u32 {
         .unwrap_or(0)
 }
 
+fn snapshot_stamp(dir: &Path) -> Option<(u64, SystemTime)> {
+    let m = std::fs::metadata(dir.join(SNAPSHOT)).ok()?;
+    Some((m.len(), m.modified().ok()?))
+}
+
+/// Apply whole records from `bytes` (a torn trailing record is ignored, bad CRCs skipped).
+fn replay_bytes(bytes: &[u8], user: &mut MemoryUser) {
+    for chunk in bytes.chunks_exact(RECORD_SIZE) {
+        let mut buf = [0u8; RECORD_SIZE];
+        buf.copy_from_slice(chunk);
+        if let Some(rec) = JournalRecord::from_bytes(&buf) {
+            apply(&rec, user);
+        }
+    }
+}
+
+fn apply(rec: &JournalRecord, user: &mut MemoryUser) {
+    match rec.kind {
+        KIND_CHOOSE => {
+            if let (Some(l), Some(a)) = (rec.latin_str(), rec.arabic_str()) {
+                user.record(l, a, 0, false, None);
+            }
+        }
+        KIND_NEGATIVE => {
+            if let (Some(l), Some(a)) = (rec.latin_str(), rec.arabic_str()) {
+                user.record_negative(l, a);
+            }
+        }
+        KIND_WIPE => *user = MemoryUser::new(),
+        _ => {}
+    }
+}
+
+/// The model from the snapshot plus the journal records it does not contain yet, and the journal
+/// offset reached (docs/03 §9.4; the replay rule is explained at `user::SnapshotMark`).
+fn load_all(dir: &Path) -> (MemoryUser, u64) {
+    let journal = std::fs::read(dir.join(JOURNAL)).unwrap_or_default();
+    let aligned = journal.len() / RECORD_SIZE * RECORD_SIZE;
+    let (mut user, start) = match std::fs::read(dir.join(SNAPSHOT))
+        .ok()
+        .and_then(|b| MemoryUser::decode_snapshot(&b))
+    {
+        Some((u, mark)) => {
+            let still_there = mark.consumed as usize <= aligned
+                && SnapshotMark::prefix_of(&journal, mark.consumed) == mark.prefix_hash;
+            (
+                u,
+                if still_there {
+                    mark.consumed as usize
+                } else {
+                    0
+                },
+            )
+        }
+        None => (MemoryUser::new(), 0),
+    };
+    replay_bytes(&journal[start..aligned], &mut user);
+    (user, aligned as u64)
+}
+
+/// The compaction lock (a file created exclusively; removed on drop).
+struct LockFile(PathBuf);
+
+impl LockFile {
+    fn acquire(dir: &Path) -> Option<LockFile> {
+        let path = dir.join(LOCK);
+        for _ in 0..2 {
+            match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(_) => return Some(LockFile(path)),
+                Err(_) if lock_is_stale(&path) => {
+                    let _ = std::fs::remove_file(&path);
+                }
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+}
+
+impl Drop for LockFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn lock_is_stale(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age > LOCK_STALE)
+}
+
+/// Writers pause while another process compacts (it holds the lock for milliseconds).
+fn wait_for_compaction(dir: &Path) {
+    let path = dir.join(LOCK);
+    let start = std::time::Instant::now();
+    while path.exists() && !lock_is_stale(&path) && start.elapsed() < LOCK_WAIT {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Write `bytes` to `name` atomically (temp file in the same folder, then rename over it).
+fn replace_file(dir: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = dir.join(format!("{name}.tmp"));
+    {
+        let mut f = File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, dir.join(name))
+}
+
+/// Merge snapshot + journal into a new snapshot and truncate the journal (docs/03 §9.4). Returns
+/// false when another process holds the lock. Crash-safe: the snapshot is replaced first and records
+/// where the old journal ended; readers then replay correctly whether or not the journal has been
+/// truncated yet.
+pub fn compact(dir: &Path) -> std::io::Result<bool> {
+    let Some(_lock) = LockFile::acquire(dir) else {
+        return Ok(false);
+    };
+    let journal = std::fs::read(dir.join(JOURNAL)).unwrap_or_default();
+    let aligned = journal.len() / RECORD_SIZE * RECORD_SIZE;
+    let (mut user, _) = load_all(dir);
+    user.evict(MAX_KEYS);
+    let mark = SnapshotMark {
+        consumed: aligned as u64,
+        prefix_hash: SnapshotMark::prefix_of(&journal, aligned as u64),
+    };
+    replace_file(dir, SNAPSHOT, &user.encode_snapshot(mark))?;
+    // Records appended after our read (writers that passed `wait_for_compaction` just before the lock).
+    let now = std::fs::read(dir.join(JOURNAL)).unwrap_or_default();
+    let tail_end = now.len() / RECORD_SIZE * RECORD_SIZE;
+    let tail = now.get(aligned..tail_end).unwrap_or(&[]);
+    replace_file(dir, JOURNAL, tail)?;
+    Ok(true)
+}
+
 impl UserStore {
     /// Open user store at `dir`. If `read_only` is true (e.g. AppContainer or private mode),
     /// no writes or writer thread are initiated.
@@ -35,55 +199,44 @@ impl UserStore {
         if !read_only {
             let _ = std::fs::create_dir_all(dir);
         }
-
-        let mut user = MemoryUser::new();
-        let snapshot_path = dir.join("snapshot.t3u");
-        let journal_path = dir.join("journal.t3j");
-
-        // 1. Load snapshot if present
-        if snapshot_path.exists() {
-            if let Ok(snap_bytes) = std::fs::read(&snapshot_path) {
-                let _ = load_snapshot(&snap_bytes, &mut user);
-            }
-        }
-
-        // 2. Replay journal if present
-        let mut last_offset = 0u64;
-        if journal_path.exists() {
-            if let Ok(mut f) = File::open(&journal_path) {
-                last_offset = replay_journal(&mut f, 0, &mut user)?;
-            }
-        }
-
+        let stamp = snapshot_stamp(dir);
+        let (user, last_offset) = load_all(dir);
         let model = Arc::new(RwLock::new(user));
         let last_journal_offset = Arc::new(AtomicU64::new(last_offset));
+        let own: Arc<Mutex<Vec<u64>>> = Arc::new(Mutex::new(Vec::new()));
 
-        // 3. Spawn background writer thread if writable
+        // Background writer thread if writable (R4: the store itself is opened lazily).
         let tx = if !read_only {
             let (sender, receiver) = channel::<JournalRecord>();
-            let j_path = journal_path.clone();
-            let offset_clone = Arc::clone(&last_journal_offset);
-
+            let dir2 = dir.to_path_buf();
+            let own2 = Arc::clone(&own);
             std::thread::Builder::new()
                 .name("t3a-user-writer".into())
                 .spawn(move || {
+                    let j_path = dir2.join(JOURNAL);
                     while let Ok(rec) = receiver.recv() {
-                        let bytes = rec.to_bytes();
-                        if let Ok(mut f) =
-                            OpenOptions::new().create(true).append(true).open(&j_path)
-                        {
-                            if f.write_all(&bytes).is_ok() {
-                                let _ = f.flush();
-                                // Compaction stays off until the snapshot format stores the
-                                // model: the placeholder snapshot erased all learning
-                                // (STATUS.md backlog). The journal grows 128 B per commit.
-                                offset_clone.fetch_add(RECORD_SIZE as u64, Ordering::SeqCst);
+                        wait_for_compaction(&dir2);
+                        let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&j_path)
+                        else {
+                            continue;
+                        };
+                        if f.write_all(&rec.to_bytes()).is_err() {
+                            continue;
+                        }
+                        let _ = f.flush();
+                        // An append lands at the end of the file: our handle's position is its end.
+                        if let Ok(end) = f.stream_position() {
+                            if let Ok(mut o) = own2.lock() {
+                                o.push(end.saturating_sub(RECORD_SIZE as u64));
+                            }
+                            if end > COMPACT_AT_BYTES {
+                                drop(f);
+                                let _ = compact(&dir2);
                             }
                         }
                     }
                 })
                 .ok();
-
             Some(sender)
         } else {
             None
@@ -95,6 +248,8 @@ impl UserStore {
             model,
             tx,
             last_journal_offset,
+            own,
+            snapshot_stamp: Mutex::new(stamp),
         })
     }
 
@@ -106,39 +261,61 @@ impl UserStore {
         &self.dir
     }
 
-    /// Tail the journal to pick up commits from other processes (docs/03 §9.4).
+    /// Tail the journal to pick up commits from other processes (docs/03 §9.4). A new snapshot (someone
+    /// compacted) or a shorter journal means a full reload.
     pub fn sync(&self) {
-        let journal_path = self.dir.join("journal.t3j");
-        let Ok(meta) = std::fs::metadata(&journal_path) else {
-            return;
-        };
-
-        let current_len = meta.len();
+        let journal_path = self.dir.join(JOURNAL);
+        let current_len = std::fs::metadata(&journal_path).map_or(0, |m| m.len());
         let prev_offset = self.last_journal_offset.load(Ordering::Acquire);
+        let stamp = snapshot_stamp(&self.dir);
+        let snapshot_changed = self.snapshot_stamp.lock().is_ok_and(|s| *s != stamp);
 
-        if current_len > prev_offset {
-            // New records appended: read incrementally
-            if let Ok(mut f) = File::open(&journal_path) {
-                if let Ok(mut user) = self.model.write() {
-                    if let Ok(new_off) = replay_journal(&mut f, prev_offset, &mut user) {
-                        self.last_journal_offset.store(new_off, Ordering::Release);
-                    }
-                }
+        if snapshot_changed || current_len < prev_offset {
+            let (user, offset) = load_all(&self.dir);
+            if let Ok(mut m) = self.model.write() {
+                *m = user;
             }
-        } else if current_len < prev_offset {
-            // Journal shrunk (compaction occurred elsewhere): reload snapshot + journal
+            self.last_journal_offset.store(offset, Ordering::Release);
+            if let Ok(mut s) = self.snapshot_stamp.lock() {
+                *s = stamp;
+            }
+            if let Ok(mut o) = self.own.lock() {
+                // Our records up to `offset` are in the reloaded model now.
+                o.retain(|&p| p >= offset);
+            }
+            return;
+        }
+        if current_len >= prev_offset + RECORD_SIZE as u64 {
+            let Ok(mut f) = File::open(&journal_path) else {
+                return;
+            };
+            if f.seek(SeekFrom::Start(prev_offset)).is_err() {
+                return;
+            }
+            let mut buf = Vec::new();
+            if f.read_to_end(&mut buf).is_err() {
+                return;
+            }
+            let whole = buf.len() / RECORD_SIZE * RECORD_SIZE;
+            let mut own = self.own.lock().ok();
             if let Ok(mut user) = self.model.write() {
-                *user = MemoryUser::new();
-                let snapshot_path = self.dir.join("snapshot.t3u");
-                if let Ok(snap_bytes) = std::fs::read(&snapshot_path) {
-                    let _ = load_snapshot(&snap_bytes, &mut user);
-                }
-                if let Ok(mut f) = File::open(&journal_path) {
-                    if let Ok(new_off) = replay_journal(&mut f, 0, &mut user) {
-                        self.last_journal_offset.store(new_off, Ordering::Release);
+                for (i, chunk) in buf[..whole].chunks_exact(RECORD_SIZE).enumerate() {
+                    let at = prev_offset + (i * RECORD_SIZE) as u64;
+                    if let Some(o) = own.as_mut() {
+                        if let Some(pos) = o.iter().position(|&p| p == at) {
+                            o.swap_remove(pos);
+                            continue; // applied when it was committed here
+                        }
+                    }
+                    let mut rec = [0u8; RECORD_SIZE];
+                    rec.copy_from_slice(chunk);
+                    if let Some(rec) = JournalRecord::from_bytes(&rec) {
+                        apply(&rec, &mut user);
                     }
                 }
             }
+            self.last_journal_offset
+                .store(prev_offset + whole as u64, Ordering::Release);
         }
     }
 
@@ -168,14 +345,21 @@ impl UserStore {
     }
 
     /// Export what was learned (everything since the last wipe), plus optional settings, as a
-    /// `.t3learn` file (docs/03 §9.5).
+    /// `.t3learn` file (docs/03 §9.5). Before the first compaction this is the journal's own history;
+    /// afterwards the compacted model is written out as records (`MemoryUser::to_records`).
     pub fn export(&self, settings: Option<&str>) -> std::io::Result<Vec<u8>> {
-        let journal = match std::fs::read(self.dir.join("journal.t3j")) {
+        let journal = match std::fs::read(self.dir.join(JOURNAL)) {
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(e),
         };
-        let records = crate::learning_file::effective_records(&journal);
+        let records = if self.dir.join(SNAPSHOT).exists() {
+            load_all(&self.dir)
+                .0
+                .to_records(current_timestamp(), EXPORT_MAX_REPEAT)
+        } else {
+            crate::learning_file::effective_records(&journal)
+        };
         Ok(crate::learning_file::encode(&records, settings))
     }
 
@@ -238,49 +422,6 @@ impl UserScorer for UserStore {
     fn sticky(&self, key: &str) -> Option<String> {
         self.model.read().ok().and_then(|m| m.sticky(key))
     }
-}
-
-/// Replay journal from `start_offset` and return new offset.
-fn replay_journal(f: &mut File, start_offset: u64, user: &mut MemoryUser) -> std::io::Result<u64> {
-    f.seek(SeekFrom::Start(start_offset))?;
-    let mut buf = [0u8; RECORD_SIZE];
-    let mut current_offset = start_offset;
-
-    while f.read_exact(&mut buf).is_ok() {
-        if let Some(rec) = JournalRecord::from_bytes(&buf) {
-            match rec.kind {
-                KIND_CHOOSE => {
-                    if let (Some(l), Some(a)) = (rec.latin_str(), rec.arabic_str()) {
-                        user.record(l, a, 0, false, None);
-                    }
-                }
-                KIND_NEGATIVE => {
-                    if let (Some(l), Some(a)) = (rec.latin_str(), rec.arabic_str()) {
-                        user.record_negative(l, a);
-                    }
-                }
-                KIND_WIPE => {
-                    *user = MemoryUser::new();
-                }
-                _ => {}
-            }
-        }
-        current_offset += RECORD_SIZE as u64;
-    }
-
-    Ok(current_offset)
-}
-
-fn load_snapshot(_bytes: &[u8], _user: &mut MemoryUser) -> Result<(), ()> {
-    // Snapshot decoder: magic validation
-    if _bytes.len() < 8 {
-        return Err(());
-    }
-    let magic = u32::from_le_bytes([_bytes[0], _bytes[1], _bytes[2], _bytes[3]]);
-    if magic != SNAPSHOT_MAGIC {
-        return Err(());
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -360,5 +501,116 @@ mod tests {
         assert!(reopened.usr("hello", "هله") < 0.0); // negative evidence kept
         assert_eq!(reopened.usr("hello", ""), 0.0); // no empty word learned
         let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    fn fresh(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("t3a_test_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn wait_for_writer() {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+
+    /// docs/03 §9.4: past 256 KB the journal is merged into the snapshot and truncated; nothing learned
+    /// is lost, and a fresh reader (another app starting) sees the same choices.
+    #[test]
+    fn compaction_keeps_learning_and_bounds_the_journal() {
+        let dir = fresh("compact");
+        let store = UserStore::open(&dir, false).unwrap();
+        let n = (COMPACT_AT_BYTES as usize / RECORD_SIZE) + 50;
+        for i in 0..n {
+            store.record(&format!("w{}", i % 300), "كلمة", 0, false, None); // U+0643 U+0644 U+0645 U+0629
+        }
+        store.record("7abibi", "حبيبي", 0, false, None); // U+062D U+0628 U+064A U+0628 U+064A
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let journal = std::fs::metadata(dir.join(JOURNAL)).unwrap().len();
+        assert!(
+            journal < COMPACT_AT_BYTES,
+            "journal was not compacted: {journal} bytes"
+        );
+        assert!(dir.join(SNAPSHOT).exists());
+        let reader = UserStore::open(&dir, true).unwrap();
+        assert_eq!(reader.sticky("7abibi").as_deref(), Some("حبيبي"));
+        assert_eq!(reader.sticky("w299").as_deref(), Some("كلمة"));
+        // Counts survive, not just presence.
+        assert_eq!(reader.usr("w7", "كلمة"), store.usr("w7", "كلمة"));
+        // An export after compaction still carries the learning.
+        let parsed = crate::learning_file::decode(&store.export(None).unwrap()).unwrap();
+        assert!(parsed
+            .records
+            .iter()
+            .any(|r| r.latin_str() == Some("7abibi")));
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A compaction interrupted between writing the snapshot and truncating the journal (or a reader
+    /// in between) must neither lose nor double-count records.
+    #[test]
+    fn interrupted_compaction_neither_loses_nor_doubles() {
+        let dir = fresh("interrupted");
+        let rec = |k: &str| {
+            JournalRecord::new(KIND_CHOOSE, 1, k, "كلمة")
+                .unwrap()
+                .to_bytes()
+        };
+        let mut journal = Vec::new();
+        for k in ["a", "b", "a"] {
+            journal.extend_from_slice(&rec(k));
+        }
+        std::fs::write(dir.join(JOURNAL), &journal).unwrap();
+        let (merged, _) = load_all(&dir);
+        let mark = SnapshotMark {
+            consumed: journal.len() as u64,
+            prefix_hash: SnapshotMark::prefix_of(&journal, journal.len() as u64),
+        };
+        std::fs::write(dir.join(SNAPSHOT), merged.encode_snapshot(mark)).unwrap();
+        // One more commit arrived; the journal is not truncated yet.
+        journal.extend_from_slice(&rec("c"));
+        std::fs::write(dir.join(JOURNAL), &journal).unwrap();
+        let (before, _) = load_all(&dir);
+        // Now truncated to the tail.
+        std::fs::write(dir.join(JOURNAL), rec("c")).unwrap();
+        let (after, _) = load_all(&dir);
+        let mut expected = MemoryUser::new();
+        for k in ["a", "b", "a", "c"] {
+            expected.record(k, "كلمة", 0, false, None);
+        }
+        for u in [&before, &after] {
+            for k in ["a", "b", "c"] {
+                assert_eq!(u.usr(k, "كلمة"), expected.usr(k, "كلمة"), "{k}");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Two apps learning at the same time: each sees the other's commits exactly once, whatever the
+    /// interleaving of their appends (a store used to assume its own record sat at its read offset).
+    #[test]
+    fn two_processes_see_each_others_commits_once() {
+        let dir = fresh("two");
+        let a = UserStore::open(&dir, false).unwrap();
+        let b = UserStore::open(&dir, false).unwrap();
+        b.record("ahlan", "أهلا", 0, false, None); // U+0623 U+0647 U+0644 U+0627
+        wait_for_writer();
+        a.record("shukran", "شكرا", 0, false, None); // U+0634 U+0643 U+0631 U+0627
+        wait_for_writer();
+        a.sync();
+        b.sync();
+        let single = {
+            let mut u = MemoryUser::new();
+            u.record("ahlan", "أهلا", 0, false, None);
+            u.record("shukran", "شكرا", 0, false, None);
+            u
+        };
+        for s in [&a, &b] {
+            assert_eq!(s.usr("ahlan", "أهلا"), single.usr("ahlan", "أهلا"));
+            assert_eq!(s.usr("shukran", "شكرا"), single.usr("shukran", "شكرا"));
+        }
+        drop((a, b));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
