@@ -20,10 +20,10 @@ use windows::Win32::System::Registry::{
 use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
 use windows::Win32::UI::TextServices::{
     CLSID_TF_CategoryMgr, CLSID_TF_InputProcessorProfiles, ITfCategoryMgr,
-    ITfInputProcessorProfileMgr, GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER, GUID_TFCAT_TIPCAP_COMLESS,
-    GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT, GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT,
-    GUID_TFCAT_TIPCAP_SECUREMODE, GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
-    GUID_TFCAT_TIPCAP_UIELEMENTENABLED, GUID_TFCAT_TIP_KEYBOARD,
+    ITfInputProcessorProfileMgr, ITfInputProcessorProfiles, GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
+    GUID_TFCAT_TIPCAP_COMLESS, GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT,
+    GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT, GUID_TFCAT_TIPCAP_SECUREMODE,
+    GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT, GUID_TFCAT_TIPCAP_UIELEMENTENABLED, GUID_TFCAT_TIP_KEYBOARD,
 };
 
 static OBJECT_COUNT: AtomicI32 = AtomicI32::new(0);
@@ -261,6 +261,15 @@ pub unsafe extern "system" fn DllUnregisterServer() -> HRESULT {
                     0,
                 );
             }
+        }
+        // Then drop the whole TIP (HKLM\...\CTF\TIP\{clsid}): removing the last profile does not always
+        // delete the key, and a leftover key shows up as a ghost keyboard after uninstall.
+        if let Ok(profiles) = CoCreateInstance::<_, ITfInputProcessorProfiles>(
+            &CLSID_TF_InputProcessorProfiles,
+            None,
+            CLSCTX_INPROC_SERVER,
+        ) {
+            let _ = profiles.Unregister(&CLSID_TYPE3ARABI_TIP);
         }
 
         let clsid_key = wide_z(&format!(
