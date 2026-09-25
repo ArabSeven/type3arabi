@@ -13,7 +13,7 @@ code signing (O2), ARM64 build. The real-app checklist (`docs/09` M1/M4) still n
 
 ## Release candidate 1.0.0-rc.1 (2026-09-25) — built, NOT published
 Artifact: `target\installer\Type3arabi-1.0.0-rc.1-x64.msi` (+ identical `Type3arabi-x64.msi`), 24.0 MB (rebuilt 2026-09-25: Tab fix, Settings review, desktop shortcut, LICENSE),
-SHA-256 `5ee2e56629c2903f1c9dd84fc79af7c6788ad81613ebfa87f027e46d78d2fd79`. Built with
+SHA-256 `3cbe53634b9a6993bd2250682a670d90d5b4fa6f4c5c630a65f8d863b971e75d`. Built with
 `scripts\build-installer.ps1 -Data target\type3arabi-release.dat`; `wix msi validate` clean except the expected
 ICE61 (same-version upgrades allowed on purpose). Draft notes: `docs/releases/v1.0.0-rc.1.md`.
 Release checklist (docs/07 §6):

@@ -53,6 +53,7 @@ try {
     Copy-Item (Join-Path $RepoRoot "NOTICE.md") $Payload
     Copy-Item (Join-Path $RepoRoot "DATASETS.md") $Payload
     Copy-Item (Join-Path $RepoRoot "LICENSE") $Payload
+    Copy-Item (Join-Path $RepoRoot "COPYRIGHT.md") $Payload
     Copy-Item (Join-Path $RepoRoot "installer\License.rtf") $Payload
     Copy-Item (Join-Path $RepoRoot "apps\settings\icons\icon.ico") $Payload
     # Third-party license notices of every compiled crate (docs/07 §6.6): cargo about, both workspaces.

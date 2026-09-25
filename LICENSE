@@ -1,36 +1,3 @@
-Type3arabi (اكتب عربي)
-Copyright 2026 Hassan Obaida
-
-This project contains two separately licensed works. Read this section first.
-
-  1. THE SOFTWARE -- Apache License, Version 2.0
-     Everything in this repository and in the Type3arabi installers that is not the language model:
-     the keyboard (TSF text input processor), the prediction engine, the Settings app, the hotkey
-     companion, the installer, the data-pipeline tools, the website sources and the documentation.
-     Licensed under the Apache License, Version 2.0 (the full text follows this section).
-     Copyright 2026 Hassan Obaida.
-
-  2. THE LANGUAGE MODEL -- Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
-     The trained data file `type3arabi.dat`, which ships inside the installers and releases (it is not
-     stored in this repository), and any file derived from it.
-     Licensed under CC BY-NC-SA 4.0: https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
-     Copyright 2026 Hassan Obaida, for the compilation and training. The model is built from third-party
-     datasets whose rights stay with their authors; each one is listed, with its license, its authors and
-     how to cite it, in DATASETS.md. Attributions are also collected in NOTICE.md. Some of those datasets
-     allow non-commercial use only, which is why the model carries a NonCommercial license.
-
-  The Apache License does not apply to the language model, and CC BY-NC-SA 4.0 does not apply to the
-  software. Anyone can rebuild a model from the sources in DATASETS.md with the tools in this repository.
-
-  Name and logo: "Type3arabi", «اكتب عربي» and the t3 logo identify this project. Neither license grants
-  permission to use them (see section 6 of the Apache License); please give forks their own name and logo.
-
-  Third-party software compiled into the binaries is listed with its licenses in THIRD-PARTY-LICENSES.html
-  (installed with the app). Fonts bundled with the Settings app: Kufam and Manrope, SIL Open Font License 1.1.
-
---------------------------------------------------------------------------------------------------------------
-
-
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/

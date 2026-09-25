@@ -203,6 +203,7 @@ publishers and `t3a-cli build-data` compiles them ([`docs/04-data-pipeline.md`](
 | **Software** — keyboard, engine, Settings, installer, tools | [Apache License 2.0](LICENSE) | © 2026 Hassan Obaida |
 | **Language model** — `type3arabi.dat`, shipped in the releases | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) | Built from the datasets in [`DATASETS.md`](DATASETS.md); attributions in [`NOTICE.md`](NOTICE.md) |
 
+The full statement of who owns what and which license covers it is in [`COPYRIGHT.md`](COPYRIGHT.md).
 The model is non-commercial because some of the datasets it learns from are. The code is fully open (Apache-2.0).
 The name, «اكتب عربي» and the logo identify this project and are not covered by either license. Fonts: Kufam and
 Manrope (SIL OFL 1.1). Compiled dependencies: `THIRD-PARTY-LICENSES.html`, installed with the app.

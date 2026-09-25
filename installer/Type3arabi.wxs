@@ -50,6 +50,9 @@
       <Component Id="Datasets">
         <File Id="DatasetsFile" Source="$(var.Payload)\DATASETS.md" KeyPath="yes" />
       </Component>
+      <Component Id="Copyright">
+        <File Id="CopyrightFile" Source="$(var.Payload)\COPYRIGHT.md" KeyPath="yes" />
+      </Component>
       <Component Id="ThirdPartyLicenses">
         <File Id="ThirdPartyFile" Source="$(var.Payload)\THIRD-PARTY-LICENSES.html" KeyPath="yes" />
       </Component>
