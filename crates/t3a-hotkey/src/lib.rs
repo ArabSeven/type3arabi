@@ -1,5 +1,9 @@
 //! Hotkey spec parsing shared by the companion and the Settings app (docs/13 `general.global_hotkey`),
-//! and the companion's keyboard-list rule (`stray_arabic_layout`).
+//! and the companion's keyboard-list rule (`stray_arabic_layout`). `profile` (Windows): enabling the
+//! keyboard for the signed-in user, used by the companion and by the Settings app.
+
+#[cfg(windows)]
+pub mod profile;
 
 /// Should the companion drop this ar-SA keyboard layout ("0401:<KLID>")? Only an *Arabic* layout
 /// (KLID ending in 0401, e.g. Arabic 101 = "0401:00000401") that the user did not keep. Windows'

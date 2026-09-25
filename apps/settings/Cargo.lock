@@ -3004,21 +3004,21 @@ dependencies = [
 
 [[package]]
 name = "t3a-data"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "bytemuck",
 ]
 
 [[package]]
 name = "t3a-engine"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "t3a-data",
 ]
 
 [[package]]
 name = "t3a-hotkey"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "embed-resource",
  "t3a-engine",
@@ -3028,7 +3028,7 @@ dependencies = [
 
 [[package]]
 name = "t3a-paths"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "windows 0.62.2",
 ]
@@ -3639,7 +3639,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "type3arabi-settings"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 dependencies = [
  "serde",
  "serde_json",

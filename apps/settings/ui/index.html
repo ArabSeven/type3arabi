@@ -48,11 +48,16 @@
         </select>
       </div>
       <div class="row">
-        <label>اختصار عام لتفعيل «اكتب عربي» من أي لوحة مفاتيح<small>Global hotkey to switch to Type3arabi from any keyboard</small></label>
+        <label>اختصار عام لتفعيل «اكتب عربي» من أي لوحة مفاتيح<small>Global hotkey to switch to Type3arabi from any keyboard</small>
+          <small id="hotkey-state" class="note" hidden></small></label>
         <div class="chord">
           <input type="checkbox" data-key="global_hotkey_enabled">
           <input data-key="global_hotkey" data-kind="hotkey" readonly>
         </div>
+      </div>
+      <div class="row" id="keyboard-row" hidden>
+        <label>لوحة «اكتب عربي» غير مضافة لهذا المستخدم<small>Type3arabi is not in this user's keyboards (it was installed from another account)</small></label>
+        <button id="add-keyboard">إضافة <span lang="en">Add</span></button>
       </div>
     </section>
 

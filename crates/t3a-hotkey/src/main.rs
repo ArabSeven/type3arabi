@@ -22,9 +22,6 @@ fn main() {
 }
 
 #[cfg(windows)]
-mod profile;
-
-#[cfg(windows)]
 mod win {
     use std::sync::atomic::{AtomicIsize, Ordering};
     use t3a_engine::Config;
@@ -55,8 +52,8 @@ mod win {
     pub fn main() -> i32 {
         let arg = std::env::args().nth(1).unwrap_or_default();
         match arg.as_str() {
-            "--enable-profile" => crate::profile::enable(),
-            "--disable-profile" => crate::profile::disable(),
+            "--enable-profile" => t3a_hotkey::profile::enable(),
+            "--disable-profile" => t3a_hotkey::profile::disable(),
             "--list-profiles" => {
                 list_profiles();
                 0
@@ -66,7 +63,7 @@ mod win {
                 0
             }
             "--tidy" => {
-                crate::profile::tidy();
+                t3a_hotkey::profile::tidy();
                 0
             }
             _ => {
@@ -86,7 +83,7 @@ mod win {
         std::thread::spawn(|| {
             for wait in [0, 5, 15, 40, 120] {
                 std::thread::sleep(std::time::Duration::from_secs(wait));
-                crate::profile::tidy();
+                t3a_hotkey::profile::tidy();
             }
         })
     }
@@ -104,7 +101,7 @@ mod win {
             "lang  kind    enabled  name
 ",
         );
-        for p in crate::profile::list_profiles(0) {
+        for p in t3a_hotkey::profile::list_profiles(0) {
             out.push_str(&format!(
                 "{:04X}  {:<6}  {:<7}  {}
 ",
@@ -173,16 +170,20 @@ mod win {
             let _ = UnregisterHotKey(Some(hwnd), HOTKEY_ID);
             let config = load_config();
             if !config.global_hotkey_enabled {
+                t3a_paths::write_hotkey_status("off", "");
                 return false;
             }
             let Ok(spec) = parse(&config.global_hotkey) else {
                 t3a_paths::log_error("global_hotkey: invalid value in config.toml");
+                t3a_paths::write_hotkey_status("invalid", &config.global_hotkey);
                 return false;
             };
             if RegisterHotKey(Some(hwnd), HOTKEY_ID, modifiers(&spec), spec.vk as u32).is_err() {
                 t3a_paths::log_error("global_hotkey: already used by another program");
+                t3a_paths::write_hotkey_status("taken", &config.global_hotkey);
                 return false;
             }
+            t3a_paths::write_hotkey_status("ok", &config.global_hotkey);
             true
         }
     }
@@ -251,6 +252,7 @@ mod win {
 
     fn run_hotkey_loop() -> i32 {
         if !load_config().global_hotkey_enabled {
+            t3a_paths::write_hotkey_status("off", "");
             return 0;
         }
         // SAFETY: single-instance mutex, message-only window and a standard message loop.

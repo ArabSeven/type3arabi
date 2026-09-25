@@ -160,6 +160,8 @@ $("#save").addEventListener("click", async () => {
     await invoke("save_settings", { settings: collect() });
     current = collect();
     status("تم الحفظ — يطبَّق عند الكلمة التالية", "Saved — applies from the next word", "ok");
+    // The companion re-registers the hotkey on save; show a conflict once it has answered.
+    setTimeout(refreshKeyboard, 700);
   } catch (errors) {
     status("", (Array.isArray(errors) ? errors : [String(errors)]).join("\n"), "err");
   }
@@ -270,10 +272,35 @@ document.addEventListener("click", (e) => {
   invoke("open_url", { url: a.dataset.link }).catch(() => {});
 });
 
+// ---- this user's keyboard + hotkey registration (docs/05 §7)
+async function refreshKeyboard() {
+  let k;
+  try { k = await invoke("keyboard_status"); } catch { return; }
+  $("#keyboard-row").hidden = k.enabled;
+  const note = $("#hotkey-state");
+  const msg = {
+    taken: ["هذا الاختصار مستخدم من برنامج آخر — اختر اختصاراً غيره", "This shortcut is used by another program — choose another one"],
+    invalid: ["الاختصار المحفوظ غير صالح — اختر اختصاراً جديداً", "The saved shortcut is not valid — choose a new one"],
+  }[k.hotkey_state];
+  note.hidden = !msg || !current?.global_hotkey_enabled;
+  if (msg) note.textContent = `${msg[0]}\u200F · ${msg[1]}`;
+}
+$("#add-keyboard").addEventListener("click", async () => {
+  try {
+    await invoke("add_keyboard");
+    status("تمت إضافة «اكتب عربي» إلى لوحات المفاتيح — اضغط Win+Space", "Type3arabi was added to your keyboards — press Win+Space", "ok");
+  } catch (e) {
+    status("", String(e), "err");
+  }
+  refreshKeyboard();
+});
+window.addEventListener("focus", () => refreshKeyboard());
+
 // ---- startup
 (async () => {
   renderHistory();
   fill(await invoke("get_settings"));
+  refreshKeyboard();
   const a = await invoke("about");
   $("#about-info").innerHTML = "";
   for (const [k, v] of [["الإصدار / Version", a.version], ["الإعدادات / Settings file", a.config_path], ["البيانات / Data", a.data_file]]) {

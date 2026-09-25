@@ -138,7 +138,7 @@ fn drop_layouts_except(keep: &[String]) -> usize {
     let saved = saved_inputs();
     let mut dropped = 0;
     for (layout, hkl) in arabic_layouts() {
-        if !t3a_hotkey::stray_arabic_layout(&layout, keep) {
+        if !crate::stray_arabic_layout(&layout, keep) {
             continue;
         }
         if saved.iter().any(|k| k.eq_ignore_ascii_case(&layout))
@@ -182,6 +182,11 @@ pub fn tidy() -> usize {
         return 0;
     }
     drop_layouts_except(&saved)
+}
+
+/// Is Type3arabi one of the signed-in user's keyboards (their saved list, what Settings shows)?
+pub fn is_enabled() -> bool {
+    saved_inputs().iter().any(|k| k.eq_ignore_ascii_case(TIP))
 }
 
 /// `--disable-profile`. Exit code 0 = removed.

@@ -416,6 +416,47 @@ fn import_learning(
     })
 }
 
+/// This user's keyboard and hotkey state (docs/05 §7 General: "shows conflicts"; backlog M7 "enable for
+/// this user" — a per-machine install turns the keyboard on only for the account that installed it).
+#[derive(Serialize)]
+struct KeyboardStatus {
+    /// Type3arabi is in this user's keyboard list.
+    enabled: bool,
+    /// Companion's last registration: "ok" | "taken" | "invalid" | "off" | "" (not reported yet).
+    hotkey_state: String,
+    hotkey: String,
+}
+
+#[tauri::command]
+fn keyboard_status() -> KeyboardStatus {
+    #[cfg(windows)]
+    let enabled = t3a_hotkey::profile::is_enabled();
+    #[cfg(not(windows))]
+    let enabled = false;
+    let (hotkey_state, hotkey) = t3a_paths::read_hotkey_status().unwrap_or_default();
+    KeyboardStatus {
+        enabled,
+        hotkey_state,
+        hotkey,
+    }
+}
+
+/// Add the Type3arabi keyboard to this user's keyboards (same as the installer's step for the
+/// installing user: `InstallLayoutOrTip`, Arabic 101 not added).
+#[tauri::command]
+fn add_keyboard() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        if t3a_hotkey::profile::enable() == 0 {
+            return Ok(());
+        }
+        Err("Windows did not add the keyboard. Add it in Settings › Time & language › Language & region              (Arabic › Language options › Add a keyboard)."
+            .into())
+    }
+    #[cfg(not(windows))]
+    Err("Windows only".into())
+}
+
 #[derive(Serialize)]
 struct About {
     version: String,
@@ -483,6 +524,8 @@ fn main() {
             import_learning,
             transfer_history,
             open_url,
+            keyboard_status,
+            add_keyboard,
             about
         ])
         .run(tauri::generate_context!())

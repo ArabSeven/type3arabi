@@ -65,6 +65,7 @@ h2 small, h2.sub small { display: inline; margin-inline-start: 8px; font-weight:
        background: var(--tile); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
 .row label { flex: 1; font-weight: 600; }
 .row label small { margin-top: 1px; }
+.row label small.note { color: var(--danger); font-weight: 600; }
 .row.danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); background: var(--danger-tint); }
 .row.danger label { color: var(--danger); }
 .chord { display: flex; gap: 6px; align-items: center; }
