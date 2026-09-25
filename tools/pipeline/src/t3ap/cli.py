@@ -42,7 +42,7 @@ def cmd_all(args):
     code = diac.run()
     if code != 0:
         return code
-    code = pairs.run(mode=args.mode, exclude_nc=args.exclude_nc)
+    code = pairs.run(mode=args.mode, exclude_nc=args.exclude_nc, exclude_provisional=args.exclude_provisional)
     if code != 0:
         return code
     print("=== Python stages done. Next (repo root):")
@@ -59,7 +59,12 @@ def main(argv=None):
         "--mode",
         choices=["internal", "release"],
         default="internal",
-        help="build mode: internal (approved + internal) or release (approved only)",
+        help="build mode: internal (approved + provisional + internal) or release (approved + provisional)",
+    )
+    p.add_argument(
+        "--exclude-provisional",
+        action="store_true",
+        help="leave out sources still awaiting the rights holder's permission (ADR-0011 exit path)",
     )
     p.add_argument(
         "--exclude-nc",
@@ -96,7 +101,7 @@ def main(argv=None):
     elif args.cmd == "diac":
         return diac.run()
     elif args.cmd == "pairs":
-        return pairs.run(mode=args.mode, exclude_nc=args.exclude_nc)
+        return pairs.run(mode=args.mode, exclude_nc=args.exclude_nc, exclude_provisional=args.exclude_provisional)
     elif args.cmd == "datasets-md":
         return datasets.run()
     elif args.cmd == "all":

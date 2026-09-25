@@ -98,6 +98,7 @@ fn cmd_build_data(args: &[String]) -> i32 {
     let limits = build::Limits {
         max_words: arg_value(args, "--max-words").and_then(|v| v.parse().ok()),
         max_charlm: arg_value(args, "--max-charlm").and_then(|v| v.parse().ok()),
+        data_version: arg_value(args, "--data-version").and_then(|v| v.parse().ok()),
     };
 
     match build::build_data(

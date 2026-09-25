@@ -4,16 +4,20 @@ from t3ap import sources
 def test_registry_is_valid():
     rows = sources.load()
     assert any(r["id"] == "fineweb2" and r["status"] == "approved" for r in rows)
-    assert any(r["id"] == "talafha-jordanian" and r["status"] == "internal" for r in rows)
-    
-    # Internal mode allows approved + internal
+    assert any(r["id"] == "talafha-jordanian" and r["status"] == "provisional" for r in rows)
+
+    # Internal mode allows approved + provisional + internal
     allowed_internal = sources.allowed("rules", mode="internal")
     assert any(r["id"] == "talafha-jordanian" for r in allowed_internal)
-    
-    # Release mode strictly requires approved
+
+    # Release mode: approved + provisional (ADR-0011), never internal
     allowed_release = sources.allowed("rules", mode="release")
-    assert not any(r["id"] == "talafha-jordanian" for r in allowed_release)
-    assert all(r["status"] == "approved" for r in allowed_release)
+    assert any(r["id"] == "talafha-jordanian" for r in allowed_release)
+    assert all(r["status"] in ("approved", "provisional") for r in allowed_release)
+
+    # The decline exit path leaves out every provisional source
+    cleared = sources.allowed("rules", mode="release", exclude_provisional=True)
+    assert all(r["status"] == "approved" for r in cleared)
 
 
 def test_deterministic_split():

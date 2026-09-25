@@ -5,6 +5,7 @@ OUT = sources.REPO / "DATASETS.md"
 
 STATUS_TITLES = [
     ("approved", "Approved for the model (each release lists the sources it actually used in its META)"),
+    ("provisional", "Used while the rights holder's reply is pending (see below)"),
     ("internal", "Awaiting the rights holder's permission (development builds only)"),
     ("eval-only", "Used only to measure accuracy (never in the model)"),
     ("owner-decision", "Pending a project decision (not used)"),
@@ -40,6 +41,28 @@ def render() -> str:
                 name = f"[{r['name']}]({r['url']})" if r["url"].startswith("http") else r["name"]
                 roles = ", ".join(r["roles"]) or "—"
                 out.append(f"| {name} | {r['license']} | {roles} |")
+            out.append("")
+            cites = [r for r in group if r.get("citation")]
+            if cites:
+                out += ["### Citations", ""]
+                out += [f"- {r['citation']}" for r in cites]
+                out.append("")
+        elif status == "provisional":
+            out += [
+                "These datasets were published openly for others to use, with a request to cite them, but",
+                "without a license text. Their authors have been asked for permission; until they answer, the",
+                "model uses them with attribution (only the spelling rules learned from them are shipped, never",
+                "their text). If a rights holder declines, the dataset is removed, the model is rebuilt without",
+                "it and the next release ships the rebuilt model.",
+                "",
+                "| Dataset | License | Used for | Status |",
+                "|---|---|---|---|",
+            ]
+            for r in group:
+                name = f"[{r['name']}]({r['url']})" if r["url"].startswith("http") else r["name"]
+                roles = ", ".join(x for x in r["roles"] if x != "eval") or "—"
+                asked = r.get("asked", "permission requested")
+                out.append(f"| {name} | {r['license']} | {roles} | {asked} |")
             out.append("")
             cites = [r for r in group if r.get("citation")]
             if cites:

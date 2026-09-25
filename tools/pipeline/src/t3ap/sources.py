@@ -5,7 +5,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
 SOURCES = REPO / "data" / "sources.toml"
-VALID_STATUS = {"approved", "internal", "eval-only", "owner-decision", "blocked"}
+VALID_STATUS = {"approved", "provisional", "internal", "eval-only", "owner-decision", "blocked"}
 VALID_ROLES = {"lexicon", "lm", "charlm", "diac", "rules", "tuning", "eval", "reference"}
 VALID_FAMILY = {"permissive", "nc"}
 
@@ -24,12 +24,29 @@ def load():
         if r["status"] == "approved":
             # ADR-0010: every approved source declares whether it is non-commercial.
             assert r.get("license_family") in VALID_FAMILY, f"{r['id']}: license_family missing"
+        if r["status"] == "provisional":
+            # ADR-0011: used in releases while the rights holder's reply is pending; the model is
+            # licensed conservatively (license family "unknown" => CC BY-NC-SA) and the source must
+            # say when clearance was requested.
+            assert r.get("license_family") == "unknown", f"{r['id']}: provisional => license_family unknown"
+            assert "requested" in r.get("notes", ""), f"{r['id']}: provisional => notes say when clearance was requested"
     return rows
 
 
-def allowed(role: str, mode: str = "internal", exclude_nc: bool = False):
-    """Sources that may feed `role` into SHIPPED artifacts. `exclude_nc` drops non-commercial ones (ADR-0010)."""
-    valid = {"approved", "internal"} if mode == "internal" else {"approved"}
+def shipped_statuses(mode: str, exclude_provisional: bool = False) -> set:
+    """Statuses whose data may shape SHIPPED artifacts in `mode` (AGENTS.md R14, ADR-0011)."""
+    valid = {"approved", "provisional"}
+    if mode == "internal":
+        valid.add("internal")
+    if exclude_provisional:
+        valid.discard("provisional")
+    return valid
+
+
+def allowed(role: str, mode: str = "internal", exclude_nc: bool = False, exclude_provisional: bool = False):
+    """Sources that may feed `role` into SHIPPED artifacts. `exclude_nc` drops non-commercial ones (ADR-0010);
+    `exclude_provisional` drops sources still awaiting permission (ADR-0011: the exit path if one is declined)."""
+    valid = shipped_statuses(mode, exclude_provisional)
     return [
         r
         for r in load()
@@ -39,7 +56,7 @@ def allowed(role: str, mode: str = "internal", exclude_nc: bool = False):
 
 def fetchable(mode: str = "internal"):
     """Sources the fetch stage may download."""
-    valid = {"approved", "internal", "eval-only", "owner-decision"} if mode == "internal" else {"approved", "eval-only", "owner-decision"}
+    valid = shipped_statuses(mode) | {"eval-only", "owner-decision"}
     return [r for r in load() if r["status"] in valid and r["url"] != "internal"]
 
 

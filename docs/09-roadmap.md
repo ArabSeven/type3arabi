@@ -87,7 +87,7 @@ Acceptance:
 - [ ] Beta build distributed to the golden-set typists; feedback triaged into `regressions.tsv`.
 
 ## v1.0 release = M8 + release checklist (`docs/07 §6`)
-- Note: No source with status `internal` in the release data build: each must be cleared to `approved` or removed with data rebuilt under `--mode release`.
+- Note: No source with status `internal` in the release data build: each must be cleared to `approved`, made `provisional` by the Owner (ADR-0011, disclosed in DATASETS.md), or removed with data rebuilt under `--mode release`.
 
 ## M9 — Post-1.0 (ordered backlog, each needs its own mini-spec before work)
 1. Reconversion: select Arabic text → hotkey → candidates (`ITfFnReconversion`).

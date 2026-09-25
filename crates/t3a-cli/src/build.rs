@@ -16,6 +16,8 @@ use t3a_engine::seed::{POS_ANY, POS_F, POS_I, POS_M};
 /// Optional size limits, for the smaller model the website runs in the browser (website/README.md).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Limits {
+    /// Data version stored in the header (YYYYMMDDnn); default: the 2026-09-23 build number.
+    pub data_version: Option<u64>,
     /// Keep only the first N lexicon rows (`lexicon.tsv` is sorted by frequency rank).
     pub max_words: Option<usize>,
     /// Keep only the first N char-LM rows (lower orders come first).
@@ -32,7 +34,8 @@ pub fn build_data(
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Building type3arabi.dat ({mode} mode) ===");
 
-    let mut writer = Writer::new(2026092301);
+    // docs/07 §3: date-based data version YYYYMMDDnn, shown in META/About; `--data-version` sets it.
+    let mut writer = Writer::new(limits.data_version.unwrap_or(2026092301));
     writer.build_id = [
         0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x0F, 0xED, 0xCB, 0xA9, 0x87, 0x65, 0x43,
         0x21,
@@ -302,8 +305,9 @@ pub fn build_data(
     writer.add_parm(&parm_content);
     println!("  [PARM] Engine parameters stored");
 
-    // 9. META — distribution, sources, model license (AGENTS.md R14, ADR-0010). A release build may
-    // not contain any `internal` source. `sources_used.tsv`: id, status, roles, license family.
+    // 9. META — distribution, sources, model license (AGENTS.md R14, ADR-0010, ADR-0011). A release
+    // build may not contain any `internal` source; `provisional` ones (permission pending, Owner O14)
+    // are allowed and listed. `sources_used.tsv`: id, status, roles, license family.
     let used: Vec<Vec<String>> = in_dir
         .map(|d| d.join("sources_used.tsv"))
         .and_then(|p| fs::read_to_string(p).ok())
@@ -317,6 +321,11 @@ pub fn build_data(
     let internal: Vec<String> = used
         .iter()
         .filter(|c| c[1] == "internal")
+        .map(|c| c[0].clone())
+        .collect();
+    let provisional: Vec<String> = used
+        .iter()
+        .filter(|c| c[1] == "provisional")
         .map(|c| c[0].clone())
         .collect();
     let model_license = model_license(&used);
@@ -336,9 +345,10 @@ pub fn build_data(
         v.map(|i| format!("\"{i}\"")).collect::<Vec<_>>().join(", ")
     };
     let meta_json = format!(
-        "{{\"format_version\": 1, \"distribution\": \"{dist}\", \"license\": \"{model_license}\", \"sources\": [{}], \"internal_sources\": [{}], \"word_count\": {}, \"rule_count\": {}}}\n",
+        "{{\"format_version\": 1, \"distribution\": \"{dist}\", \"license\": \"{model_license}\", \"sources\": [{}], \"internal_sources\": [{}], \"provisional_sources\": [{}], \"word_count\": {}, \"rule_count\": {}}}\n",
         quoted(&mut used.iter().map(|c| &c[0])),
         quoted(&mut internal.iter()),
+        quoted(&mut provisional.iter()),
         words.len(),
         rules.len()
     );

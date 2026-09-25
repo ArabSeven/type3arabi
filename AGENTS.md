@@ -124,10 +124,16 @@ Doc map:
     or written permission from the rights holder (kept privately in the gitignored `docs/evidence/licenses/`;
     the source's `notes` record who granted what, and when).
   - **Never in the model**: CC BY-SA, ODbL, NoDerivatives, research-only or custom terms, paid (LDC). These may be `eval-only`.
+  - `provisional` (ADR-0011, Owner O14): license unstated but published openly for public use, clearance requested,
+    and the Owner accepted using it in releases until the rights holder answers. `license_family = "unknown"`
+    (model stays CC BY-NC-SA), `asked` + `notes` say when permission was requested; META lists it under
+    `provisional_sources`, DATASETS.md in its own section. On a decline: `blocked`, rebuild with
+    `--exclude-provisional`, ship the rebuilt model.
   - `internal`: license unstated, clearance requested. Only `--mode internal` builds may use it. Their `META` says
-    `"distribution": "internal-only"` and lists the source ids. Public releases use `--mode release` (approved only).
+    `"distribution": "internal-only"` and lists the source ids. Public releases use `--mode release`
+    (approved + provisional).
   - `eval-only` data never influences shipped weights, not even tuning (tuning uses `dev` splits of approved data).
-    `blocked` sources are never downloaded. Unknown license ⇒ `internal` at most.
+    `blocked` sources are never downloaded. Unknown license ⇒ `internal` at most, unless the Owner makes it `provisional`.
   - Every approved source has `license_family` = `permissive` | `nc`, so `build-data --exclude-nc` can rebuild a
     model without NC data (the ADR-0010 exit path). `DATASETS.md` is regenerated from the registry
     (`uv run t3ap datasets-md`) whenever it changes.

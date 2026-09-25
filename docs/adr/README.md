@@ -12,5 +12,6 @@ Format: Context · Decision · Consequences · Alternatives. New ADRs start as `
 - ADR-0008: WiX MSI, per-machine, three architectures — Accepted
 - ADR-0009: One Arabic profile (ar-SA); dialects are never a user choice — Accepted (amends ADR-0001)
 - ADR-0010: Free and open source — Apache-2.0 code, CC BY-NC-SA 4.0 model, GitHub + Microsoft Store — Accepted (supersedes the data half of R11/R14; amends ADR-0005, ADR-0008)
+- ADR-0011: Provisional data sources (released with attribution while permission is pending) — Accepted (amends R14, ADR-0010)
 
 Template: copy `template.md`.

@@ -5,6 +5,11 @@
 #
 # status:
 #   approved        may shape the shipped model for the listed roles (license compatible with CC BY-NC-SA 4.0)
+#   provisional     license unstated but published for public use; clearance requested; the Owner accepted
+#                   using it in releases until the rights holder answers (O14, ADR-0011). Needs
+#                   license_family = "unknown" (=> model CC BY-NC-SA), `asked` and a notes line saying when
+#                   clearance was requested. On a decline: status = "blocked", rebuild, ship the new model;
+#                   `t3ap --exclude-provisional pairs` rebuilds without every provisional source.
 #   internal        license unstated; clearance requested; `--mode internal` builds only
 #   eval-only       evaluation reports only (never training, never tuning)
 #   owner-decision  treated as eval-only until the Owner records a decision in STATUS.md
@@ -46,12 +51,14 @@ name = "Arabizi-Arabic parallel corpus, Jordanian (Talafha, Abu Ammar, Al-Ayyoub
 url = "https://github.com/bashartalafha/Arabizi-Transliteration"
 kind = "parallel"
 dialects = ["LEV"]
-license = "unstated"
-status = "internal"
+license = "unstated (published for public use with a citation request; no license text)"
+status = "provisional"
+license_family = "unknown"
+asked = "permission requested 2026-09-24 (email to the authors)"
 roles = ["rules", "tuning", "eval"]
 citation = "Bashar Talafha, Analle Abu Ammar and Mahmoud Al-Ayyoub. Atar: Attention-based LSTM for Arabizi Transliteration. International Journal of Electrical and Computer Engineering (IJECE), June 2021."
 attribution = "Bashar Talafha, Analle Abu Ammar, Mahmoud Al-Ayyoub (2021)"
-notes = "Clearance requested 2026-09-24 (email to authors). ~25k pairs, native-speaker checked; single most valuable LEV resource. Split 80/10/10 train/dev/test; test held out."
+notes = "Clearance requested 2026-09-24 (email to authors). Owner decision O14 (2026-09-25, ADR-0011): used in releases until the authors answer; on a decline, remove it and rebuild with --exclude-provisional. ~25k pairs, native-speaker checked; single most valuable LEV resource. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "arbml-arabizi"
@@ -72,12 +79,14 @@ name = "akhanafer/arabic-to-arabizi"
 url = "https://huggingface.co/datasets/akhanafer/arabic-to-arabizi"
 kind = "parallel"
 dialects = ["LEV"]
-license = "unstated (check dataset card)"
-status = "internal"
+license = "unstated (public dataset, empty dataset card)"
+status = "provisional"
+license_family = "unknown"
+asked = "permission requested 2026-09-25 (Hugging Face discussion #2)"
 roles = ["rules", "tuning", "eval"]
 citation = "Ali Khanafer. Arabic to Arabizi Dataset. Hugging Face Datasets (akhanafer/arabic-to-arabizi)."
 attribution = "Ali Khanafer"
-notes = "433 pairs. Clearance requested 2026-09-24 (HF discussion). Fields: arabizi, arabic. Split 80/10/10 train/dev/test; test held out."
+notes = "433 pairs. Clearance requested 2026-09-25 (HF discussion #2). Owner decision O14 (2026-09-25, ADR-0011): used in releases until the author answers; on a decline, remove it and rebuild with --exclude-provisional. Fields: arabizi, arabic. Split 80/10/10 train/dev/test; test held out."
 
 [[source]]
 id = "elkababi-darija"

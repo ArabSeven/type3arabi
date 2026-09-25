@@ -63,9 +63,9 @@ def word_pairs(source_id: str):
                     yield a, b, dialect, split
 
 
-def run(mode: str = "internal", exclude_nc: bool = False) -> int:
+def run(mode: str = "internal", exclude_nc: bool = False, exclude_provisional: bool = False) -> int:
     print("=== pairs: word pairs for rule training + held-out eval sets ===")
-    rules_ok = {s["id"] for s in sources.allowed("rules", mode, exclude_nc)}
+    rules_ok = {s["id"] for s in sources.allowed("rules", mode, exclude_nc, exclude_provisional)}
     eval_ok = {s["id"] for s in sources.load() if "eval" in s["roles"] and s["status"] != "blocked"}
     align_dir, eval_dir = PIPELINE_DATA / "align", PIPELINE_DATA / "eval"
     align_dir.mkdir(parents=True, exist_ok=True)

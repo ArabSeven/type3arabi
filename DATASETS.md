@@ -35,10 +35,26 @@ Every release's data file records the exact sources it was built from (its `META
 - UBC-NLP. NileChat Arabizi-MOR. Hugging Face Datasets (UBC-NLP/nilechat-arabizi-mor).
 - ilias-brh. English-Darija Arabizi sentence pairs. Hugging Face Datasets.
 
+## Used while the rights holder's reply is pending (see below)
+
+These datasets were published openly for others to use, with a request to cite them, but
+without a license text. Their authors have been asked for permission; until they answer, the
+model uses them with attribution (only the spelling rules learned from them are shipped, never
+their text). If a rights holder declines, the dataset is removed, the model is rebuilt without
+it and the next release ships the rebuilt model.
+
+| Dataset | License | Used for | Status |
+|---|---|---|---|
+| [Arabizi-Arabic parallel corpus, Jordanian (Talafha, Abu Ammar, Al-Ayyoub 2021, 'Atar')](https://github.com/bashartalafha/Arabizi-Transliteration) | unstated (published for public use with a citation request; no license text) | rules, tuning | permission requested 2026-09-24 (email to the authors) |
+| [akhanafer/arabic-to-arabizi](https://huggingface.co/datasets/akhanafer/arabic-to-arabizi) | unstated (public dataset, empty dataset card) | rules, tuning | permission requested 2026-09-25 (Hugging Face discussion #2) |
+
+### Citations
+
+- Bashar Talafha, Analle Abu Ammar and Mahmoud Al-Ayyoub. Atar: Attention-based LSTM for Arabizi Transliteration. International Journal of Electrical and Computer Engineering (IJECE), June 2021.
+- Ali Khanafer. Arabic to Arabizi Dataset. Hugging Face Datasets (akhanafer/arabic-to-arabizi).
+
 ## Awaiting the rights holder's permission (development builds only)
 
-- [Arabizi-Arabic parallel corpus, Jordanian (Talafha, Abu Ammar, Al-Ayyoub 2021, 'Atar')](https://github.com/bashartalafha/Arabizi-Transliteration) — unstated
-- [akhanafer/arabic-to-arabizi](https://huggingface.co/datasets/akhanafer/arabic-to-arabizi) — unstated (check dataset card)
 - [Mohamedd123321/Arabizi-dataset-v2 (monolingual Arabizi)](https://huggingface.co/datasets/Mohamedd123321/Arabizi-dataset-v2) — check dataset card
 - [Tashkeela — Arabic vocalized texts (Zerrouki & Balla 2017)](https://sourceforge.net/projects/tashkeela/) — conflicting: article CC-BY-4.0; SourceForge/Kaggle list GPL-2
 

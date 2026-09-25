@@ -14,7 +14,16 @@ def test_exclude_nc_drops_every_nc_source():
 
 
 def test_release_mode_never_uses_internal_sources():
-    assert all(r["status"] == "approved" for r in sources.allowed("rules", "release"))
+    assert all(r["status"] in ("approved", "provisional") for r in sources.allowed("rules", "release"))
+
+
+def test_provisional_sources_are_conservative():
+    # ADR-0011: a provisional source is licensed as unknown (=> the model stays CC BY-NC-SA) and records
+    # when permission was requested.
+    for r in sources.load():
+        if r["status"] == "provisional":
+            assert r["license_family"] == "unknown"
+            assert r.get("asked")
 
 
 def test_datasets_md_is_current():
