@@ -110,7 +110,7 @@ To remove it: *Settings → Apps → Installed apps → Type3arabi → Uninstall
 | <kbd>Shift</kbd>+<kbd>Space</kbd> | Insert the Latin word as typed, and a space |
 | <kbd>Esc</kbd> | Insert exactly what you typed, in Latin letters |
 | <kbd>Backspace</kbd> right after a word | Reopen it with its list |
-| <kbd>Ctrl</kbd>+<kbd>Space</kbd> | Pause Arabic (type Latin) / resume |
+| <kbd>Ctrl</kbd>+<kbd>Space</kbd>, or click the ع / A icon in the taskbar | Pause Arabic (type Latin) / resume |
 | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>A</kbd> | Switch to Type3arabi from any keyboard (global) |
 
 **In the tashkeel editor**
@@ -130,7 +130,8 @@ The shortcuts in the first table can be changed in Settings.
 
 ## Settings
 
-Open **Type3arabi Settings** from the Start menu (or the desktop shortcut). Every change applies from the next
+Open **Type3arabi Settings** from the Start menu, the desktop shortcut, or the **ع** icon Windows shows in the
+taskbar while Type3arabi is active (right-click it → *Type3arabi Settings…*). Every change applies from the next
 word, in every app — no restart.
 
 <div align="center">

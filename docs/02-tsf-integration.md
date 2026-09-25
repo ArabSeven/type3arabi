@@ -308,6 +308,19 @@ Display attributes:
 - Tray: `LangBarInputModeItem` with `GUID_LBI_INPUTMODE`; icon `IDI_MODE_AR` or `IDI_MODE_LATIN`;
   tooltip "عربي – Arabic" / "Latin"; `OnClick` toggles the compartment; right-click menu:
   Arabic/Latin, Settings…, Help.
+- **As implemented (2026-09-25, `win/langbar.rs`):** `ModeButton` (`ITfLangBarItemButton`, `ITfSource`),
+  `GUID_LBI_INPUTMODE`, style `BTN_BUTTON | SHOWNINTRAY`, added through `ITfLangBarItemMgr` in `ActivateEx` and
+  removed in `Deactivate` (which also breaks the button → service reference cycle); `GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT`
+  is registered (dll.rs). Left click toggles Arabic ⇄ Latin; right click (`TF_LBI_CLK_RIGHT`) shows a native popup
+  menu (`TrackPopupMenuEx`, `TPM_RETURNCMD`, owner = the thread's focus window, else a temporary invisible popup):
+  "Arabic · عربي" / "Latin · لاتيني ⟶ toggle key" (radio-checked), separator, "Type3arabi Settings… · الإعدادات"
+  (greyed in AppContainer apps and on the secure desktop, where no process may be started). No "Help" item (least
+  obtrusive). Icons: `102` ع / `103` A, and the profile's `101` brand icon, in Microsoft's black-and-white IME icon
+  style (`crates/t3a-tip/res/make_icons.py`); `GetIcon` returns a new icon of `SM_CXSMICON` (×1.25 on the secure
+  desktop), which the caller destroys. Every keyboard toggle refreshes it (`OnUpdate(TF_LBI_ICON|TOOLTIP|TEXT)`).
+  The mode itself is still the text service's own state per thread, not the `OPENCLOSE` compartment above (backlog).
+  Evidence: `tsf_harness` (x64, x86) finds the item by `GUID_LBI_INPUTMODE`, checks icon/tooltip, opens the real menu
+  and reads its items back, and switches modes by click and by menu.
 - Toggle hotkey: `ITfKeystrokeMgr::PreserveKey(tid, GUID_PRESERVED_TOGGLE, TF_PRESERVEDKEY{uVKey, uModifiers}, "Toggle Arabic/Latin")`.
   Default `Ctrl+Space` (`VK_SPACE`, `TF_MOD_CONTROL`). Config accepts `"Ctrl+Space" | "Shift+Space" | "Ctrl+Shift+Space" | "ShiftTap" | "none"`.
   `ShiftTap` = press and release Shift alone within 300 ms with no other key: implemented in the key-up path, not as a preserved key.

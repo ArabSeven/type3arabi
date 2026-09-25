@@ -15,6 +15,7 @@ use crate::win::display::{
 use crate::win::dll::{self, add_object, release_object};
 use crate::win::guard::guard;
 use crate::win::keys::translate_key;
+use crate::win::langbar::{self, ModeButton, TrayOwner};
 use std::cell::RefCell;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, OnceLock};
@@ -38,12 +39,13 @@ use windows::Win32::UI::TextServices::{
     ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextComposition,
     ITfDisplayAttributeInfo, ITfDisplayAttributeProvider, ITfDisplayAttributeProvider_Impl,
     ITfDocumentMgr, ITfEditSession, ITfFnConfigure, ITfFnConfigure_Impl, ITfFunction_Impl,
-    ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfRange,
-    ITfSource, ITfTextInputProcessor, ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl,
-    ITfTextInputProcessor_Impl, ITfThreadFocusSink, ITfThreadFocusSink_Impl, ITfThreadMgr,
-    ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl, GUID_PROP_ATTRIBUTE, TF_AE_NONE,
-    TF_ANCHOR_END, TF_ES_ASYNC, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_QUERYONLY, TF_INVALID_COOKIE,
-    TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION, TF_SELECTIONSTYLE, TF_TMAE_SECUREMODE,
+    ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr,
+    ITfLangBarItemButton, ITfLangBarItemMgr, ITfRange, ITfSource, ITfTextInputProcessor,
+    ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
+    ITfThreadFocusSink, ITfThreadFocusSink_Impl, ITfThreadMgr, ITfThreadMgrEventSink,
+    ITfThreadMgrEventSink_Impl, GUID_PROP_ATTRIBUTE, TF_AE_NONE, TF_ANCHOR_END, TF_ES_ASYNC,
+    TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_QUERYONLY, TF_INVALID_COOKIE, TF_MOD_CONTROL,
+    TF_PRESERVEDKEY, TF_SELECTION, TF_SELECTIONSTYLE, TF_TMAE_SECUREMODE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetGUIThreadInfo, GetMessageExtraInfo, GUITHREADINFO,
@@ -173,6 +175,8 @@ pub struct State {
     eaten: [bool; 256],
     popup: Option<PopupWindow>,
     text_rect: RECT,
+    /// The input-indicator (tray) button while activated (langbar.rs, docs/02 §10).
+    mode_button: Option<ITfLangBarItemButton>,
     /// Edit sessions queued asynchronously and not yet run. While > 0, new sessions are queued too,
     /// so document edits always apply in request order (docs/02 §8).
     pending_async: u32,
@@ -328,6 +332,7 @@ impl TextService {
                 eaten: [false; 256],
                 popup: None,
                 text_rect: RECT::default(),
+                mode_button: None,
                 pending_async: 0,
             }),
         })
@@ -359,12 +364,13 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
     fn Deactivate(&self) -> windows::core::Result<()> {
         guard(Ok(()), || {
             self.finalize_composition();
-            let (tm, tid, c_mgr, c_focus, key_sink, preserved, popup) = {
+            let (tm, tid, c_mgr, c_focus, key_sink, preserved, popup, button) = {
                 let Ok(mut s) = self.state.try_borrow_mut() else {
                     return Ok(());
                 };
                 s.anchor = None;
                 s.recent_words.clear();
+                let button = s.mode_button.take();
                 let out = (
                     s.thread_mgr.take(),
                     s.client_id,
@@ -373,6 +379,7 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
                     s.key_sink,
                     s.preserved_toggle,
                     s.popup.take(),
+                    button,
                 );
                 s.cookie_thread_mgr = TF_INVALID_COOKIE;
                 s.cookie_thread_focus = TF_INVALID_COOKIE;
@@ -384,6 +391,16 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
             if let Some(tm) = tm {
                 // SAFETY: plain COM calls on the thread manager we were activated with.
                 unsafe {
+                    if let Some(button) = button {
+                        if let Ok(b) = button.cast_object_ref::<ModeButton>() {
+                            b.detach(); // breaks the button -> service reference cycle
+                        }
+                        if let (Ok(mgr), Some(item)) =
+                            (tm.cast::<ITfLangBarItemMgr>(), langbar::as_item(&button))
+                        {
+                            let _ = mgr.RemoveItem(&item);
+                        }
+                    }
                     if let Ok(source) = tm.cast::<ITfSource>() {
                         for cookie in [c_mgr, c_focus] {
                             if cookie != TF_INVALID_COOKIE {
@@ -460,6 +477,19 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
                     atoms.1 = cat.RegisterGUID(&GUID_ATTR_TASHKEEL).unwrap_or(0) as i32;
                 }
             }
+            // The input-indicator button (langbar.rs). Failure only means no tray icon.
+            let mut button: Option<ITfLangBarItemButton> = None;
+            if let Ok(mgr) = tm.cast::<ITfLangBarItemMgr>() {
+                let b: ITfLangBarItemButton = ModeButton::new(self.to_interface()).into();
+                if let Some(item) = langbar::as_item(&b) {
+                    // SAFETY: plain COM call; no state borrow is held.
+                    if unsafe { mgr.AddItem(&item) }.is_ok() {
+                        button = Some(b);
+                    } else if let Ok(obj) = b.cast_object_ref::<ModeButton>() {
+                        obj.detach();
+                    }
+                }
+            }
 
             if let Ok(mut s) = self.state.try_borrow_mut() {
                 s.cookie_thread_mgr = cookies.0;
@@ -468,6 +498,7 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
                 s.preserved_toggle = preserved;
                 s.attr_input = atoms.0;
                 s.attr_tashkeel = atoms.1;
+                s.mode_button = button;
             }
             Ok(())
         })
@@ -688,6 +719,49 @@ impl ITfDisplayAttributeProvider_Impl for TextService_Impl {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The input-indicator button's view of the service (langbar.rs)
+
+impl TrayOwner for TextService_Impl {
+    fn tray_is_arabic(&self) -> bool {
+        self.state
+            .try_borrow()
+            .map(|s| s.arabic_mode)
+            .unwrap_or(true)
+    }
+    fn tray_set_arabic(&self, arabic: bool) {
+        if self.tray_is_arabic() == arabic {
+            return;
+        }
+        // A word being typed is kept as shown before switching (like the toggle key).
+        self.finalize_composition();
+        if let Ok(mut s) = self.state.try_borrow_mut() {
+            s.arabic_mode = arabic;
+        }
+        self.refresh_tray();
+    }
+    fn tray_toggle_hint(&self) -> Option<String> {
+        let t = self.state.try_borrow().ok()?.config.mode_toggle.clone();
+        match t.as_str() {
+            "none" | "" => None,
+            "ShiftTap" => Some("Shift".into()),
+            _ => Some(t),
+        }
+    }
+    fn tray_can_open_settings(&self) -> bool {
+        !self.tray_secure() && !t3a_paths::is_app_container()
+    }
+    fn tray_open_settings(&self) {
+        let _ = open_settings_app();
+    }
+    fn tray_secure(&self) -> bool {
+        self.state
+            .try_borrow()
+            .map(|s| s.secure_mode)
+            .unwrap_or(true)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Configuration entry point: Windows' keyboard options ("Options"/"Properties" of the keyboard in
 // the language settings and the Text Services dialog) call ITfFnConfigure::Show (docs/05 §9).
 
@@ -807,6 +881,21 @@ impl TextService_Impl {
     fn toggle_mode(&self) {
         if let Ok(mut s) = self.state.try_borrow_mut() {
             s.arabic_mode = !s.arabic_mode;
+        }
+        self.refresh_tray();
+    }
+
+    /// Let the input indicator re-read the mode icon (no state borrow held: it calls GetIcon back).
+    fn refresh_tray(&self) {
+        let button = self
+            .state
+            .try_borrow()
+            .ok()
+            .and_then(|s| s.mode_button.clone());
+        if let Some(b) = button {
+            if let Ok(obj) = b.cast_object_ref::<ModeButton>() {
+                obj.refresh();
+            }
         }
     }
 
