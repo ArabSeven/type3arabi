@@ -24,7 +24,7 @@ user sees and feels. All dimensions are in DIPs at 96 DPI (scale by DPI/96).
 ### 3.1 Anatomy (RTL; example buffer `mar7aba`, then `mar7ab` mid-word)
 ```
 ┌────────────────────────────────────────┐
-│ mar7aba                        [ شامي ] │  header: Latin buffer (LTR, left) · dialect badge (right)
+│ ╰⚙╯ mar7aba                    [ شامي ] │  header: Settings tab · Latin buffer (LTR) · dialect badge (right)
 ├────────────────────────────────────────┤
 │ ◌َ                             مرحبا  ▌│  row 1 = default (highlighted, accent bar on the RIGHT edge)
 │                                 مرحبه  │
@@ -48,6 +48,10 @@ user sees and feels. All dimensions are in DIPs at 96 DPI (scale by DPI/96).
 - Row markers (left end, secondary color, 11 DIP): completion `⋯`, custom word `★`, raw Latin `EN`.
   Exact words, phrases, OOV: no marker.
 - No row numbers (digits are letters in Arabizi).
+- **Settings tab** (Owner 2026-09-25): a small tab hanging from the popup's top edge in the header's left corner
+  (30×19 DIP, rounded bottom corners, keycap fill and outline), with the Windows settings glyph (Segoe MDL2
+  Assets U+E713). Click → Type3arabi Settings. Hidden where no process may be started (secure desktop,
+  AppContainer apps; docs/02 §14). List only; the tashkeel editor has none.
 
 ### 3.2 Metrics (defaults)
 | Element | Value |

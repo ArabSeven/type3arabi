@@ -12,8 +12,8 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 code signing (O2), ARM64 build. The real-app checklist (`docs/09` M1/M4) still needs the Owner's runs.
 
 ## Release candidate 1.0.0-rc.1 (2026-09-25) — built, NOT published
-Artifact: `target\installer\Type3arabi-1.0.0-rc.1-x64.msi` (+ identical `Type3arabi-x64.msi`), 24.0 MB (rebuilt 2026-09-25: Tab fix, Settings review, desktop shortcut, LICENSE, tray menu),
-SHA-256 `48564c2fa8063f127024b66092516db8e2ce6f84f3b4b80def6ffa3696b120bf`. Built with
+Artifact: `target\installer\Type3arabi-1.0.0-rc.1-x64.msi` (+ identical `Type3arabi-x64.msi`), 24.0 MB (rebuilt 2026-09-25: Tab fix, Settings review, desktop shortcut, LICENSE, popup Settings tab, Arabic 101 tidy-up),
+SHA-256 `e2ad28cc3cf2ddec4bab768a404e9255cbec7858d545eb772b65df8f5f7c962f`. Built with
 `scripts\build-installer.ps1 -Data target\type3arabi-release.dat`; `wix msi validate` clean except the expected
 ICE61 (same-version upgrades allowed on purpose). Draft notes: `docs/releases/v1.0.0-rc.1.md`.
 Release checklist (docs/07 §6):
@@ -268,6 +268,11 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - [x] Record baseline numbers in STATUS.md.
 
 ## Owner decisions recorded
+- **2026-09-25 (O13)**: After installing the RC: no tray (input indicator) button — removed; Settings opens from a
+  small rounded tab attached to the top of the candidate popup instead. Arabic (101) must never come back next to
+  Type3arabi. Keep the color icon unless Microsoft forbids it → Microsoft's IME requirements say IME icons "must be
+  designed with black and white colors only", so the keyboard's icon stays black and white (DLL only; Settings,
+  companion and installer keep the color logo).
 - **2026-09-24 (O12)**: Free and open source (ADR-0010). Code Apache-2.0; model CC BY-NC-SA 4.0 with full
   provenance (DATASETS.md); downloads only via GitHub Releases (plus a version-free "latest" link for the website)
   and the Microsoft Store; website on Cloudflare Pages; no accounts, telemetry or backend; optional donation.
@@ -326,7 +331,9 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - D28: Brand pass (Owner brand kit): popup tokens → brand palette (docs/05 §3.3 updated; was Windows greys + a fixed #0067C0 although the spec named the Windows accent); Settings restyled with bundled Kufam/Manrope (OFL); icons from the kit; TIP/hotkey embed icon + VERSIONINFO (embed-resource); WiX brand art.
 - D29: Version 1.0.0-rc.1; MSI ProductVersion is numeric (1.0.0) with `AllowSameVersionUpgrades` so the final 1.0.0 replaces the RC (ICE61 warning accepted). `build-installer.ps1` reads the version from Cargo.toml and takes `-Data` (public builds = release-mode model).
 - D30: `THIRD-PARTY-LICENSES.html` generated per build by cargo about (`about.toml`, `about.hbs`) for both workspaces and installed with the app (MIT/Apache notice requirements).
-- D31: Tray menu = the documented TSF input-indicator button (`GUID_LBI_INPUTMODE`, `win/langbar.rs`), not a Shell_NotifyIcon icon of our own: no extra process or permanent icon, it appears only while Type3arabi is the active keyboard. Left click Arabic ⇄ Latin; right click: Arabic, Latin (with the toggle key), Settings… (greyed in AppContainer/secure desktop). The DLL's icons (brand 101, modes 102/103) now follow Microsoft's black-and-white IME icon guideline; the Settings app, hotkey and installer keep the color logo.
+- D31 (superseded by O13): the tray button (`win/langbar.rs`, mode icons 102/103) was reverted; the brand icon 101 stays black and white (`res/brand.ico`).
+- D32: Popup Settings tab (docs/05 §3.1): drawn in the list header's left corner, `PopupEvent::Settings` → the same `open_settings_app` as ITfFnConfigure; hidden on the secure desktop and in AppContainer apps (`settings_allowed`, set at activation). Harness: a copy of the harness exe stands in for "Type3arabi Settings.exe" and leaves a marker when started.
+- D33: Arabic 101 after reinstall + restart — diagnosis on the Owner's machine: saved list (`User Profile\ar-SA`) = Type3arabi only, Preload/Substitutes/HiddenDummyLayouts = Windows' normal TIP-only form (`00000401 → 00000409`), yet `04010401` loaded in the session and listed by TSF; switching to Type3arabi does not load it (tested), so the stray load happens at sign-in. `hklSubstitute` is not a reliable remedy (Durdin 2017; D2 stands). Fix: the companion's sign-in `tidy` (docs/02 §2 step 4) unloads loaded Arabic layouts that are not in the saved list when Type3arabi is (at 0/5/20/60/180 s, then stops); `enable` now keeps only *saved* layouts (a merely loaded Arabic 101 was treated as the user's). Documented APIs only (UnloadKeyboardLayout, InstallLayoutOrTip); no registry writes.
 - D0: Applied Owner decision (2026-09-22) — added `internal` source status, 80/10/10 deterministic split, pipeline modes, and citations in NOTICE.md.
 
 ## Conflicts found between docs
@@ -345,7 +352,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
   Settings "My words" page; "enable for this user" button for other accounts; hotkey conflict shown in Settings.
 - M7: verify on a fresh account that the MSI yields exactly one ar-SA entry (the enable step was verified on the dev machine only, D14).
 - M7: confirm where Windows 11 Settings surfaces ITfFnConfigure for a third-party keyboard (implemented + harness-checked via GetDisplayName; not yet seen in the Settings UI).
-- M1: Mode in the `GUID_COMPARTMENT_KEYBOARD_OPENCLOSE` compartment (docs/02 §10), so Arabic/Latin is shared across apps; today it is per text-service instance (the tray button reflects it).
+- M7: confirm after a real restart on the Owner's machine that Arabic 101 no longer appears (D33: reproduced by loading the layout in-session and running `--tidy`; not yet observed across a sign-in).
 - M1: Spike S2 for real (Latin base layout in password fields); re-run S1/S3/S4/S5 (all flagged UNVERIFIED).
 - M1: `ITfTextEditSink` (finalize when the caret is moved by mouse) and `ITfTextLayoutSink` (popup follows scrolling).
 - M1: Input-scope gating beyond the keyboard-disabled compartment (IS_EMAIL/IS_URL ⇒ Latin, IS_PRIVATE ⇒ no learning).
@@ -359,7 +366,7 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - M2: `data/eval/bench_keystrokes.tsv` (10k words from golden/FineWeb) replaces smoke as the default bench set.
 
 ## Session log
-- 2026-09-25 (night) — Agent (Claude): input-indicator (tray) button with a native right-click menu (Arabic / Latin / Settings…), researched against Microsoft's IME requirements, SampleIME and CorvusSKK; guideline icons; harness checks the item, the live menu and mode switching on x64 + x86. README: GitHub cannot open links in new tabs (sanitizer strips `target`), so none were changed.
+- 2026-09-25 (late) — Agent (Claude): Owner test of the RC. Tray button reverted (O13); Settings tab on the candidate popup (harness: click → Settings started, word finalized as shown; x64 + x86, 5 runs × 3 rounds each, 0 failures). Arabic 101 diagnosed (D33) and fixed in the companion (`tidy` at sign-in, `enable` keeps only saved layouts); verified in-session: stray `04010401` loaded → `t3a-hotkey --tidy` → gone, saved list and hidden base layout untouched; disable → enable leaves only Type3arabi. Keyboard icon stays black and white (Microsoft IME requirement). RC MSI rebuilt.
 - 2026-09-25 (evening) — Agent (Claude): Owner review of Settings: status fades after 5 s with the path once; export/import history (transfers.jsonl: counts, names, times only); "Keyboard shortcuts"; bidi-isolated English lines + RLM for Arabic lines in plain-text dialogs (periods no longer jump); About: copyright, Buy me a coffee, Linktree (links via a 4-URL allow-list, default browser). Installer: Options page, desktop shortcut on by default (ICE38/43/57 suppressed: per-machine false positives). Windows Settings cannot link to a third-party keyboard's options; the native route is an input-indicator (tray) menu item — not built (backlog M1). LICENSE: project header (code Apache-2.0 vs model CC BY-NC-SA 4.0, DATASETS.md, brand), appendix filled; README rewritten (no Store mention; unsigned-installer notice). RC MSI rebuilt.
 - 2026-09-25 (later) — Agent (Claude): Owner report on the website's tashkeel editor. Fixed on the site: an invisible input covered the popup (every click fell through), Tab did nothing in the editor, chips slid under «مسح الكل», letters/digits failed under a non-English Windows layout (fallback to the physical key + an IME hint), Space/Shift+Space/punctuation in the editor now follow the app. Verified with real mouse/keyboard events (headless Edge + CDP). App: the open-editor key now closes the editor (was: next vowelling); harness x64 + x86 green; RC MSI rebuilt.
 - 2026-09-25 — Agent (Claude): NileChat self-training built and evaluated honestly (spike S6: not shipped). Brand pass across the app (popup palette, Settings restyle with logo/fonts, icons, DLL/EXE VERSIONINFO, installer art). Release candidate 1.0.0-rc.1 built with the release-mode model, validated, license report included, draft notes in docs/releases. Website: "About" removed, header GitHub/Datasets + Control links, sticky glass header (fixed: body overflow broke sticky), all external links open in a new tab, `beshakel 3am` example, popup replica synced to the brand tokens. Next (Owner): install/uninstall/upgrade test of the RC MSI; decide signing (O2); approve publishing.

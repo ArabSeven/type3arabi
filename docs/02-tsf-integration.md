@@ -57,8 +57,15 @@ Order (mirror in unregister, reversed):
    the user did not have, which costs an extra Win+Space stop. `t3a-hotkey --enable-profile` therefore
    removes, with `InstallLayoutOrTip(layout, ILOT_UNINSTALL)`, every ar-SA layout that was not enabled
    before, and unloads it from the running session (`UnloadKeyboardLayout`; otherwise it stays listed
-   until sign-out). Layouts the user already had are kept. `t3a-hotkey --list-profiles` prints what
-   the Win+Space flyout enumerates.
+   until sign-out). Layouts the user already had (in their *saved* list, not merely loaded) are kept.
+   `t3a-hotkey --list-profiles` prints what the Win+Space flyout enumerates.
+   **At every sign-in** Arabic 101 can come back without being in the saved list: the session *loads* the
+   raw `00000401` layout (Owner report 2026-09-25, after reinstall + restart: saved list = Type3arabi only,
+   yet `04010401` loaded and listed). The companion (`t3a-hotkey`, started by the Run key) therefore runs
+   `tidy` at start and 5 / 20 / 60 / 180 s later, then stops: if Type3arabi is in the user's ar-SA list,
+   every loaded *Arabic* layout (KLID `…0401`) that is not in that list is unloaded (`UnloadKeyboardLayout`).
+   It writes nothing, never touches the hidden US base layout (`0401:00000409`) the TIP runs on, and keeps
+   any Arabic layout the user added themselves. Manual run: `t3a-hotkey --tidy`.
    Never write `HKCU\Keyboard Layout\Preload` or similar directly (the dev uninstall script is the one
    exception: it repairs Preload entries an early broken build left behind).
 
@@ -70,9 +77,10 @@ Windows has no country-neutral Arabic user language, so the language name shown 
 (Superseded: registering under all 16 Arabic LANGIDs flooded the switcher with 16 entries.)
 
 ### 2.2 Resources in the DLL (via `embed-resource` build-dep + `t3a-tip/res/t3a.rc`)
-- `IDI_BRAND` (id 101): black glyph **ع** in a white rounded box with 1-px 50%-black stroke; sizes
-  16/20/24/32/40/48, 32-bit ARGB. `IDI_MODE_AR` (102): white **ع** with stroke. `IDI_MODE_LATIN` (103): white **A** with stroke.
-  (Microsoft guideline: IME icons are black/white glyphic, stored in the DLL, not loose .ico files.)
+- `IDI_BRAND` (id 101): black glyph **t3** (Manrope, OFL) in a white rounded box with 1-px 50%-black stroke; sizes
+  16/20/24/32/40/48, 32-bit ARGB (`crates/t3a-tip/res/make_icons.py`). Microsoft's IME requirements: "All IME icons
+  must be designed with black and white colors only", stored in the DLL, not loose .ico files. The Settings app,
+  companion and installer keep the color logo. (No mode icons: there is no tray button, §10.)
 - `VS_VERSIONINFO` with product/file version = workspace version, CompanyName = Owner's legal name.
 
 ## 3. COM object model
@@ -305,22 +313,11 @@ Display attributes:
 - State = global compartment `GUID_COMPARTMENT_KEYBOARD_OPENCLOSE` (open = Arabic, closed = Latin),
   obtained via `ITfThreadMgr::GetGlobalCompartment` when `config.general.mode_scope = "global"` (default),
   else the thread compartment. React to changes in `ITfCompartmentEventSink::OnChange`.
-- Tray: `LangBarInputModeItem` with `GUID_LBI_INPUTMODE`; icon `IDI_MODE_AR` or `IDI_MODE_LATIN`;
+- Tray: ~~`LangBarInputModeItem` with `GUID_LBI_INPUTMODE`; icon `IDI_MODE_AR` or `IDI_MODE_LATIN`;
   tooltip "عربي – Arabic" / "Latin"; `OnClick` toggles the compartment; right-click menu:
-  Arabic/Latin, Settings…, Help.
-- **As implemented (2026-09-25, `win/langbar.rs`):** `ModeButton` (`ITfLangBarItemButton`, `ITfSource`),
-  `GUID_LBI_INPUTMODE`, style `BTN_BUTTON | SHOWNINTRAY`, added through `ITfLangBarItemMgr` in `ActivateEx` and
-  removed in `Deactivate` (which also breaks the button → service reference cycle); `GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT`
-  is registered (dll.rs). Left click toggles Arabic ⇄ Latin; right click (`TF_LBI_CLK_RIGHT`) shows a native popup
-  menu (`TrackPopupMenuEx`, `TPM_RETURNCMD`, owner = the thread's focus window, else a temporary invisible popup):
-  "Arabic · عربي" / "Latin · لاتيني ⟶ toggle key" (radio-checked), separator, "Type3arabi Settings… · الإعدادات"
-  (greyed in AppContainer apps and on the secure desktop, where no process may be started). No "Help" item (least
-  obtrusive). Icons: `102` ع / `103` A, and the profile's `101` brand icon, in Microsoft's black-and-white IME icon
-  style (`crates/t3a-tip/res/make_icons.py`); `GetIcon` returns a new icon of `SM_CXSMICON` (×1.25 on the secure
-  desktop), which the caller destroys. Every keyboard toggle refreshes it (`OnUpdate(TF_LBI_ICON|TOOLTIP|TEXT)`).
-  The mode itself is still the text service's own state per thread, not the `OPENCLOSE` compartment above (backlog).
-  Evidence: `tsf_harness` (x64, x86) finds the item by `GUID_LBI_INPUTMODE`, checks icon/tooltip, opens the real menu
-  and reads its items back, and switches modes by click and by menu.
+  Arabic/Latin, Settings…, Help.~~ **Not built (Owner decision 2026-09-25):** a tray button was built and
+  removed after the Owner's test; Settings is reached from the popup's Settings tab (docs/05 §3.1), the Start
+  menu, the desktop shortcut and Windows' keyboard options (§14).
 - Toggle hotkey: `ITfKeystrokeMgr::PreserveKey(tid, GUID_PRESERVED_TOGGLE, TF_PRESERVEDKEY{uVKey, uModifiers}, "Toggle Arabic/Latin")`.
   Default `Ctrl+Space` (`VK_SPACE`, `TF_MOD_CONTROL`). Config accepts `"Ctrl+Space" | "Shift+Space" | "Ctrl+Shift+Space" | "ShiftTap" | "none"`.
   `ShiftTap` = press and release Shift alone within 300 ms with no other key: implemented in the key-up path, not as a preserved key.
@@ -332,8 +329,8 @@ to Type3arabi, and pressing it again switches back. The TIP itself cannot do thi
 while another keyboard is active).
 
 - Process: `t3a-hotkey.exe`, no window except a message-only window, started at logon via
-  `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` (installer); on start it reads config and **exits
-  immediately** if `general.global_hotkey_enabled = false`. Idle cost: blocked in `GetMessageW` (0 CPU, ~1–2 MB).
+  `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` (installer); on start it runs the sign-in tidy-up (§2 step 4),
+  then reads config and, if `general.global_hotkey_enabled = false`, exits once the tidy-up is done (≤ 3 min). Idle cost: blocked in `GetMessageW` (0 CPU, ~1–2 MB).
 - `RegisterHotKey(msgWnd, 1, mods | MOD_NOREPEAT, vk)`; default **Ctrl+Alt+A** (configurable). If
   registration fails, write `hotkey_conflict = true` into `%LOCALAPPDATA%\Type3arabi\state.toml` so Settings can show it.
 - On `WM_HOTKEY`: `fg = GetForegroundWindow()`, `cur = GetKeyboardLayout(GetWindowThreadProcessId(fg))`.
@@ -381,6 +378,9 @@ and the text before the caret on the line is empty. Sent via `SendInput` with th
   `ShellExecuteW("open", "<install>\Type3arabi Settings.exe")` (looked up next to and above the DLL);
   else `E_NOTIMPL`. Windows calls this for the keyboard's options in its language settings and for
   "Properties" in the classic Text Services dialog.
+- The candidate popup's **Settings tab** (docs/05 §3.1) starts the same app on click (`PopupEvent::Settings`),
+  with the same rule: the tab is not drawn on the secure desktop or in AppContainer apps (`settings_allowed`,
+  set at activation). The Settings window takes the focus, which finalizes the word as shown.
 - `ITfFnReconversion` — reserved for M9 (reconvert selected Arabic word to its candidates).
 
 ## 15. Error handling & safe passthrough
