@@ -16,6 +16,16 @@ allow-wildcard-paths = true
 
 [advisories]
 yanked = "deny"
+# "Unmaintained" notices (no vulnerability, no fixed version exists) in the Settings app's Tauri 2 tree,
+# reviewed 2026-09-25. Each must be re-checked when Tauri is updated; any other advisory still fails.
+ignore = [
+  { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: compile-time proc macro in Tauri's tree, not in the binary" },
+  { id = "RUSTSEC-2025-0075", reason = "unic-char-range: via tauri-utils > urlpattern; unmaintained, no vulnerability" },
+  { id = "RUSTSEC-2025-0080", reason = "unic-common: via tauri-utils > urlpattern; unmaintained, no vulnerability" },
+  { id = "RUSTSEC-2025-0081", reason = "unic-char-property: via tauri-utils > urlpattern; unmaintained, no vulnerability" },
+  { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version: via tauri-utils > urlpattern; unmaintained, no vulnerability" },
+  { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident: via tauri-utils > urlpattern; unmaintained, no vulnerability" },
+]
 
 [sources]
 unknown-registry = "deny"

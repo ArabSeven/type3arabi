@@ -1,0 +1,169 @@
+# Release build (docs/07 §2, §4, §6): tag vX.Y.Z → GitHub-hosted Windows runner → Type3arabi binaries +
+# MSI → unsigned artifact → [SignPath, when enabled] → signature check → draft GitHub Release.
+#
+# Nothing here publishes on its own:
+# - Signing runs only when the repository variable SIGNPATH_ENABLED is "true" (set after SignPath Foundation
+#   accepts the project; needs secret SIGNPATH_API_TOKEN and variables SIGNPATH_ORGANIZATION_ID,
+#   SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG). Artifact configuration: .signpath/.
+# - The draft release is created only for a v* tag and only when PUBLISH_ENABLED is "true"; an unsigned
+#   draft also needs ALLOW_UNSIGNED_RELEASE = "true". The Owner publishes the draft by hand.
+# - The model is not built here (its inputs are too large and never committed): it is downloaded from the
+#   URL in data/model.lock.toml and must match the SHA-256 there.
+# SignPath requires every job that leads to the signing request to run on GitHub-hosted runners.
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TERM_PROGRESS_WHEN: never
+
+jobs:
+  build:
+    runs-on: windows-2025
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      msi: ${{ steps.version.outputs.msi }}
+      unsigned-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Version (Cargo.toml) matches the tag
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Select-String Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$v") {
+            throw "tag $env:GITHUB_REF_NAME does not match workspace version $v"
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "msi=Type3arabi-$v-x64.msi" >> $env:GITHUB_OUTPUT
+
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: x86_64-pc-windows-msvc, i686-pc-windows-msvc
+
+      - name: Tools (WiX 5.0.2, cargo-about 0.9.2)
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2
+          cargo install cargo-about --version 0.9.2 --locked --features cli
+
+      - name: Model (pinned by data/model.lock.toml)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/fetch-model.ps1 -Out target/type3arabi-release.dat
+
+      - name: Build binaries and MSI
+        shell: pwsh
+        run: ./scripts/build-installer.ps1 -Data target/type3arabi-release.dat
+
+      - name: Validate MSI (static)
+        shell: pwsh
+        run: |
+          $sha = [regex]::Match((Get-Content data/model.lock.toml -Raw), '(?m)^sha256\s*=\s*"([0-9a-f]+)"').Groups[1].Value
+          ./scripts/validate-msi.ps1 "target/installer/${{ steps.version.outputs.msi }}" -ModelSha256 $sha
+
+      - name: Upload unsigned MSI
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-msi
+          path: target/installer/${{ steps.version.outputs.msi }}
+          if-no-files-found: error
+
+  sign:
+    needs: build
+    if: vars.SIGNPATH_ENABLED == 'true'
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Deep signing (.signpath/artifact-configuration.xml): our four PE files inside the MSI first, then
+      # the MSI itself. WiX's own custom-action DLLs keep their WiX signature. Manual approval in SignPath.
+      - name: SignPath signing request
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: msi
+          github-artifact-id: ${{ needs.build.outputs.unsigned-artifact-id }}
+          parameters: |
+            version: "${{ needs.build.outputs.version }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+
+      - name: Tools (WiX 5.0.2 for the payload check)
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+
+      - name: Verify signatures
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem signed -Recurse -Filter "${{ needs.build.outputs.msi }}" | Select-Object -First 1
+          if (-not $msi) { throw "signed MSI not found" }
+          $sha = [regex]::Match((Get-Content data/model.lock.toml -Raw), '(?m)^sha256\s*=\s*"([0-9a-f]+)"').Groups[1].Value
+          ./scripts/validate-msi.ps1 $msi.FullName -ModelSha256 $sha -RequireSigned -SignerSubject "SignPath Foundation"
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item $msi.FullName out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-msi
+          path: out/${{ needs.build.outputs.msi }}
+          if-no-files-found: error
+
+  release:
+    needs: [build, sign]
+    # Tag builds only, never automatic publication: a draft the Owner reviews and publishes.
+    if: >-
+      always() && startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_ENABLED == 'true' &&
+      needs.build.result == 'success' &&
+      (needs.sign.result == 'success' || (needs.sign.result == 'skipped' && vars.ALLOW_UNSIGNED_RELEASE == 'true'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.sign.result == 'success' && 'signed-msi' || 'unsigned-msi' }}
+          path: dist
+      - name: Version-free copy + SHA-256 sums
+        run: |
+          cd dist
+          cp "${{ needs.build.outputs.msi }}" Type3arabi-x64.msi
+          sha256sum "${{ needs.build.outputs.msi }}" Type3arabi-x64.msi > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="docs/releases/v${{ needs.build.outputs.version }}.md"
+          [ -f "$notes" ] || notes=/dev/null
+          gh release create "${{ github.ref_name }}" --draft --verify-tag \
+            --title "Type3arabi ${{ needs.build.outputs.version }}" --notes-file "$notes" \
+            $([[ "${{ needs.build.outputs.version }}" == *-* ]] && echo --prerelease) \
+            dist/*.msi dist/SHA256SUMS.txt

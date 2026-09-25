@@ -44,4 +44,73 @@ jobs:
       - run: cargo build -p t3a-tip -p t3a-hotkey --release --target ${{ matrix.target }}
       - if: matrix.target == 'x86_64-pc-windows-msvc'
         run: cargo test --workspace --target ${{ matrix.target }}
-      # M1: add DLL size gate (docs/06 P7) and regsvr32 register/unregister smoke test (admin runner).
+      - name: DLL size (docs/06 P7, <= 3 MB)
+        shell: pwsh
+        run: |
+          $dll = "target/${{ matrix.target }}/release/t3a_tip.dll"
+          $mb = (Get-Item $dll).Length / 1MB
+          "t3a_tip.dll = {0:N2} MB" -f $mb
+          if ($mb -gt 3) { throw "t3a_tip.dll exceeds the 3 MB budget" }
+      # The hosted runner is an admin session: register and unregister the TIP (DllRegisterServer uses TSF
+      # APIs only, R6) and check that exactly one ar-SA profile appears and everything is removed again.
+      - name: regsvr32 smoke test
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $dll = (Resolve-Path "target/${{ matrix.target }}/release/t3a_tip.dll").Path
+          $regsvr = if ("${{ matrix.target }}" -like "i686*") { "$env:SystemRoot\SysWOW64\regsvr32.exe" } else { "$env:SystemRoot\System32\regsvr32.exe" }
+          $clsid = "{8A4B9277-1E2E-45E0-92A2-83FED833D8BF}"
+          $p = Start-Process $regsvr -ArgumentList "/s", "`"$dll`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "register failed: $($p.ExitCode)" }
+          $langs = @(Get-ChildItem "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$clsid\LanguageProfile")
+          if ($langs.Count -ne 1 -or $langs[0].PSChildName -ne "0x00000401") { throw "expected one ar-SA profile, got $($langs.PSChildName)" }
+          $p = Start-Process $regsvr -ArgumentList "/s", "/u", "`"$dll`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "unregister failed: $($p.ExitCode)" }
+          if (Test-Path "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$clsid") { throw "TSF registration left behind" }
+
+  settings:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/settings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/settings
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: apps/settings/Cargo.toml
+
+  # The MSI with a seed-only test model (the release model is fetched only by release.yml): proves the
+  # WiX build, the payload and the silent-install properties on a clean hosted runner.
+  installer-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: x86_64-pc-windows-msvc, i686-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+      - name: Tools (WiX 5.0.2, cargo-about 0.9.2)
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2
+          cargo install cargo-about --version 0.9.2 --locked --features cli
+      - name: Seed-only test model
+        run: cargo run -q --release -p t3a-cli -- build-data --seed data/seed --out target/test-model.dat
+      - name: Build MSI
+        shell: pwsh
+        run: ./scripts/build-installer.ps1 -Data target/test-model.dat
+      - name: Validate MSI (static)
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem target/installer -Filter "Type3arabi-*-x64.msi" | Select-Object -First 1
+          ./scripts/validate-msi.ps1 $msi.FullName -TestModel

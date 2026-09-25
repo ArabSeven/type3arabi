@@ -1,0 +1,24 @@
+# The language model a public build ships (docs/07 §2, §6). The model is built locally with the data
+# pipeline (docs/04: `t3ap --mode release pairs`, `t3a-cli train-rules`, `t3a-cli build-data --mode release`)
+# because its inputs are too large for CI and are never committed (AGENTS.md R14). It is published once as a
+# GitHub Release asset (tag `model-<data_version>`), and every release build downloads it and checks this
+# SHA-256 (`scripts/fetch-model.ps1`), so an MSI is reproducible from this commit plus this exact file.
+# `build-data` is deterministic: the same pipeline outputs give the same bytes.
+#
+# To change the model: build it, update every field below in the same commit, upload the file to a new
+# `model-<data_version>` release (Owner action), then tag the app release.
+
+data_version = 2026092502
+file = "type3arabi.dat"
+bytes = 62020752
+sha256 = "20c60ad032c4b487fc757b64837e8131f9f9b31ffb2c5cb18207ae5b088d63d0"
+url = "https://github.com/ArabSeven/type3arabi/releases/download/model-2026092502/type3arabi.dat"
+
+# From the file's META section (DATASETS.md explains each source).
+distribution = "release"
+license = "CC-BY-NC-SA-4.0"
+sources = ["fineweb2", "akhanafer-levantine", "arabizikit-corpus", "doda", "talafha-jordanian", "tarc"]
+provisional_sources = ["akhanafer-levantine", "talafha-jordanian"]  # ADR-0011: permission pending
+
+# How it was built (2026-09-25): pipeline_data/out (FineWeb-2 lexicon/LM/diacritics, params from the
+# 2026-09-24 tune) + rules retrained on 197,763 word pairs; held-out eval in STATUS.md (RC 1.0.0-rc.2).

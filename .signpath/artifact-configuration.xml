@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DRAFT SignPath artifact configuration "msi" for .github/workflows/release.yml (docs/07 §4). Not active:
+  SignPath Foundation has not accepted the project yet. Paste it into the SignPath project when it has.
+
+  The workflow uploads the unsigned MSI with actions/upload-artifact (a ZIP with the MSI at its root).
+  Deep signing: Type3arabi's four PE files inside the MSI are signed first, then the MSI. WiX's own
+  custom-action DLLs (Binary table: WixUiCa_X64, Wix4UtilCA_X64) are third-party and already signed by
+  "WiX Toolset (.NET Foundation)"; they are not listed and keep that signature.
+
+  SignPath Foundation conditions: product name and version must be set on every signed file and be the
+  same in each build (metadata restrictions below; ${version} is the signing-request parameter "version").
+
+  TO VERIFY with a test-certificate signing policy before the first real request: how SignPath addresses
+  files inside an MSI (install-directory layout "Type3arabi/x64/t3a_tip.dll" vs. flat). Both DLLs are
+  named t3a_tip.dll (x64/ and x86/), so the paths must tell them apart; if MSI paths turn out to be
+  flat, fall back to signing a ZIP of the payload before the MSI is built, then the MSI (two requests).
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <msi-file path="Type3arabi-*-x64.msi" max-matches="1">
+      <pe-file-set product-name="Type3arabi" product-version="${version}" company-name="Type3arabi">
+        <include path="Type3arabi/x64/t3a_tip.dll" />
+        <include path="Type3arabi/x86/t3a_tip.dll" />
+        <include path="Type3arabi/t3a-hotkey.exe" />
+        <include path="Type3arabi/Type3arabi Settings.exe" />
+        <for-each>
+          <authenticode-sign hash-algorithm="sha256" />
+        </for-each>
+      </pe-file-set>
+      <authenticode-sign hash-algorithm="sha256" />
+    </msi-file>
+  </zip-file>
+</artifact-configuration>
