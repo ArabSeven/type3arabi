@@ -414,6 +414,165 @@ pub fn is_chord(s: &str) -> bool {
     }
 }
 
+/// Why a shortcut cannot be used: Windows, or nearly every app, already uses it (Owner, 2026-09-25).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Reserved {
+    /// English reason, completing "This shortcut is used …".
+    pub en: &'static str,
+    /// Arabic reason, completing «هذا الاختصار يستخدمه …».
+    pub ar: &'static str,
+}
+
+/// Shortcuts Settings refuses for Type3arabi, with the reason (docs/05 §7): the global hotkey is
+/// registered system-wide, so a copy of Ctrl+C would break copying everywhere; the typing shortcuts
+/// act while a word is being typed and would hide the app's own shortcut. `chord` is written like
+/// `Ctrl+Shift+T` (modifiers Ctrl, Alt, Shift, Win in any order and case).
+pub fn reserved_shortcut(chord: &str) -> Option<Reserved> {
+    let parts: Vec<String> = chord
+        .split('+')
+        .map(|p| p.trim().to_ascii_lowercase())
+        .collect();
+    let (key, mods) = parts.split_last()?;
+    let has = |m: &str| {
+        mods.iter()
+            .any(|x| x == m || (m == "ctrl" && x == "control"))
+    };
+    let (ctrl, alt, shift, win) = (
+        has("ctrl"),
+        has("alt"),
+        has("shift"),
+        has("win") || has("windows"),
+    );
+    let r = |en, ar| Some(Reserved { en, ar });
+    if win {
+        return match key.as_str() {
+            "s" if shift => r(
+                "by Windows to take a screenshot (Win+Shift+S)",
+                "ويندوز لالتقاط صورة للشاشة",
+            ),
+            "space" => r(
+                "by Windows to switch keyboards (Win+Space)",
+                "ويندوز للتبديل بين لوحات المفاتيح",
+            ),
+            "v" => r(
+                "by Windows for the clipboard history (Win+V)",
+                "ويندوز لسجلّ الحافظة",
+            ),
+            "l" => r("by Windows to lock the PC (Win+L)", "ويندوز لقفل الجهاز"),
+            "d" => r(
+                "by Windows to show the desktop (Win+D)",
+                "ويندوز لإظهار سطح المكتب",
+            ),
+            "e" => r(
+                "by Windows to open File Explorer (Win+E)",
+                "ويندوز لفتح مستكشف الملفات",
+            ),
+            "tab" => r("by Windows for Task View (Win+Tab)", "ويندوز لعرض المهام"),
+            _ => r(
+                "by Windows: Win shortcuts belong to Windows",
+                "ويندوز: اختصارات مفتاح Win محجوزة له",
+            ),
+        };
+    }
+    match (ctrl, alt, shift, key.as_str()) {
+        (_, true, _, "tab") => r(
+            "by Windows to switch between windows (Alt+Tab)",
+            "ويندوز للتنقّل بين النوافذ",
+        ),
+        (false, true, false, "f4") => r(
+            "by Windows to close the app (Alt+F4)",
+            "ويندوز لإغلاق البرنامج",
+        ),
+        (false, true, false, "space") => r(
+            "by Windows for the window menu (Alt+Space)",
+            "ويندوز لقائمة النافذة",
+        ),
+        (false, true, false, "enter") => r(
+            "by many apps for full screen or properties (Alt+Enter)",
+            "برامج كثيرة لملء الشاشة أو الخصائص",
+        ),
+        (true, false, false, "space") => r(
+            "for Type3arabi's own Arabic/Latin switch and by other input methods (Ctrl+Space)",
+            "«اكتب عربي» نفسه وطرق إدخال أخرى للتبديل بين العربي واللاتيني",
+        ),
+        (true, false, true, "z") => r("by apps to redo (Ctrl+Shift+Z)", "البرامج للإعادة"),
+        (true, false, true, "t") => r(
+            "by browsers to reopen a closed tab (Ctrl+Shift+T)",
+            "المتصفحات لإعادة فتح تبويب مغلق",
+        ),
+        (true, false, true, "n") => r(
+            "by browsers and File Explorer for a new private window or folder (Ctrl+Shift+N)",
+            "المتصفحات ومستكشف الملفات لنافذة خاصة أو مجلد جديد",
+        ),
+        (true, false, true, "tab") => r(
+            "by apps to go to the previous tab (Ctrl+Shift+Tab)",
+            "البرامج للانتقال إلى التبويب السابق",
+        ),
+        (true, false, true, "s") => r("by apps to save as (Ctrl+Shift+S)", "البرامج للحفظ باسم"),
+        (true, false, false, k) => match k {
+            "c" => r("by Windows to copy (Ctrl+C)", "ويندوز للنسخ"),
+            "v" => r("by Windows to paste (Ctrl+V)", "ويندوز للّصق"),
+            "x" => r("by Windows to cut (Ctrl+X)", "ويندوز للقصّ"),
+            "z" => r("by Windows to undo (Ctrl+Z)", "ويندوز للتراجع"),
+            "y" => r("by apps to redo (Ctrl+Y)", "البرامج للإعادة"),
+            "a" => r("by Windows to select all (Ctrl+A)", "ويندوز لتحديد الكل"),
+            "s" => r("by apps to save (Ctrl+S)", "البرامج للحفظ"),
+            "p" => r("by apps to print (Ctrl+P)", "البرامج للطباعة"),
+            "f" => r("by apps to find (Ctrl+F)", "البرامج للبحث"),
+            "n" => r(
+                "by apps for a new document or window (Ctrl+N)",
+                "البرامج لمستند أو نافذة جديدة",
+            ),
+            "o" => r("by apps to open a file (Ctrl+O)", "البرامج لفتح ملف"),
+            "w" => r(
+                "by apps to close a tab or window (Ctrl+W)",
+                "البرامج لإغلاق تبويب أو نافذة",
+            ),
+            "t" => r(
+                "by browsers for a new tab (Ctrl+T)",
+                "المتصفحات لتبويب جديد",
+            ),
+            "r" => r("by browsers to reload (Ctrl+R)", "المتصفحات لإعادة التحميل"),
+            "b" => r("by editors for bold (Ctrl+B)", "المحرّرات للخط العريض"),
+            "i" => r("by editors for italic (Ctrl+I)", "المحرّرات للخط المائل"),
+            "u" => r(
+                "by editors for underline (Ctrl+U)",
+                "المحرّرات لوضع خط تحت النص",
+            ),
+            "k" => r("by apps to insert a link (Ctrl+K)", "البرامج لإدراج رابط"),
+            "l" => r(
+                "by browsers for the address bar (Ctrl+L)",
+                "المتصفحات لشريط العنوان",
+            ),
+            "h" => r(
+                "by apps for history or replace (Ctrl+H)",
+                "البرامج للسجلّ أو الاستبدال",
+            ),
+            "d" => r(
+                "by browsers to bookmark a page (Ctrl+D)",
+                "المتصفحات لإضافة إشارة مرجعية",
+            ),
+            "e" => r(
+                "by apps to search or center text (Ctrl+E)",
+                "البرامج للبحث أو توسيط النص",
+            ),
+            "g" => r("by apps to find next (Ctrl+G)", "البرامج للبحث عن التالي"),
+            "j" => r("by browsers for downloads (Ctrl+J)", "المتصفحات للتنزيلات"),
+            "q" => r("by apps to quit (Ctrl+Q)", "البرامج للخروج"),
+            "tab" => r(
+                "by apps to go to the next tab (Ctrl+Tab)",
+                "البرامج للانتقال إلى التبويب التالي",
+            ),
+            "backspace" => r(
+                "by Windows to delete the previous word (Ctrl+Backspace)",
+                "ويندوز لحذف الكلمة السابقة",
+            ),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn set<T>(slot: &mut T, v: T) -> bool {
     *slot = v;
     true
@@ -488,6 +647,42 @@ mod tests {
             "Ctrl+F5",
         ] {
             assert!(!is_chord(bad), "{bad}");
+        }
+    }
+
+    /// Regression (Owner, 2026-09-25): Settings accepted Ctrl+C as a shortcut.
+    #[test]
+    fn windows_shortcuts_are_reserved_with_a_reason() {
+        for (chord, why) in [
+            ("Ctrl+C", "copy"),
+            ("ctrl+v", "paste"),
+            ("Control+X", "cut"),
+            ("Ctrl+Z", "undo"),
+            ("Ctrl+A", "select all"),
+            ("Win+Shift+S", "screenshot"),
+            ("Shift+Win+S", "screenshot"),
+            ("Win+Space", "switch keyboards"),
+            ("Win+K", "Win shortcuts"),
+            ("Alt+Tab", "switch between windows"),
+            ("Alt+F4", "close"),
+            ("Ctrl+Shift+T", "reopen"),
+            ("Ctrl+Backspace", "delete the previous word"),
+        ] {
+            let r = reserved_shortcut(chord).unwrap_or_else(|| panic!("{chord} not reserved"));
+            assert!(r.en.contains(why), "{chord}: {}", r.en);
+            assert!(!r.ar.is_empty());
+        }
+        // Type3arabi's own defaults and ordinary choices stay available.
+        for ok in [
+            "Ctrl+Alt+A",
+            "Shift+Space",
+            "Tab",
+            "Ctrl+Enter",
+            "Ctrl+Shift+K",
+            "Alt+3",
+            "none",
+        ] {
+            assert_eq!(reserved_shortcut(ok), None, "{ok}");
         }
     }
 

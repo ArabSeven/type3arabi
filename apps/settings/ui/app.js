@@ -98,6 +98,11 @@ $$('input[data-kind]').forEach((el) => {
       el.classList.remove("capturing");
       el.value = el.dataset.before;
       delete el.dataset.capturing;
+      // Shortcuts Windows handles itself (Win+Shift+S, Alt+Tab…) never reach this window: it just
+      // loses the focus. Say so instead of failing silently.
+      if (!document.hasFocus()) {
+        status("يبدو أن ويندوز استخدم هذا الاختصار (خرجت النافذة من التركيز) — اختر اختصاراً آخر.\u200F", "Windows seems to have used that shortcut (this window lost the focus) — choose another one.", "err");
+      }
     }
   });
   el.addEventListener("keydown", async (e) => {
@@ -116,12 +121,15 @@ $$('input[data-kind]').forEach((el) => {
       return;
     }
     el.dataset.checking = "1";
-    let ok = false;
+    let problem = null; // [ar, en] reason, or null when the shortcut can be used
     try {
-      ok = el.dataset.kind === "chord" ? await invoke("check_chord", { chord }) : /(Ctrl|Alt|Win)\+/.test(chord);
+      problem = await invoke("check_shortcut", { chord, kind: el.dataset.kind });
+    } catch {
+      problem = ["تعذّر التحقّق من الاختصار", "the shortcut could not be checked"];
     } finally {
       delete el.dataset.checking;
     }
+    const ok = !problem;
     if (!el.dataset.capturing) return; // cancelled while checking
     const same = (v) => (v || "").toLowerCase() === chord.toLowerCase();
     const clash =
@@ -129,12 +137,10 @@ $$('input[data-kind]').forEach((el) => {
       ($$('input[data-kind="chord"]').some((o) => o !== el && same(o.value)) ||
         same($('[data-key="mode_toggle"]')?.value));
     if (!ok || clash) {
-      const why = clash
-        ? "it is already used by another shortcut"
-        : el.dataset.kind === "hotkey"
-          ? "the global hotkey needs Ctrl, Alt or Win"
-          : "it would get in the way of normal typing — letters need Ctrl or Alt";
-      status(`«${chord}» غير صالح — جرّب اختصاراً آخر أو Esc للإلغاء`, `"${chord}" can't be used (${why}) — try another, or press Esc`, "err");
+      const [whyAr, whyEn] = clash
+        ? ["مستخدم لإجراء آخر في «اكتب عربي»", "it is already used by another Type3arabi shortcut"]
+        : problem;
+      status(`لا يمكن استخدام «${chord}»: ${whyAr}. جرّب اختصاراً آخر أو Esc للإلغاء.\u200F`, `"${chord}" can't be used: ${whyEn}. Try another, or press Esc.`, "err");
       return; // keep waiting; nothing is stored
     }
     stopCapture(el, chord);
@@ -281,6 +287,7 @@ async function refreshKeyboard() {
   const msg = {
     taken: ["هذا الاختصار مستخدم من برنامج آخر — اختر اختصاراً غيره", "This shortcut is used by another program — choose another one"],
     invalid: ["الاختصار المحفوظ غير صالح — اختر اختصاراً جديداً", "The saved shortcut is not valid — choose a new one"],
+    reserved: ["الاختصار المحفوظ يستخدمه ويندوز أو البرامج، فلم يُفعَّل — اختر اختصاراً آخر", "The saved shortcut is used by Windows or common apps, so it is not active — choose another one"],
   }[k.hotkey_state];
   note.hidden = !msg || !current?.global_hotkey_enabled;
   if (msg) note.textContent = `${msg[0]}\u200F · ${msg[1]}`;

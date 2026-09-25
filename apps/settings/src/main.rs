@@ -4,7 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use t3a_engine::config::is_chord;
+use t3a_engine::config::{is_chord, reserved_shortcut};
 use t3a_engine::{Config, UserStore};
 
 /// The settings the UI edits (a subset of `Config`; untouched keys are preserved on save).
@@ -83,6 +83,8 @@ fn validate(s: &Settings) -> Vec<String> {
     ] {
         if !is_chord(v) {
             errors.push(format!("{name}: not a valid shortcut"));
+        } else if let Some(r) = reserved_shortcut(v) {
+            errors.push(format!("{v}: this shortcut is used {}", r.en));
         }
     }
     let toggles = [
@@ -98,6 +100,11 @@ fn validate(s: &Settings) -> Vec<String> {
     if s.global_hotkey_enabled {
         if let Err(e) = t3a_hotkey::parse(&s.global_hotkey) {
             errors.push(format!("global_hotkey: {e}"));
+        } else if let Some(r) = reserved_shortcut(&s.global_hotkey) {
+            errors.push(format!(
+                "{}: this shortcut is used {}",
+                s.global_hotkey, r.en
+            ));
         }
     }
     let keys = [
@@ -131,6 +138,32 @@ fn defaults() -> Settings {
 #[tauri::command]
 fn check_chord(chord: String) -> bool {
     is_chord(&chord)
+}
+
+/// Why `chord` cannot be used, in Arabic and English, or `None` if it can. `kind`: "chord" (typing
+/// shortcuts) or "hotkey" (the global hotkey). Windows' and common app shortcuts are refused with the
+/// reason (Owner, 2026-09-25).
+#[tauri::command]
+fn check_shortcut(chord: String, kind: String) -> Option<[String; 2]> {
+    if kind == "hotkey" {
+        if t3a_hotkey::parse(&chord).is_err() {
+            return Some([
+                "اختصار التفعيل العام يحتاج Ctrl أو Alt".into(),
+                "the global hotkey needs Ctrl or Alt".into(),
+            ]);
+        }
+    } else if !is_chord(&chord) {
+        return Some([
+            "سيعطّل الكتابة العادية — الأحرف تحتاج Ctrl أو Alt".into(),
+            "it would get in the way of normal typing — letters need Ctrl or Alt".into(),
+        ]);
+    }
+    reserved_shortcut(&chord).map(|r| {
+        [
+            format!("هذا الاختصار يستخدمه {}", r.ar),
+            format!("this shortcut is used {}", r.en),
+        ]
+    })
 }
 
 /// Validate, merge into the current config (keys the UI does not show are kept), write atomically,
@@ -517,6 +550,7 @@ fn main() {
             get_settings,
             defaults,
             check_chord,
+            check_shortcut,
             save_settings,
             wipe_learning,
             export_learning,
@@ -535,6 +569,18 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression (Owner, 2026-09-25): Ctrl+C was accepted as the global hotkey.
+    #[test]
+    fn windows_shortcuts_are_refused_with_the_reason() {
+        let why = |c: &str, k: &str| check_shortcut(c.into(), k.into()).map(|[_, en]| en);
+        assert!(why("Ctrl+C", "hotkey").unwrap().contains("copy"));
+        assert!(why("Win+Shift+S", "hotkey").unwrap().contains("screenshot"));
+        assert!(why("Ctrl+V", "chord").unwrap().contains("paste"));
+        assert!(why("A", "chord").unwrap().contains("normal typing"));
+        assert_eq!(why("Ctrl+Alt+A", "hotkey"), None);
+        assert_eq!(why("Shift+Space", "chord"), None);
+    }
 
     #[test]
     fn history_lines_round_trip_and_skip_garbage() {

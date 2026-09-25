@@ -173,6 +173,14 @@ mod win {
                 t3a_paths::write_hotkey_status("off", "");
                 return false;
             }
+            if t3a_engine::config::reserved_shortcut(&config.global_hotkey).is_some() {
+                // A system-wide copy of e.g. Ctrl+C would break copying in every app.
+                t3a_paths::log_error(
+                    "global_hotkey: reserved by Windows or common apps; not registered",
+                );
+                t3a_paths::write_hotkey_status("reserved", &config.global_hotkey);
+                return false;
+            }
             let Ok(spec) = parse(&config.global_hotkey) else {
                 t3a_paths::log_error("global_hotkey: invalid value in config.toml");
                 t3a_paths::write_hotkey_status("invalid", &config.global_hotkey);
