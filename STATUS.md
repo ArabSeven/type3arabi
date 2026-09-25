@@ -13,7 +13,15 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 still needs the Owner's runs. **Next gate: the Owner's manual test of 1.0.0-rc.2.** Only after that: public
 repository, public unsigned release, SignPath inquiry, signing workflow, Microsoft Store (Owner, 2026-09-25).
 
-## Release candidate 1.0.0-rc.3 (2026-09-25) — built, NOT published, NOT signed
+## Release 1.0.0 (2026-09-25) — public, unsigned
+Owner approval 2026-09-25 (after testing rc.3): deploy the website, make the repository public, publish on GitHub Releases.
+1.0.0 = rc.3 code with the version set to 1.0.0 (the website's "latest" link skips pre-releases). Local build
+`target\installer\Type3arabi-1.0.0-x64.msi`, 24,350,720 bytes, SHA-256 `9b3c37488a2757409f1360ed04c02f3817ce06ffd09b19fedf9072dc06223469`,
+validate-msi all checks pass; `cargo test --workspace`, fmt, pipeline tests green. The published MSI is built by
+`.github/workflows/release.yml` on a GitHub-hosted runner (its SHA-256 is in the release's SHA256SUMS.txt).
+Before going public, commit author e-mails were rewritten to the GitHub noreply address (Owner, 2026-09-25).
+
+## Release candidate 1.0.0-rc.3 (2026-09-25) — superseded by 1.0.0
 Fixes the Owner's RC2 report (frozen diacritics editor; Ctrl+C accepted as a shortcut): D45–D50.
 Artifact: `target\installer\Type3arabi-1.0.0-rc.3-x64.msi` (+ identical `Type3arabi-x64.msi`), 24,354,816 bytes,
 SHA-256 `3b31c29108bdefb9d318c79385c3227568e9b14ae52e12f096c3dbb6351462a1`. MSI ProductVersion 1.0.0.3. Same model as rc.2 (`data/model.lock.toml`).

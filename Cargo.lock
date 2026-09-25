@@ -193,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "t3a-cli"
-version = "1.0.0-rc.3"
+version = "1.0.0"
 dependencies = [
  "t3a-data",
  "t3a-engine",
@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "t3a-data"
-version = "1.0.0-rc.3"
+version = "1.0.0"
 dependencies = [
  "bytemuck",
  "memmap2",
@@ -209,14 +209,14 @@ dependencies = [
 
 [[package]]
 name = "t3a-engine"
-version = "1.0.0-rc.3"
+version = "1.0.0"
 dependencies = [
  "t3a-data",
 ]
 
 [[package]]
 name = "t3a-hotkey"
-version = "1.0.0-rc.3"
+version = "1.0.0"
 dependencies = [
  "embed-resource",
  "t3a-engine",
@@ -226,14 +226,14 @@ dependencies = [
 
 [[package]]
 name = "t3a-paths"
-version = "1.0.0-rc.3"
+version = "1.0.0"
 dependencies = [
  "windows",
 ]
 
 [[package]]
 name = "t3a-tip"
-version = "1.0.0-rc.3"
+version = "1.0.0"
 dependencies = [
  "embed-resource",
  "t3a-data",
@@ -246,14 +246,14 @@ dependencies = [
 
 [[package]]
 name = "t3a-ui"
-version = "1.0.0-rc.3"
+version = "1.0.0"
 dependencies = [
  "windows",
 ]
 
 [[package]]
 name = "t3a-wasm"
-version = "1.0.0-rc.3"
+version = "1.0.0"
 dependencies = [
  "t3a-engine",
 ]
