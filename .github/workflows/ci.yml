@@ -23,6 +23,10 @@ jobs:
       - run: cargo run -q -p t3a-cli -- eval data/eval/smoke.tsv
       - run: cargo run -q --release -p t3a-cli -- bench
       - uses: EmbarkStudios/cargo-deny-action@v2
+      # The Settings app is its own workspace; checked here because container actions need Linux.
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: apps/settings/Cargo.toml
       - uses: astral-sh/setup-uv@v5
       - name: pipeline tests
         working-directory: tools/pipeline
@@ -83,9 +87,6 @@ jobs:
           workspaces: apps/settings
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          manifest-path: apps/settings/Cargo.toml
 
   # The MSI with a seed-only test model (the release model is fetched only by release.yml): proves the
   # WiX build, the payload and the silent-install properties on a clean hosted runner.
