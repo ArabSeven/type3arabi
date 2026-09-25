@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- UI text overrides: the license page leads to the Options page, so its button says "Next". -->
+<!-- UI text overrides. The license page leads to the "What Type3arabi adds" page, so its button says "Next". -->
 <WixLocalization Culture="en-US" xmlns="http://wixtoolset.org/schemas/v4/wxl">
   <String Id="WelcomeEulaDlgInstall" Value="&amp;Next" />
+
+  <!-- "What Type3arabi adds" page (Type3arabi.wxs T3OptionsDlg). Keep in step with docs/07 §5. -->
+  <String Id="T3ChangesIntro" Value="Nothing you type leaves this PC." />
+  <String Id="T3Changes" Value="• The Arabic · Type3arabi keyboard, registered with Windows (Text Services Framework) and turned on for you. Apps load it while you type in them.&#13;&#10;&#13;&#10;• A small helper that starts when you sign in: it provides the Ctrl+Alt+A shortcut and removes the extra Arabic (101) keyboard Windows adds next to Type3arabi.&#13;&#10;&#13;&#10;• Type3arabi Settings in the Start menu. Your settings and learned words are saved only on this PC (%LOCALAPPDATA%\Type3arabi); Type3arabi never connects to the internet." />
+  <String Id="T3UninstallNote" Value="Uninstalling removes all of this except your settings and learned words (delete them first with Type3arabi Settings › Forget everything, if you like)." />
+
+  <!-- Files in use (upgrades): the keyboard is loaded by every app you type in; nothing needs closing. -->
+  <String Id="FilesInUseText" Value="Apps that are open are using the Type3arabi keyboard. You don't need to close them: click Ignore, and the update is completed when you restart." />
 </WixLocalization>

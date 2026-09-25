@@ -13,10 +13,16 @@ param([switch]$SkipBuild, [string]$Data = "target\type3arabi.dat")
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-# One version for everything (docs/07 §3): the workspace version in Cargo.toml, e.g. 1.0.0-rc.1.
+# One version for everything (docs/07 §3): the workspace version in Cargo.toml, e.g. 1.0.0-rc.2.
 $Version = (Select-String -Path (Join-Path $RepoRoot "Cargo.toml") -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
-# MSI ProductVersion is numeric only: 1.0.0-rc.1 -> 1.0.0 (the .wxs allows same-version upgrades).
-$MsiVersion = ($Version -split '-')[0]
+# MSI ProductVersion is numeric: 1.0.0-rc.2 -> 1.0.0.2, 1.0.0 -> 1.0.0. Windows Installer ignores the 4th
+# field when comparing versions, so every RC and the final 1.0.0 upgrade each other (the .wxs allows
+# same-version upgrades), while Settings > Apps shows which RC is installed. Pre-releases need a number.
+if ($Version -match '^(\d+\.\d+\.\d+)(?:-[0-9A-Za-z]+\.(\d+))?$') {
+    $MsiVersion = if ($Matches[2]) { "$($Matches[1]).$($Matches[2])" } else { $Matches[1] }
+} else {
+    throw "Version '$Version' must be X.Y.Z or X.Y.Z-<tag>.N (e.g. 1.0.0-rc.2)"
+}
 $BuildDir = Join-Path $RepoRoot "target\tip"
 $SettingsDir = Join-Path $RepoRoot "target\settings"
 $Payload = Join-Path $RepoRoot "target\installer\payload"

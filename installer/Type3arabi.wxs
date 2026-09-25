@@ -15,11 +15,23 @@
            Scope="perMachine"
            Compressed="yes">
 
-    <!-- Same-version upgrades: a release candidate (e.g. 1.0.0-rc.1, MSI 1.0.0) is replaced by the final 1.0.0. -->
+    <!-- Same-version upgrades: release candidates (1.0.0-rc.N => MSI 1.0.0.N; the 4th field is ignored in
+         version comparisons) and the final 1.0.0 replace each other. -->
     <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Type3arabi is already installed." />
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="Type3arabi.ico" SourceFile="$(var.Payload)\icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="Type3arabi.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://type3arabi.com/" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/ArabSeven/type3arabi/issues" />
+
+    <!-- Files in use (docs/07 §5). The keyboard DLL is loaded by every app the user types in, so an
+         upgrade always finds it in use. Never let Windows Installer close those apps (Restart Manager
+         would shut them down in a silent /qn install, e.g. from the Microsoft Store) and never let it
+         restart the PC on its own: in-use files are replaced at the next restart, msiexec returns 3010
+         (restart required), and the finish page of an interactive install offers the restart.
+         MSIRESTARTMANAGERCONTROL only works when authored in the Property table (not from a custom action). -->
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
+    <Property Id="REBOOT" Value="ReallySuppress" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Type3arabi">
@@ -64,6 +76,8 @@
         <!-- The companion exits at once if the user disabled the global hotkey (docs/02 §11). -->
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run"
                        Name="Type3arabi Hotkey" Type="string" Value="&quot;[#HotkeyExe]&quot;" />
+        <!-- Our own key (desktop-shortcut marker): gone after uninstall, even if left empty. -->
+        <RemoveRegistryKey Action="removeOnUninstall" Root="HKLM" Key="Software\Type3arabi" />
       </Component>
       <Component Id="Settings">
         <File Id="SettingsExe" Name="Type3arabi Settings.exe" Source="$(var.Payload)\Type3arabi Settings.exe" KeyPath="yes">
@@ -95,8 +109,12 @@
                   ExeCommand="&quot;[SystemFolder]regsvr32.exe&quot; /s /u &quot;[#TipX86Dll]&quot;" />
 
     <!-- ===== Per-user steps (immediate, as the installing user) ===== -->
-    <CustomAction Id="StopHotkey" Directory="INSTALLFOLDER" Execute="immediate" Return="ignore"
-                  ExeCommand="&quot;[System64Folder]taskkill.exe&quot; /F /IM t3a-hotkey.exe" />
+    <!-- Console tools run through WiX's QuietExec (no console window, also in silent installs). Immediate
+         QuietExec reads its command line from WixQuietExec64CmdLine, set just before each run. -->
+    <CustomAction Id="SetStopHotkeyCmd" Property="WixQuietExec64CmdLine"
+                  Value="&quot;[System64Folder]taskkill.exe&quot; /F /IM t3a-hotkey.exe" />
+    <CustomAction Id="StopHotkey" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="immediate" Return="ignore" />
     <CustomAction Id="EnableProfile" Directory="INSTALLFOLDER" Execute="immediate" Return="ignore"
                   ExeCommand="&quot;[#HotkeyExe]&quot; --enable-profile" />
     <CustomAction Id="DisableProfile" Directory="INSTALLFOLDER" Execute="immediate" Return="ignore"
@@ -105,12 +123,15 @@
                   ExeCommand="&quot;[#HotkeyExe]&quot;" />
 
     <!-- ===== Finish page actions ===== -->
-    <CustomAction Id="RestartNow" Directory="INSTALLFOLDER" Execute="immediate" Return="asyncNoWait"
-                  ExeCommand="&quot;[System64Folder]shutdown.exe&quot; /r /t 20 /c &quot;Restarting to finish installing Type3arabi.&quot;" />
+    <CustomAction Id="SetRestartCmd" Property="WixQuietExec64CmdLine"
+                  Value="&quot;[System64Folder]shutdown.exe&quot; /r /t 20 /c &quot;Restarting to finish installing Type3arabi.&quot;" />
+    <CustomAction Id="RestartNow" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="immediate" Return="ignore" />
     <CustomAction Id="RestartWarning" Directory="INSTALLFOLDER" Execute="immediate" Return="asyncNoWait"
                   ExeCommand="&quot;[#HotkeyExe]&quot; --restart-warning" />
 
     <InstallExecuteSequence>
+      <Custom Action="SetStopHotkeyCmd" Before="StopHotkey" />
       <Custom Action="StopHotkey" Before="InstallValidate" />
       <Custom Action="DisableProfile" Before="InstallInitialize"
               Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
@@ -134,14 +155,16 @@
               Value="Type3arabi is installed. Press Win+Space and choose Arabic (Saudi Arabia) · Type3arabi, or use Ctrl+Alt+A. Shortcuts can be changed in Type3arabi Settings." />
     <UI>
       <ui:WixUI Id="WixUI_Minimal" />
-      <!-- Options page between the license page (whose button reads "Next", Type3arabi.wxl) and the install. -->
+      <!-- "What Type3arabi adds" (after the license page): discloses every system change (Store policy
+           10.2.7/10.2.8, SignPath "announce system changes"); same list in README.md and docs/07 §5. -->
       <Dialog Id="T3OptionsDlg" Width="370" Height="270" Title="!(loc.WelcomeEulaDlg_Title)">
         <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
-        <Control Id="Title" Type="Text" X="15" Y="6" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Options" />
-        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose where Type3arabi Settings can be opened from." />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}What Type3arabi adds" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="300" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.T3ChangesIntro)" />
         <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
-        <Control Id="DesktopShortcutBox" Type="CheckBox" X="20" Y="64" Width="330" Height="18" Property="DESKTOPSHORTCUT" CheckBoxValue="1" Text="Create a desktop shortcut for Type3arabi Settings" />
-        <Control Id="Note" Type="Text" X="37" Y="86" Width="315" Height="44" NoPrefix="yes" Text="Type3arabi Settings is always in the Start menu too. The shortcut is removed when Type3arabi is uninstalled." />
+        <Control Id="Changes" Type="Text" X="20" Y="52" Width="335" Height="126" NoPrefix="yes" Text="!(loc.T3Changes)" />
+        <Control Id="DesktopShortcutBox" Type="CheckBox" X="20" Y="182" Width="330" Height="16" Property="DESKTOPSHORTCUT" CheckBoxValue="1" Text="Create a desktop shortcut for Type3arabi Settings" />
+        <Control Id="Note" Type="Text" X="20" Y="202" Width="335" Height="28" NoPrefix="yes" Text="!(loc.T3UninstallNote)" />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Install" Type="PushButton" ElevationShield="yes" X="212" Y="243" Width="80" Height="17" Default="yes" Text="!(loc.VerifyReadyDlgInstall)">
           <Publish Event="EndDialog" Value="Return" />
@@ -153,8 +176,10 @@
       <InstallUISequence>
         <Show Dialog="T3OptionsDlg" After="WelcomeEulaDlg" Condition="NOT Installed" />
       </InstallUISequence>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="SetRestartCmd"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" Order="1" />
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="RestartNow"
-               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" Order="2" />
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="RestartWarning"
                Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX &lt;&gt; 1 AND NOT Installed" />
     </UI>
