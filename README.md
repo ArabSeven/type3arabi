@@ -108,7 +108,7 @@ To remove it: *Settings → Apps → Installed apps → Type3arabi → Uninstall
 | **The small things, handled** | «اللّه» gets its shadda, «شكراً» its tanween, and `, ; ?` become ، ؛ ؟ automatically. |
 | **Diacritics, letter by letter** | <kbd>Tab</kbd> opens the tashkeel editor: any mark on any letter, several letters at once, or a ready-made vowelling. <kbd>Ctrl</kbd>+<kbd>Enter</kbd> turns the vowels you typed into harakat. |
 | **English stays English** | <kbd>Shift</kbd>+<kbd>Space</kbd> or <kbd>Esc</kbd> keeps a word in Latin letters, so you can mix both freely. |
-| **Learns from you** | The choices you make come first next time. Stored on your PC only; move them to another PC with one file, or erase them. |
+| **Learns your choices, lets you export them** | Pick a word once (`3am` → عام instead of عم) and it comes first next time. Stored on your PC only; take everything it learned to another PC in one `.t3learn` file, or erase it. |
 | **Change your mind** | <kbd>Backspace</kbd> right after a word reopens it with its list. |
 
 <details>
