@@ -120,8 +120,33 @@ try {
     $run = @(Nodes "//w:RegistryValue[@Key='Software\Microsoft\Windows\CurrentVersion\Run']")
     Check ($run.Count -eq 1 -and $run[0].Root -eq "HKLM" -and $run[0].Name -eq "Type3arabi Hotkey") "startup entry HKLM Run 'Type3arabi Hotkey' (removed with its component)"
     Check (@(Nodes "//w:RegistryKey[@Key='Software\Type3arabi'][@ForceDeleteOnUninstall='yes']").Count -eq 1) "HKLM\Software\Type3arabi removed on uninstall"
-    $other = @(Nodes "//w:RegistryValue" | Where-Object { $_.Key -notin @('Software\Microsoft\Windows\CurrentVersion\Run', 'Software\Type3arabi') })
+    $arpKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Type3arabi'
+    $other = @(Nodes "//w:RegistryValue" | Where-Object { $_.Key -notin @('Software\Microsoft\Windows\CurrentVersion\Run', 'Software\Type3arabi', $arpKey) })
     Check ($other.Count -eq 0) "no other registry values written by the MSI (TSF/COM keys come from DllRegisterServer)"
+
+    Write-Host "== Uninstall (Apps entry, keep or erase learned words)"
+    Check ((Prop "ARPSYSTEMCOMPONENT") -eq "1") "MSI's own Apps entry hidden (ARPSYSTEMCOMPONENT=1): Windows would uninstall it without dialogs"
+    $arp = @{}
+    foreach ($v in Nodes "//w:RegistryValue[@Key='$arpKey']") { $arp[$v.Name] = $v }
+    Check ($arp["UninstallString"].Value -eq 'MsiExec.exe /I[ProductCode]' -and $arp["UninstallString"].Root -eq "HKLM") "Apps entry: Uninstall opens the package in full UI (MsiExec /I)"
+    Check ($arp["QuietUninstallString"].Value -eq 'MsiExec.exe /X[ProductCode] /qn') "Apps entry: QuietUninstallString for scripted removal"
+    Check ($arp.ContainsKey("DisplayName") -and $arp.ContainsKey("DisplayVersion") -and $arp.ContainsKey("Publisher") -and $arp.ContainsKey("DisplayIcon")) "Apps entry: name, version, publisher, icon"
+    Check ($arp["NoModify"].Value -eq "1" -and $arp["NoRepair"].Value -eq "1") "Apps entry: no Modify/Repair buttons"
+    Check (@(Nodes "//w:RegistryKey[@Key='$arpKey'][@ForceDeleteOnUninstall='yes']").Count -eq 1) "Apps entry removed on uninstall"
+    $eraseProp = @(Nodes "//w:Property[@Id='ERASEUSERDATA']")
+    Check ($eraseProp.Count -eq 1 -and $eraseProp[0].Secure -eq "yes" -and -not $eraseProp[0].Value) "ERASEUSERDATA: secure, off by default"
+    $box = @(Nodes "//w:Dialog[@Id='T3RemoveDlg']/w:Control[@Property='ERASEUSERDATA']")
+    Check ($box.Count -eq 1 -and $box[0].Type -eq "CheckBox") "uninstall page has the erase checkbox"
+    Check (@(Nodes "//w:InstallUISequence/w:Show[@Dialog='T3RemoveDlg']").Count -eq 1) "uninstall page shown in maintenance mode"
+    $folders = @($x.SelectNodes("//w:CustomTable[@Id='Wix4RemoveFolderEx']/w:Row", $ns))
+    Check ($folders.Count -eq 3) "3 erase folders (RemoveFolderEx) authored"
+    foreach ($p in "T3ERASE_LOCAL", "T3ERASE_WEBVIEW", "T3ERASE_ROAMING") {
+        $ca = @($cas | Where-Object { $_.Id -like "*$p*" -or $_.Property -eq $p })
+        $seq = @(Nodes "//w:InstallExecuteSequence/w:Custom" | Where-Object { $_.Action -in ($ca | ForEach-Object { $_.Id }) })
+        Check ($seq.Count -eq 1 -and $seq[0].Condition -match 'ERASEUSERDATA = 1' -and $seq[0].Condition -match 'NOT UPGRADINGPRODUCTCODE') "$p set only when ERASEUSERDATA=1 on a full removal (never an upgrade)"
+    }
+    $exit = @(Nodes "//w:Dialog[@Id='ExitDialog']/w:Control[@Id='Title']")
+    Check ($exit.Count -eq 1 -and $exit[0].Text -match '\[T3EXITTITLE\]') "finish page title follows the uninstall outcome"
     Check (@(Nodes "//w:Shortcut").Count -ge 2) "Start menu + optional desktop shortcut"
     Check (@(Nodes "//w:ServiceInstall").Count -eq 0) "no Windows service"
     Check ((Prop "DESKTOPSHORTCUT") -eq "1") "desktop shortcut on by default (DESKTOPSHORTCUT=`"`" turns it off)"

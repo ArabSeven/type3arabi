@@ -112,9 +112,14 @@ Trusted Root and Trusted Publishers; never used for public builds.
   is per-user, which is false for a per-machine package (ALLUSERS=1 => Public desktop). ICE61 (same-version upgrades)
   and ICE69 (shortcut in its own component) are expected warnings.
 - Uninstall: unregister DLLs, `InstallLayoutOrTip(... ILOT_UNINSTALL)` for the current user, remove Run value,
-  shortcuts and `HKLM\Software\Type3arabi`; **leave** `%LOCALAPPDATA%\Type3arabi` (settings, learned words) — an
-  uninstall from Settings › Apps has no UI to ask, so the disclosure page says so and Settings › Forget everything
-  deletes the learning beforehand. Other accounts that enabled the keyboard keep a dangling list entry, which Windows
+  shortcuts and `HKLM\Software\Type3arabi`. Settings and learned words (`%LOCALAPPDATA%\Type3arabi`, the Settings
+  app's `%LOCALAPPDATA%\com.type3arabi.settings`, `%APPDATA%\Type3arabi`) are **kept** unless `ERASEUSERDATA=1`
+  (util:RemoveFolderEx for the uninstalling user; never on an upgrade). Windows removes an MSI from Settings › Apps
+  without dialogs, so the MSI's own entry is hidden (`ARPSYSTEMCOMPONENT=1`) and the package writes the Apps entry
+  itself (`Uninstall\Type3arabi`, UninstallString `MsiExec.exe /I{ProductCode}`): Uninstall opens the package in
+  maintenance mode, where `T3RemoveDlg` offers the erase checkbox (off by default) and the finish page says
+  "Type3arabi is successfully uninstalled", plus that the learned words are still saved when they were kept
+  (Owner, 2026-09-26). `QuietUninstallString` = `/X … /qn` for scripts. Other accounts that enabled the keyboard keep a dangling list entry, which Windows
   ignores once the TIP is unregistered.
 - Other accounts on a shared PC: the installer enables the keyboard for the installing user only; Settings › General
   shows "Add" for any other account.

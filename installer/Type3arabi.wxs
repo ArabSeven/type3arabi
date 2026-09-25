@@ -7,7 +7,8 @@
   not work until the next restart (Owner request 2026-09-23).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="$(var.ProductName)"
            Manufacturer="Type3arabi"
            Version="$(var.Version)"
@@ -23,6 +24,14 @@
     <Property Id="ARPPRODUCTICON" Value="Type3arabi.ico" />
     <Property Id="ARPURLINFOABOUT" Value="https://type3arabi.com/" />
     <Property Id="ARPHELPLINK" Value="https://github.com/ArabSeven/type3arabi/issues" />
+    <!-- Uninstall with a choice (Owner, 2026-09-26). Windows removes an MSI from Settings > Apps with a
+         progress bar only (no dialogs), so the MSI's own Apps entry is hidden and the ArpEntry component
+         below writes the one users see: its Uninstall runs this package in full UI (maintenance mode),
+         which shows T3RemoveDlg (keep or erase learned words) and a finish page saying what happened. -->
+    <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
+    <!-- Erase the uninstalling user's learned words and settings; off by default (T3RemoveDlg checkbox,
+         or ERASEUSERDATA=1 on the command line). -->
+    <Property Id="ERASEUSERDATA" Secure="yes" />
 
     <!-- Files in use (docs/07 §5). The keyboard DLL is loaded by every app the user types in, so an
          upgrade always finds it in use. Never let Windows Installer close those apps (Restart Manager
@@ -78,6 +87,27 @@
                        Name="Type3arabi Hotkey" Type="string" Value="&quot;[#HotkeyExe]&quot;" />
         <!-- Our own key (desktop-shortcut marker): gone after uninstall, even if left empty. -->
         <RemoveRegistryKey Action="removeOnUninstall" Root="HKLM" Key="Software\Type3arabi" />
+        <!-- Learned words and settings, only when ERASEUSERDATA=1: the paths are set by the SetProperty
+             actions below and stay empty otherwise (RemoveFolderEx then does nothing). -->
+        <util:RemoveFolderEx Id="EraseLocal" On="uninstall" Property="T3ERASE_LOCAL" />
+        <util:RemoveFolderEx Id="EraseSettingsWebView" On="uninstall" Property="T3ERASE_WEBVIEW" />
+        <util:RemoveFolderEx Id="EraseRoaming" On="uninstall" Property="T3ERASE_ROAMING" />
+      </Component>
+      <!-- The Apps entry (see ARPSYSTEMCOMPONENT): Uninstall = this package in full UI. -->
+      <Component Id="ArpEntry">
+        <RegistryKey Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Type3arabi" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="DisplayName" Type="string" Value="[ProductName]" KeyPath="yes" />
+          <RegistryValue Name="DisplayVersion" Type="string" Value="[ProductVersion]" />
+          <RegistryValue Name="Publisher" Type="string" Value="[Manufacturer]" />
+          <RegistryValue Name="DisplayIcon" Type="string" Value="[#SettingsExe],0" />
+          <RegistryValue Name="InstallLocation" Type="string" Value="[INSTALLFOLDER]" />
+          <RegistryValue Name="URLInfoAbout" Type="string" Value="[ARPURLINFOABOUT]" />
+          <RegistryValue Name="HelpLink" Type="string" Value="[ARPHELPLINK]" />
+          <RegistryValue Name="UninstallString" Type="string" Value="MsiExec.exe /I[ProductCode]" />
+          <RegistryValue Name="QuietUninstallString" Type="string" Value="MsiExec.exe /X[ProductCode] /qn" />
+          <RegistryValue Name="NoModify" Type="integer" Value="1" />
+          <RegistryValue Name="NoRepair" Type="integer" Value="1" />
+        </RegistryKey>
       </Component>
       <Component Id="Settings">
         <File Id="SettingsExe" Name="Type3arabi Settings.exe" Source="$(var.Payload)\Type3arabi Settings.exe" KeyPath="yes">
@@ -130,6 +160,14 @@
     <CustomAction Id="RestartWarning" Directory="INSTALLFOLDER" Execute="immediate" Return="asyncNoWait"
                   ExeCommand="&quot;[#HotkeyExe]&quot; --restart-warning" />
 
+    <!-- Erase paths for the user running the uninstall; only a full removal, never an upgrade. -->
+    <SetProperty Id="T3ERASE_LOCAL" Value="[LocalAppDataFolder]Type3arabi" Before="Wix4RemoveFoldersEx_X64"
+                 Sequence="execute" Condition="ERASEUSERDATA = 1 AND REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    <SetProperty Id="T3ERASE_WEBVIEW" Value="[LocalAppDataFolder]com.type3arabi.settings" Before="Wix4RemoveFoldersEx_X64"
+                 Sequence="execute" Condition="ERASEUSERDATA = 1 AND REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    <SetProperty Id="T3ERASE_ROAMING" Value="[AppDataFolder]Type3arabi" Before="Wix4RemoveFoldersEx_X64"
+                 Sequence="execute" Condition="ERASEUSERDATA = 1 AND REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+
     <InstallExecuteSequence>
       <Custom Action="SetStopHotkeyCmd" Before="StopHotkey" />
       <Custom Action="StopHotkey" Before="InstallValidate" />
@@ -153,6 +191,9 @@
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT"
               Value="Type3arabi is installed. Press Win+Space and choose Arabic (Saudi Arabia) · Type3arabi, or use Ctrl+Alt+A. Shortcuts can be changed in Type3arabi Settings." />
+    <!-- Finish page title/description: Type3arabi.wxl routes them through these; T3RemoveDlg changes them. -->
+    <Property Id="T3EXITTITLE" Value="Completed the Type3arabi Setup Wizard" />
+    <Property Id="T3EXITDESCRIPTION" Value="Click the Finish button to exit the Setup Wizard." />
     <UI>
       <ui:WixUI Id="WixUI_Minimal" />
       <!-- "What Type3arabi adds" (after the license page): discloses every system change (Store policy
@@ -173,8 +214,33 @@
           <Publish Event="SpawnDialog" Value="CancelDlg" />
         </Control>
       </Dialog>
+      <!-- Maintenance mode (Apps > Uninstall, or opening the MSI again): uninstall, keep or erase learned words. -->
+      <Dialog Id="T3RemoveDlg" Width="370" Height="270" Title="!(loc.WelcomeEulaDlg_Title)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}!(loc.T3RemoveTitle)" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="300" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.T3RemoveIntro)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Body" Type="Text" X="20" Y="56" Width="335" Height="80" NoPrefix="yes" Text="!(loc.T3RemoveBody)" />
+        <Control Id="EraseBox" Type="CheckBox" X="20" Y="146" Width="335" Height="16" Property="ERASEUSERDATA" CheckBoxValue="1" Text="!(loc.T3RemoveErase)" />
+        <Control Id="EraseNote" Type="Text" X="36" Y="164" Width="319" Height="40" NoPrefix="yes" Text="!(loc.T3RemoveEraseNote)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Uninstall" Type="PushButton" ElevationShield="yes" X="212" Y="243" Width="80" Height="17" Default="yes" Text="!(loc.T3RemoveButton)">
+          <Publish Property="WixUI_InstallMode" Value="Remove" Order="1" />
+          <Publish Property="T3EXITTITLE" Value="!(loc.T3RemovedTitle)" Order="2" />
+          <Publish Property="T3EXITDESCRIPTION" Value="!(loc.T3RemovedKept)" Condition="ERASEUSERDATA &lt;&gt; 1" Order="3" />
+          <Publish Property="T3EXITDESCRIPTION" Value="!(loc.T3RemovedErased)" Condition="ERASEUSERDATA = 1" Order="4" />
+          <!-- Skips WixUI's MaintenanceWelcomeDlg (shown only when NOT Preselected). -->
+          <Publish Property="Preselected" Value="1" Order="5" />
+          <Publish Event="Remove" Value="All" Order="6" />
+          <Publish Event="EndDialog" Value="Return" Order="7" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
       <InstallUISequence>
         <Show Dialog="T3OptionsDlg" After="WelcomeEulaDlg" Condition="NOT Installed" />
+        <Show Dialog="T3RemoveDlg" Before="MaintenanceWelcomeDlg" Condition="Installed AND NOT RESUME AND NOT Preselected AND NOT PATCH" />
       </InstallUISequence>
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="SetRestartCmd"
                Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" Order="1" />

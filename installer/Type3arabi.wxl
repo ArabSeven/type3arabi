@@ -6,7 +6,21 @@
   <!-- "What Type3arabi adds" page (Type3arabi.wxs T3OptionsDlg). Keep in step with docs/07 §5. -->
   <String Id="T3ChangesIntro" Value="Nothing you type leaves this PC." />
   <String Id="T3Changes" Value="• The Arabic · Type3arabi keyboard, registered with Windows (Text Services Framework) and turned on for you. Apps load it while you type in them.&#13;&#10;&#13;&#10;• A small helper that starts when you sign in: it provides the Ctrl+Alt+A shortcut and removes the extra Arabic (101) keyboard Windows adds next to Type3arabi.&#13;&#10;&#13;&#10;• Type3arabi Settings in the Start menu. Your settings and learned words are saved only on this PC (%LOCALAPPDATA%\Type3arabi); Type3arabi never connects to the internet." />
-  <String Id="T3UninstallNote" Value="Uninstalling removes all of this except your settings and learned words (delete them first with Type3arabi Settings › Forget everything, if you like)." />
+  <String Id="T3UninstallNote" Value="Uninstalling removes all of this. Your settings and learned words are kept for a later reinstall, unless you choose to erase them when you uninstall." />
+
+  <!-- Uninstall page (T3RemoveDlg) and the finish page after a removal (Owner, 2026-09-26). -->
+  <String Id="T3RemoveTitle" Value="Uninstall Type3arabi" />
+  <String Id="T3RemoveIntro" Value="Removes the Arabic · Type3arabi keyboard from this PC." />
+  <String Id="T3RemoveBody" Value="The keyboard, its helper and Type3arabi Settings are removed. Apps that are open keep the keyboard until you restart.&#13;&#10;&#13;&#10;Your learned word choices and settings stay on this PC, so they come back if you install Type3arabi again." />
+  <String Id="T3RemoveErase" Value="Also erase my learned word choices and settings from this PC" />
+  <String Id="T3RemoveEraseNote" Value="This cannot be undone. To keep a copy, export them first in Type3arabi Settings." />
+  <String Id="T3RemoveButton" Value="&amp;Uninstall" />
+  <String Id="T3RemovedTitle" Value="Type3arabi is successfully uninstalled" />
+  <String Id="T3RemovedKept" Value="Your learned word choices and settings are still saved on this PC. If you install Type3arabi again, it picks up where you left off." />
+  <String Id="T3RemovedErased" Value="Your learned word choices and settings were erased." />
+  <!-- WixUI's finish page, routed through properties so the uninstall can change it. -->
+  <String Id="ExitDialogTitle" Value="{\WixUI_Font_Bigger}[T3EXITTITLE]" />
+  <String Id="ExitDialogDescription" Value="[T3EXITDESCRIPTION]" />
 
   <!-- Files in use (upgrades): the keyboard is loaded by every app you type in; nothing needs closing. -->
   <String Id="FilesInUseText" Value="Apps that are open are using the Type3arabi keyboard. You don't need to close them: click Ignore, and the update is completed when you restart." />

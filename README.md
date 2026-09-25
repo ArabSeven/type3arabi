@@ -78,8 +78,9 @@ leaves your PC.
    <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>A</kbd> from any keyboard.
 4. Type `mar7aba` and press <kbd>Space</kbd>. That's it.
 
-To remove it: *Settings → Apps → Installed apps → Type3arabi → Uninstall*. The words it learned stay in
-`%LOCALAPPDATA%\Type3arabi` until you erase them (Settings → Learning & privacy → Forget).
+To remove it: *Settings → Apps → Installed apps → Type3arabi → Uninstall*. The uninstaller asks whether to
+also erase your learned words and settings (off by default: they stay in `%LOCALAPPDATA%\Type3arabi`, so a
+reinstall picks up where you left off), and confirms when Type3arabi is removed.
 
 ### What the installer changes
 
@@ -94,7 +95,8 @@ To remove it: *Settings → Apps → Installed apps → Type3arabi → Uninstall
 - Never closes your apps and never restarts the PC by itself. Apps that are already open pick up a new version
   after a restart, which the installer offers at the end (silent installs, e.g. from the Microsoft Store, return
   "restart needed" instead).
-- Uninstalling removes all of the above except your settings and learned words.
+- Uninstalling removes all of the above. Your settings and learned words are kept unless you tick
+  *Also erase my learned word choices and settings* on the uninstall page.
 
 ## Features
 
