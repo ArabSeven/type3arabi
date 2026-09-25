@@ -150,10 +150,12 @@ fn parse_spec(spec: &str) -> Option<Corpus> {
     let (rest, last) = spec.rsplit_once(':')?;
     if let Some(dialect) = Dialect::parse(last) {
         // <path>:<DIALECT> — the source id is the file's folder name (raw/<id>/arabizi.txt)
-        let source = Path::new(rest)
-            .parent()
-            .and_then(|p| p.file_name())
-            .map_or("mono".into(), |s| s.to_string_lossy().into_owned());
+        // Split on both separators: `Path` does not treat '\' as one on Linux (CI).
+        let source = rest
+            .rsplit(['/', '\\'])
+            .nth(1)
+            .filter(|s| !s.is_empty())
+            .map_or("mono".into(), str::to_string);
         return Some(Corpus {
             path: rest.to_string(),
             dialect,
