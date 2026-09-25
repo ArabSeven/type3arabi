@@ -101,6 +101,7 @@ To remove it: *Settings → Apps → Installed apps → Type3arabi → Uninstall
 | | |
 |---|---|
 | **A real Windows keyboard** | One entry, *Arabic · Type3arabi*, in the Windows language list. Switch with <kbd>Win</kbd>+<kbd>Space</kbd> or your own global shortcut. Built on the Text Services Framework, like Microsoft's own input methods. |
+| **Steps aside by itself** | With a regular Arabic keyboard you keep switching back to English for a web address or a password. Type3arabi doesn't need that: in the browser's address bar, e-mail and login boxes it types plain Latin by itself, and password, PIN and number fields get plain Latin and teach it nothing. Private/incognito windows never teach it anything either. It works from what the app tells Windows about each field (input scopes), the way Microsoft's own keyboards do. |
 | **Type the way you text** | `3` = ع, `7` = ح, `2` = ء, `5` = خ, `9` = ص/ق, `8` = ق/غ, `6` = ط — plus doubled letters, `sh`, `kh`, `gh`, `th`, `dh`… Nothing new to learn. |
 | **Your word, already picked** | The most likely Arabic word is selected; <kbd>Space</kbd> inserts it. <kbd>↓</kbd>, the mouse wheel or a click picks another. |
 | **Dialects, automatically** | Levantine, Egyptian, Gulf, Iraqi, Maghrebi and Modern Standard Arabic. There is no dialect to choose: it adapts to yours within a few words, and follows you when you switch. |
