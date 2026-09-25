@@ -104,13 +104,15 @@ mod win {
     }
 
     fn restart_warning() {
+        // The message box lays text out left to right: a trailing RLM (U+200F) after each Arabic line keeps
+        // its final period at the end of the Arabic sentence instead of its start (Owner, 2026-09-25).
         let text = "Type3arabi is installed and works in apps you open from now on.\n\n\
             Until you restart (or sign out and back in), apps that were already open may not \
             list Type3arabi, may keep an older version, or may need to be reopened. If typing \
             behaves oddly, restart first.\n\n\
-            تم تثبيت «اكتب عربي» ويعمل في البرامج التي تفتحها من الآن.\n\
+            تم تثبيت «اكتب عربي» ويعمل في البرامج التي تفتحها من الآن.\u{200F}\n\
             إلى أن تعيد تشغيل الجهاز (أو تسجّل الخروج ثم الدخول)، قد لا تظهر لوحة «اكتب عربي» في البرامج \
-            المفتوحة مسبقاً أو قد تستخدم نسخة أقدم. إذا لاحظت سلوكاً غريباً فأعد التشغيل أولاً.";
+            المفتوحة مسبقاً أو قد تستخدم نسخة أقدم. إذا لاحظت سلوكاً غريباً فأعد التشغيل أولاً.\u{200F}";
         let t: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
         // SAFETY: plain modal message box with NUL-terminated strings.
         unsafe {

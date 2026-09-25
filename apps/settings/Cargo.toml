@@ -25,7 +25,7 @@ t3a-hotkey = { path = "../../crates/t3a-hotkey" }
 t3a-paths = { path = "../../crates/t3a-paths" }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
 
 [profile.release]
 opt-level = "s"

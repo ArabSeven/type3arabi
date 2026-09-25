@@ -28,6 +28,10 @@
       </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+    <!-- Desktop shortcut to Settings (Owner, 2026-09-25): on by default; the Options page can turn it off
+         (silent installs: DESKTOPSHORTCUT=""). Per-machine install => the Public desktop. -->
+    <Property Id="DESKTOPSHORTCUT" Value="1" Secure="yes" />
 
     <ComponentGroup Id="Core" Directory="INSTALLFOLDER">
       <Component Id="TipX64" Directory="X64DIR" Bitness="always64">
@@ -64,6 +68,12 @@
                     Description="Shortcuts, typing and diacritics options for Type3arabi"
                     WorkingDirectory="INSTALLFOLDER" Icon="Type3arabi.ico" Advertise="yes" />
         </File>
+      </Component>
+      <Component Id="DesktopShortcut" Directory="DesktopFolder" Condition="DESKTOPSHORTCUT = 1">
+        <Shortcut Id="SettingsDesktopShortcut" Name="Type3arabi Settings" Target="[#SettingsExe]"
+                  Description="Shortcuts, typing and diacritics options for Type3arabi"
+                  WorkingDirectory="INSTALLFOLDER" Icon="Type3arabi.ico" />
+        <RegistryValue Root="HKLM" Key="Software\Type3arabi" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 
@@ -121,6 +131,25 @@
               Value="Type3arabi is installed. Press Win+Space and choose Arabic (Saudi Arabia) · Type3arabi, or use Ctrl+Alt+A. Shortcuts can be changed in Type3arabi Settings." />
     <UI>
       <ui:WixUI Id="WixUI_Minimal" />
+      <!-- Options page between the license page (whose button reads "Next", Type3arabi.wxl) and the install. -->
+      <Dialog Id="T3OptionsDlg" Width="370" Height="270" Title="!(loc.WelcomeEulaDlg_Title)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Options" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose where Type3arabi Settings can be opened from." />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="DesktopShortcutBox" Type="CheckBox" X="20" Y="64" Width="330" Height="18" Property="DESKTOPSHORTCUT" CheckBoxValue="1" Text="Create a desktop shortcut for Type3arabi Settings" />
+        <Control Id="Note" Type="Text" X="37" Y="86" Width="315" Height="44" NoPrefix="yes" Text="Type3arabi Settings is always in the Start menu too. The shortcut is removed when Type3arabi is uninstalled." />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Install" Type="PushButton" ElevationShield="yes" X="212" Y="243" Width="80" Height="17" Default="yes" Text="!(loc.VerifyReadyDlgInstall)">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+      <InstallUISequence>
+        <Show Dialog="T3OptionsDlg" After="WelcomeEulaDlg" Condition="NOT Installed" />
+      </InstallUISequence>
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="RestartNow"
                Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="RestartWarning"

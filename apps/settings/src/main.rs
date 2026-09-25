@@ -233,6 +233,103 @@ fn today() -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+// ---- transfer history (Owner, 2026-09-25): which exports/imports happened on this PC, and when. Only
+// counts, file names and times are kept — never typed text (R8). One JSON object per line.
+
+const HISTORY_FILE: &str = "transfers.jsonl";
+const HISTORY_MAX: usize = 200;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+struct Transfer {
+    /// Seconds since 1970 (UTC); the UI shows local time.
+    t: u64,
+    /// "export" | "import"
+    kind: String,
+    records: usize,
+    /// File name (export: full path, so it can be found again).
+    file: String,
+    /// Import only: "merge" | "replace".
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    mode: String,
+    /// Settings were included (export) or restored (import).
+    settings: bool,
+}
+
+fn history_path() -> std::path::PathBuf {
+    t3a_paths::user_dir().join(HISTORY_FILE)
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Append one entry, keeping the newest `HISTORY_MAX`. Failures are ignored: history is a convenience.
+fn record_transfer(entry: Transfer) {
+    let path = history_path();
+    let mut all = read_history(&path);
+    all.push(entry);
+    let start = all.len().saturating_sub(HISTORY_MAX);
+    let text: String = all[start..]
+        .iter()
+        .filter_map(|e| serde_json::to_string(e).ok())
+        .map(|l| l + "\n")
+        .collect();
+    let _ = t3a_paths::ensure_user_dir();
+    let _ = std::fs::write(path, text);
+}
+
+fn read_history(path: &std::path::Path) -> Vec<Transfer> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect()
+}
+
+/// Newest first.
+#[tauri::command]
+fn transfer_history() -> Vec<Transfer> {
+    let mut v = read_history(&history_path());
+    v.reverse();
+    v
+}
+
+/// The only pages Settings may open, in the default browser (never inside the app; no other URL).
+const LINKS: [&str; 4] = [
+    "https://buymeacoffee.com/hassanobaida",
+    "https://linktr.ee/hassanobaida",
+    "https://type3arabi.com/",
+    "https://github.com/ArabSeven/type3arabi",
+];
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !LINKS.contains(&url.as_str()) {
+        return Err("not an allowed link".into());
+    }
+    #[cfg(windows)]
+    {
+        use windows::core::{w, HSTRING};
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        // SAFETY: ShellExecuteW with NUL-terminated strings; opens the URL in the default browser.
+        unsafe {
+            ShellExecuteW(
+                None,
+                w!("open"),
+                &HSTRING::from(url.as_str()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            );
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn export_learning(include_settings: bool) -> Result<Exported, String> {
     let store = UserStore::open(&t3a_paths::user_store_dir(), true).map_err(|e| e.to_string())?;
@@ -255,6 +352,14 @@ fn export_learning(include_settings: bool) -> Result<Exported, String> {
         n += 1;
     }
     std::fs::write(&path, bytes).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    record_transfer(Transfer {
+        t: now_secs(),
+        kind: "export".into(),
+        records,
+        file: path.display().to_string(),
+        mode: String::new(),
+        settings: settings.is_some(),
+    });
     Ok(Exported {
         path: path.display().to_string(),
         records,
@@ -277,6 +382,7 @@ fn import_learning(
     bytes: Vec<u8>,
     replace: bool,
     restore_settings: bool,
+    file_name: String,
 ) -> Result<Imported, String> {
     let file = t3a_engine::learning_file::decode(&bytes)?;
     let _ = t3a_paths::ensure_user_dir();
@@ -296,6 +402,14 @@ fn import_learning(
             settings_restored = true;
         }
     }
+    record_transfer(Transfer {
+        t: now_secs(),
+        kind: "import".into(),
+        records,
+        file: file_name,
+        mode: if replace { "replace" } else { "merge" }.into(),
+        settings: settings_restored,
+    });
     Ok(Imported {
         records,
         settings_restored,
@@ -367,6 +481,8 @@ fn main() {
             export_learning,
             inspect_learning,
             import_learning,
+            transfer_history,
+            open_url,
             about
         ])
         .run(tauri::generate_context!())
@@ -376,6 +492,39 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_lines_round_trip_and_skip_garbage() {
+        let dir = std::env::temp_dir().join(format!("t3a-hist-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(HISTORY_FILE);
+        let e = Transfer {
+            t: 1,
+            kind: "import".into(),
+            records: 3,
+            file: "a.t3learn".into(),
+            mode: "merge".into(),
+            settings: false,
+        };
+        let line = serde_json::to_string(&e).unwrap();
+        std::fs::write(
+            &p,
+            format!(
+                "{line}
+not json
+{line}
+"
+            ),
+        )
+        .unwrap();
+        assert_eq!(read_history(&p), vec![e.clone(), e]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn only_known_links_open() {
+        assert!(open_url("https://evil.example/".into()).is_err());
+    }
 
     #[test]
     fn today_is_an_iso_date() {

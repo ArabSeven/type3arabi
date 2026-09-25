@@ -36,10 +36,23 @@ function collect() {
   return s;
 }
 
-function status(text, kind) {
+/** Footer message: an Arabic line and an English line (each its own bidi run), optionally a path shown
+ *  once. Success and info fade after 5 s; errors stay until the next action (they say what to do). */
+let statusTimer = 0;
+function status(ar, en, kind, path) {
   const el = $("#status");
-  el.textContent = text;
+  clearTimeout(statusTimer);
+  el.textContent = "";
   el.className = kind || "";
+  if (ar) el.append(Object.assign(document.createElement("span"), { textContent: ar }));
+  if (en) el.append(Object.assign(document.createElement("span"), { textContent: en, lang: "en" }));
+  if (path) el.append(Object.assign(document.createElement("span"), { textContent: path, className: "path" }));
+  if ((ar || en) && kind !== "err") {
+    statusTimer = setTimeout(() => {
+      el.classList.add("is-fading");
+      statusTimer = setTimeout(() => { el.textContent = ""; el.className = ""; }, 300);
+    }, 5000);
+  }
 }
 
 // ---- shortcut capture
@@ -99,7 +112,7 @@ $$('input[data-kind]').forEach((el) => {
     const chord = chordFromEvent(e, el.dataset.kind);
     if (chord === null) return; // a modifier on its own: keep waiting for the key
     if (chord === undefined) {
-      status("هذا المفتاح غير مدعوم — جرّب غيره أو اضغط Esc. That key is not supported — try another, or press Esc.", "err");
+      status("هذا المفتاح غير مدعوم — جرّب غيره أو اضغط Esc", "That key is not supported — try another, or press Esc", "err");
       return;
     }
     el.dataset.checking = "1";
@@ -121,7 +134,7 @@ $$('input[data-kind]').forEach((el) => {
         : el.dataset.kind === "hotkey"
           ? "the global hotkey needs Ctrl, Alt or Win"
           : "it would get in the way of normal typing — letters need Ctrl or Alt";
-      status(`«${chord}» غير صالح — جرّب اختصاراً آخر أو Esc للإلغاء. "${chord}" can't be used (${why}) — try another, or press Esc.`, "err");
+      status(`«${chord}» غير صالح — جرّب اختصاراً آخر أو Esc للإلغاء`, `"${chord}" can't be used (${why}) — try another, or press Esc`, "err");
       return; // keep waiting; nothing is stored
     }
     stopCapture(el, chord);
@@ -146,24 +159,24 @@ $("#save").addEventListener("click", async () => {
   try {
     await invoke("save_settings", { settings: collect() });
     current = collect();
-    status("تم الحفظ — يطبَّق عند الكلمة التالية. Saved — applies from the next word.", "ok");
+    status("تم الحفظ — يطبَّق عند الكلمة التالية", "Saved — applies from the next word", "ok");
   } catch (errors) {
-    status((Array.isArray(errors) ? errors : [String(errors)]).join("\n"), "err");
+    status("", (Array.isArray(errors) ? errors : [String(errors)]).join("\n"), "err");
   }
 });
 
 $("#reset").addEventListener("click", async () => {
   fill(await invoke("defaults"));
-  status("القيم الافتراضية — اضغط حفظ لتطبيقها. Defaults loaded — press Save to apply.");
+  status("القيم الافتراضية — اضغط حفظ لتطبيقها", "Defaults loaded — press Save to apply");
 });
 
 $("#wipe").addEventListener("click", async () => {
-  if (!confirm("نسيان كل الكلمات والاختيارات المتعلَّمة؟\nForget every learned word and choice?")) return;
+  if (!confirm("نسيان كل الكلمات والاختيارات المتعلَّمة؟\u200F\nForget every learned word and choice?")) return;
   try {
     await invoke("wipe_learning");
-    status("تم نسيان كل ما تعلّمه «اكتب عربي». Everything learned was forgotten.", "ok");
+    status("تم نسيان كل ما تعلّمه «اكتب عربي»", "Everything learned was forgotten", "ok");
   } catch (e) {
-    status(String(e), "err");
+    status("", String(e), "err");
   }
 });
 
@@ -171,13 +184,15 @@ $("#wipe").addEventListener("click", async () => {
 $("#export").addEventListener("click", async () => {
   try {
     const r = await invoke("export_learning", { includeSettings: $("#export-settings").checked });
-    status(`تم التصدير: ${r.records} اختياراً إلى ${r.path} — Exported ${r.records} choices to ${r.path}`, "ok");
+    status(`تم التصدير: ${r.records} اختياراً`, `Exported ${r.records} choices`, "ok", r.path);
+    renderHistory();
   } catch (e) {
-    status(String(e), "err");
+    status("", String(e), "err");
   }
 });
 
 let importBytes = null;
+let importName = "";
 $("#import").addEventListener("click", () => $("#import-file").click());
 $("#import-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
@@ -185,36 +200,79 @@ $("#import-file").addEventListener("change", async (e) => {
   if (!file) return;
   try {
     importBytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+    importName = file.name;
     const p = await invoke("inspect_learning", { bytes: importBytes });
-    $("#import-summary").textContent =
-      `«${file.name}»: ${p.records} اختياراً متعلَّماً${p.has_settings ? " + إعدادات" : ""} — ${p.records} learned choices${p.has_settings ? " + settings" : ""}.`;
+    const sum = $("#import-summary");
+    sum.textContent = "";
+    sum.append(Object.assign(document.createElement("span"), { textContent: `«${file.name}»: ${p.records} اختياراً متعلَّماً${p.has_settings ? " + إعدادات" : ""}` }),
+      Object.assign(document.createElement("span"), { textContent: `${p.records} learned choices${p.has_settings ? " + settings" : ""}`, lang: "en" }));
     $("#import-settings-row").hidden = !p.has_settings;
     $("#import-settings").checked = false;
     $("#import-panel").hidden = false;
     status("");
   } catch (err) {
     importBytes = null;
-    status(`لا يمكن قراءة الملف — ${String(err)}`, "err");
+    status("لا يمكن قراءة الملف", String(err), "err");
   }
 });
 $("#import-cancel").addEventListener("click", () => { importBytes = null; $("#import-panel").hidden = true; });
 $("#import-go").addEventListener("click", async () => {
   if (!importBytes) return;
   const replace = document.querySelector('input[name="import-mode"]:checked').value === "replace";
-  if (replace && !confirm("استبدال كل ما تعلّمه هذا الجهاز بمحتوى الملف؟\nReplace everything this PC learned with the file?")) return;
+  if (replace && !confirm("استبدال كل ما تعلّمه هذا الجهاز بمحتوى الملف؟\u200F\nReplace everything this PC learned with the file?")) return;
   try {
-    const r = await invoke("import_learning", { bytes: importBytes, replace, restoreSettings: $("#import-settings").checked });
+    const r = await invoke("import_learning", { bytes: importBytes, replace, restoreSettings: $("#import-settings").checked, fileName: importName });
     importBytes = null;
     $("#import-panel").hidden = true;
     if (r.settings_restored) fill(await invoke("get_settings"));
-    status(`تم استيراد ${r.records} اختياراً${r.settings_restored ? " والإعدادات" : ""} — يطبَّق في كل البرامج من الكلمة التالية. Imported ${r.records} choices${r.settings_restored ? " and settings" : ""} — every app uses them from the next word.`, "ok");
+    status(`تم استيراد ${r.records} اختياراً${r.settings_restored ? " والإعدادات" : ""} — يطبَّق في كل البرامج من الكلمة التالية`,
+      `Imported ${r.records} choices${r.settings_restored ? " and settings" : ""} — every app uses them from the next word`, "ok");
+    renderHistory();
   } catch (err) {
-    status(String(err), "err");
+    status("", String(err), "err");
   }
+});
+
+// ---- transfer history (newest first; local time)
+const pad = (n) => String(n).padStart(2, "0");
+const when = (t) => {
+  const d = new Date(t * 1000);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+async function renderHistory() {
+  const box = $("#history");
+  let items = [];
+  try { items = await invoke("transfer_history"); } catch { /* history is a convenience */ }
+  box.textContent = "";
+  for (const h of items) {
+    const exp = h.kind === "export";
+    const row = Object.assign(document.createElement("div"), { className: `hrow ${h.kind}` });
+    row.setAttribute("role", "listitem");
+    const ic = Object.assign(document.createElement("span"), { className: "ic", textContent: exp ? "↑" : "↓" });
+    ic.setAttribute("aria-hidden", "true");
+    const extra = exp ? (h.settings ? " + الإعدادات" : "") : `${h.mode === "replace" ? " · استبدال" : " · دمج"}${h.settings ? " + الإعدادات" : ""}`;
+    const extraEn = exp ? (h.settings ? " + settings" : "") : `${h.mode === "replace" ? " · replaced" : " · merged"}${h.settings ? " + settings" : ""}`;
+    const what = Object.assign(document.createElement("span"), { className: "what" });
+    what.append(`${exp ? "تصدير" : "استيراد"} ${h.records} اختياراً${extra}`,
+      Object.assign(document.createElement("small"), { textContent: `${exp ? "Export" : "Import"} · ${h.records} choices${extraEn}` }));
+    const time = Object.assign(document.createElement("time"), { textContent: when(h.t), dateTime: new Date(h.t * 1000).toISOString() });
+    const file = Object.assign(document.createElement("span"), { className: "file", textContent: h.file });
+    row.append(ic, what, time, file);
+    box.append(row);
+  }
+}
+
+// ---- links open in the default browser (only the few pages the Rust side allows)
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("[data-link]");
+  if (!a) return;
+  e.preventDefault();
+  invoke("open_url", { url: a.dataset.link }).catch(() => {});
 });
 
 // ---- startup
 (async () => {
+  renderHistory();
   fill(await invoke("get_settings"));
   const a = await invoke("about");
   $("#about-info").innerHTML = "";

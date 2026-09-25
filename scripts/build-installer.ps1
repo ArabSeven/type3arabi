@@ -77,6 +77,7 @@ try {
     Write-Host "[3/3] Building MSI ($name)..." -ForegroundColor Yellow
     wix build (Join-Path $RepoRoot "installer\Type3arabi.wxs") -arch x64 `
         -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext `
+        -loc (Join-Path $RepoRoot "installer\Type3arabi.wxl") -culture en-US `
         -d "Payload=$Payload" -d "Version=$MsiVersion" -d "ProductName=$name" -o $Out
     if ($LASTEXITCODE -ne 0) { throw "wix build failed" }
     # Version-free copy for the website's ".../releases/latest/download/Type3arabi-x64.msi" link (ADR-0010).

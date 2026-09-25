@@ -70,7 +70,11 @@ Trusted Root and Trusted Publishers; never used for public builds.
 - Public builds pass the release-mode model: `build-installer.ps1 -Data target\type3arabi-release.dat`; the version
   comes from the workspace `Cargo.toml` (an RC such as 1.0.0-rc.1 is MSI 1.0.0; same-version upgrades are allowed).
 - `HKLM\...\Run` value `Type3arabi Hotkey` → `t3a-hotkey.exe` (exits if disabled in the user's config).
-- Start menu: "Type3arabi Settings".
+- Start menu: "Type3arabi Settings". Desktop: the same shortcut on the Public desktop, on by default; an Options page
+  after the license page ("Create a desktop shortcut", checked) can turn it off; silent installs: `DESKTOPSHORTCUT=""`.
+  Validate with `wix msi validate -sice ICE38 -sice ICE43 -sice ICE57 <msi>`: those three ICEs assume the Desktop folder
+  is per-user, which is false for a per-machine package (ALLUSERS=1 => Public desktop). ICE61 (same-version upgrades)
+  and ICE69 (shortcut in its own component) are expected warnings.
 - Uninstall: unregister DLLs, `InstallLayoutOrTip(... ILOT_UNINSTALL)` for the current user, remove Run value,
   **leave** `%LOCALAPPDATA%\Type3arabi` unless the user ticks "Remove my words and settings".
 - Files in use: TSF DLLs are loaded in running apps; use WiX `RestartManager`-friendly behavior and schedule

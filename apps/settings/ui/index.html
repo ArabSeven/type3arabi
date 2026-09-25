@@ -8,7 +8,7 @@
 <body>
   <nav>
     <div class="brand"><img src="logo-mark.png" alt=""><div><b>اكتب <span>عربي</span></b><small>Type3arabi</small></div></div>
-    <button data-page="keyboard" class="active">الاختصارات<small>Keyboard</small></button>
+    <button data-page="keyboard" class="active">الاختصارات<small lang="en">Keyboard shortcuts</small></button>
     <button data-page="typing">الكتابة<small>Typing</small></button>
     <button data-page="style">التشكيل<small>Diacritics</small></button>
     <button data-page="learning">التعلّم والخصوصية<small>Learning &amp; privacy</small></button>
@@ -20,7 +20,7 @@
     <!-- Keyboard -->
     <section id="keyboard" class="page active">
       <h1>الاختصارات <small>Keyboard shortcuts</small></h1>
-      <p class="hint">انقر على الحقل ثم اضغط الاختصار الجديد. Click a field, then press the new shortcut.</p>
+      <p class="hint"><span>انقر على الحقل ثم اضغط الاختصار الجديد</span><span lang="en">Click a field, then press the new shortcut</span></p>
 
       <h2>أثناء كتابة كلمة <small>While typing a word</small></h2>
       <div class="row">
@@ -97,7 +97,7 @@
     <!-- Learning -->
     <section id="learning" class="page">
       <h1>التعلّم والخصوصية <small>Learning &amp; privacy</small></h1>
-      <p class="hint">كل شيء يبقى على جهازك. Everything stays on this computer — nothing is ever sent anywhere.</p>
+      <p class="hint"><span>كل شيء يبقى على جهازك</span><span lang="en">Everything stays on this computer — nothing is ever sent anywhere</span></p>
       <div class="row"><label>التعلّم من اختياراتك<small>Learn from your choices</small></label><input type="checkbox" data-key="learning_enabled"></div>
       <div class="row"><label>تقديم آخر اختيار أولاً<small>Put your last choice first</small></label><input type="checkbox" data-key="sticky_last_choice"></div>
       <div class="row"><label>استخدام الكلمات السابقة لتحسين الاقتراح<small>Use the words before the cursor for context (never stored)</small></label><input type="checkbox" data-key="use_surrounding_text"></div>
@@ -112,6 +112,8 @@
         <label class="check" id="import-settings-row"><input type="checkbox" id="import-settings"> استعادة الإعدادات والاختصارات من الملف<small>Also restore the settings and shortcuts in the file</small></label>
         <div class="panel__btns"><button id="import-go">استيراد / Import</button><button id="import-cancel" class="secondary">إلغاء / Cancel</button></div>
       </div>
+      <h2 class="sub">سجل النقل <small>Transfer history</small></h2>
+      <div class="history" id="history" role="list" aria-label="Transfer history"></div>
       <div class="row danger"><label>نسيان كل ما تعلّمه «اكتب عربي»<small>Forget everything Type3arabi learned</small></label><button id="wipe">نسيان الكل / Forget</button></div>
     </section>
 
@@ -119,9 +121,16 @@
     <section id="about" class="page">
       <h1>حول <small>About</small></h1>
       <div class="about"><img src="logo-mark.png" alt="">
-        <p class="slogan">اكتبها بطريقتك، واقرأها بالعربية.<span>Write it your way. Read it in Arabic.</span></p></div>
-      <p class="hint">مجاني ومفتوح المصدر، بلا إعلانات ولا تتبّع. Free and open source, no ads, no tracking — type3arabi.com</p>
+        <p class="slogan">اكتبها بطريقتك، واقرأها بالعربية<span lang="en">Write it your way. Read it in Arabic</span></p></div>
+      <p class="hint"><span>مجاني ومفتوح المصدر، بلا إعلانات ولا تتبّع</span><span lang="en">Free and open source, no ads, no tracking — <a href="#" data-link="https://type3arabi.com/">type3arabi.com</a></span></p>
       <dl id="about-info"></dl>
+      <div class="support">
+        <p><span>أعجبك البرنامج؟</span><span lang="en">Like this software?</span></p>
+        <button class="coffee" data-link="https://buymeacoffee.com/hassanobaida"><span aria-hidden="true">☕</span> ادعمني بكوب قهوة <span lang="en">Buy me a coffee</span></button>
+      </div>
+      <p class="legal" lang="en">© 2026 <a href="#" data-link="https://linktr.ee/hassanobaida">Hassan Obaida</a>. Code: Apache-2.0.
+        Language model: CC BY-NC-SA 4.0, built from the datasets credited in DATASETS.md
+        (installed with the app) · <a href="#" data-link="https://github.com/ArabSeven/type3arabi">Source code</a></p>
     </section>
 
     <footer>

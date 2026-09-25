@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UI text overrides: the license page leads to the Options page, so its button says "Next". -->
+<WixLocalization Culture="en-US" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="WelcomeEulaDlgInstall" Value="&amp;Next" />
+</WixLocalization>
