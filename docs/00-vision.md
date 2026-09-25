@@ -16,7 +16,7 @@ and one-keystroke access to any diacritic.
 1. **Levantine & Gulf chat-natives** (Jordan, Palestine, Lebanon, Syria, KSA, UAE, Kuwait, Qatar) who
    think in Arabizi and need Arabic script for work email, documents, government forms.
 2. **Egyptian** users (largest Arabizi population; "Franco-Arab").
-3. **Maghrebi** users (Morocco/Algeria/Tunisia; AZERTY keyboards, French-influenced spelling `ch`, `ou`, `9`=ق).
+3. **Maghrebi** users (Morocco/Algeria/Tunisia; AZERTY keyboards, French-influenced spelling `ch`, `ou`, `9`=ق‎).
 4. **Heritage speakers & learners** who read Arabic but can't touch-type it; they value the tashkeel editor.
 
 ## 4. Experience principles (tie-breakers for every design choice)

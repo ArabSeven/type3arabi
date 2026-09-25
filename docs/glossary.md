@@ -2,7 +2,7 @@
 
 | Term | Meaning |
 |---|---|
-| Arabizi / Franco / chat alphabet | Arabic written with Latin letters and digits standing for Arabic sounds (`3`=ع, `7`=ح, `2`=ء/ق, `5`=خ, `9`=ص or ق, `6`=ط, `8`=ق/غ/ه). |
+| Arabizi / Franco / chat alphabet | Arabic written with Latin letters and digits standing for Arabic sounds (`3`=ع‎, `7`=ح‎, `2`=ء‎/ق‎, `5`=خ‎, `9`=ص‎ or ق‎, `6`=ط‎, `8`=ق‎/غ‎/ه‎). |
 | Base form | Arabic word with all diacritics removed; used for matching and evaluation. |
 | Candidate | One option in the popup. Kinds: Word, Completion, Oov, Phrase, Number, Custom, RawLatin. |
 | Channel / transliteration model (TM) | Probabilities of Arabic chunks given Latin chunks, learned by EM. |

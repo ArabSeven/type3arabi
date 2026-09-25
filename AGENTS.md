@@ -237,7 +237,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev-uninstall.ps1   # remove 
 
 ## 8. Glossary (minimum)
 
-- **Arabizi** — Arabic written with Latin letters + digits (`3`=ع, `7`=ح, `2`=ء/ق, `5`=خ, `9`=ص/ق …).
+- **Arabizi** — Arabic written with Latin letters + digits (`3`=ع‎, `7`=ح‎, `2`=ء‎/ق‎, `5`=خ‎, `9`=ص‎/ق‎ …).
 - **TIP** — TSF Text Input Processor: the COM DLL Windows loads into apps to provide an input method.
 - **Composition** — the underlined, not-yet-committed text inside the app while the user types a word.
 - **Candidate** — one Arabic option in the popup; **default candidate** = row 1, committed by Space.
