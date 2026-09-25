@@ -629,6 +629,66 @@ mod tests {
         assert_eq!(action2, TashkeelAction::BackToList);
     }
 
+    /// Every command, any letter index (also past the end), quick picks whose words have a different
+    /// number of letters than the word being edited: the editor must never panic (a panic in the host
+    /// app would disable the keyboard there) and must keep a valid selection and render.
+    #[test]
+    fn property_every_command_any_index_never_panics() {
+        let mut rng: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = || -> usize {
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (rng >> 33) as usize
+        };
+        let words = ["علم", "مرحبا", "و", "الله", "مستشفيات", "لا"];
+        let picks = || {
+            vec![
+                "عَلَّمَ".to_string(),   // U+0639 U+064E U+0644 U+0651 U+064E U+0645 U+064E
+                "مَرْحَباً".to_string(), // longer than علم
+                "و".to_string(),
+                String::new(),
+            ]
+        };
+        let modes = [SelectMode::Only, SelectMode::Toggle, SelectMode::Range];
+        for word in words {
+            let mut e = TashkeelEditor::new(word, picks(), next() % 2 == 0);
+            for _ in 0..4000 {
+                let cmd = match next() % 28 {
+                    0 => TashkeelCmd::Fatha,
+                    1 => TashkeelCmd::Damma,
+                    2 => TashkeelCmd::Kasra,
+                    3 => TashkeelCmd::Sukun,
+                    4 => TashkeelCmd::ShaddaToggle,
+                    5 => TashkeelCmd::Fathatan,
+                    6 => TashkeelCmd::Dammatan,
+                    7 => TashkeelCmd::Kasratan,
+                    8 => TashkeelCmd::DaggerAlif,
+                    9 => TashkeelCmd::Clear,
+                    10 => TashkeelCmd::ClearAll,
+                    11 => TashkeelCmd::ClearOrBack,
+                    12 => TashkeelCmd::LetterNext,
+                    13 => TashkeelCmd::LetterPrev,
+                    14 => TashkeelCmd::LetterFirst,
+                    15 => TashkeelCmd::LetterLast,
+                    16 => TashkeelCmd::ExtendNext,
+                    17 => TashkeelCmd::ExtendPrev,
+                    18 => TashkeelCmd::PickUp,
+                    19 => TashkeelCmd::PickDown,
+                    20 | 21 => TashkeelCmd::QuickPick((next() % 12) as u8),
+                    22 => TashkeelCmd::Ignore,
+                    23 => TashkeelCmd::Back,
+                    _ => TashkeelCmd::Select((next() % 14) as u8, modes[next() % 3]),
+                };
+                let _ = e.apply_cmd(cmd);
+                let rendered = e.render();
+                assert_eq!(crate::arabic::canonical_mark_order(&rendered), rendered);
+                let sel = e.selection();
+                assert!(sel.iter().all(|&i| i < rendered.chars().count().max(1)));
+            }
+        }
+    }
+
     #[test]
     fn property_random_editor_paths_preserve_mark_order() {
         let commands = [

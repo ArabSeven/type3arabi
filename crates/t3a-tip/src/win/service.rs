@@ -7,8 +7,8 @@
 
 use crate::ids::GUID_PRESERVED_TOGGLE;
 use crate::keyrouter::{
-    classify, classify_scopes, Action, ContextMode, Decision, Key, KeyMap, Popup, RouterState,
-    ScopeClass, Toggle,
+    classify, classify_scopes, shift_tap, Action, ContextMode, Decision, Key, KeyMap, Popup,
+    RouterState, ScopeClass, Toggle,
 };
 use crate::win::compose::EditSession;
 use crate::win::context::{evaluate_context_mode, input_scopes};
@@ -16,10 +16,11 @@ use crate::win::display::{
     DisplayAttributeInfo, EnumDisplayAttributeInfo, GUID_ATTR_INPUT, GUID_ATTR_TASHKEEL,
 };
 use crate::win::dll::{self, add_object, release_object};
-use crate::win::guard::guard;
+use crate::win::guard::{guard, is_disabled};
 use crate::win::keys::translate_key;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::mem::ManuallyDrop;
+use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use t3a_engine::normalize::InputChar;
 use t3a_engine::session::{CandidateKind, CommitHow, Session, Trailing};
@@ -40,16 +41,18 @@ use windows::Win32::UI::TextServices::{
     CLSID_TF_CategoryMgr, IEnumTfDisplayAttributeInfo, ITfCategoryMgr, ITfComposition,
     ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextComposition,
     ITfDisplayAttributeInfo, ITfDisplayAttributeProvider, ITfDisplayAttributeProvider_Impl,
-    ITfDocumentMgr, ITfEditSession, ITfFnConfigure, ITfFnConfigure_Impl, ITfFunction_Impl,
-    ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfRange,
-    ITfSource, ITfTextInputProcessor, ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl,
-    ITfTextInputProcessor_Impl, ITfThreadFocusSink, ITfThreadFocusSink_Impl, ITfThreadMgr,
-    ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl, GUID_PROP_ATTRIBUTE, TF_AE_NONE,
-    TF_ANCHOR_END, TF_ES_ASYNC, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_QUERYONLY, TF_INVALID_COOKIE,
-    TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION, TF_SELECTIONSTYLE, TF_TMAE_SECUREMODE,
+    ITfDocumentMgr, ITfEditRecord, ITfEditSession, ITfFnConfigure, ITfFnConfigure_Impl,
+    ITfFunction_Impl, ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr,
+    ITfRange, ITfSource, ITfTextEditSink, ITfTextEditSink_Impl, ITfTextInputProcessor,
+    ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
+    ITfThreadFocusSink, ITfThreadFocusSink_Impl, ITfThreadMgr, ITfThreadMgrEventSink,
+    ITfThreadMgrEventSink_Impl, GUID_PROP_ATTRIBUTE, TF_AE_NONE, TF_ANCHOR_END, TF_ANCHOR_START,
+    TF_DEFAULT_SELECTION, TF_ES_ASYNC, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_QUERYONLY,
+    TF_INVALID_COOKIE, TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION, TF_SELECTIONSTYLE,
+    TF_TMAE_SECUREMODE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetGUIThreadInfo, GetMessageExtraInfo, GUITHREADINFO,
+    GetCursorPos, GetGUIThreadInfo, GetMessageExtraInfo, GetMessageTime, GUITHREADINFO,
 };
 use windows_core::IUnknownImpl;
 
@@ -179,12 +182,18 @@ pub struct State {
     eaten: [bool; 256],
     popup: Option<PopupWindow>,
     text_rect: RECT,
-    /// Edit sessions queued asynchronously and not yet run. While > 0, new sessions are queued too,
-    /// so document edits always apply in request order (docs/02 §8).
-    pending_async: u32,
+    /// The context our composition lives in: keys arriving from another context first finalize it.
+    comp_ctx: Option<ITfContext>,
+    /// ITfTextEditSink advised on this context (docs/02 §8): a click that moves the caret out of the
+    /// word being typed finalizes it, so typing goes on at the new caret.
+    edit_sink: Option<(ITfContext, u32)>,
     /// Input-scope class of the field the current word is typed in (docs/02 §7, R9), read when a word
     /// starts; with the context it was read for (raw pointer, identity only).
     scope: (usize, ScopeClass),
+    /// Pending Shift press for the Shift-tap toggle (message time of the press).
+    shift_down: Option<u32>,
+    /// Keystroke (context, wParam, lParam, message time) whose scopes were read last.
+    scope_stamp: (usize, usize, isize, i32),
 }
 
 impl State {
@@ -298,12 +307,58 @@ enum DocOp {
     ITfThreadMgrEventSink,
     ITfThreadFocusSink,
     ITfKeyEventSink,
+    ITfTextEditSink,
     ITfCompositionSink,
     ITfDisplayAttributeProvider,
     ITfFnConfigure
 )]
 pub struct TextService {
     state: RefCell<State>,
+    /// Edit sessions queued asynchronously and neither run nor discarded yet. While > 0, new sessions
+    /// are queued too, so document edits apply in request order (docs/02 §8). Outside `state` (sessions
+    /// update it from any callback) and decremented when a session runs *or* is discarded by TSF, so a
+    /// lost session can never leave every later edit queued (the "frozen editor" of 2026-09-25).
+    pending: Rc<Cell<u32>>,
+    /// OnCompositionTerminated arrived while `state` was busy: the next key drops the dead composition.
+    terminated: Cell<bool>,
+    /// Safe passthrough (R2): popup hidden and composition ended once after a caught panic.
+    cleaned_up: Cell<bool>,
+}
+
+/// One queued edit session in `TextService::pending`: counted while alive.
+struct PendingToken(Rc<Cell<u32>>);
+
+impl PendingToken {
+    fn arm(counter: &Rc<Cell<u32>>) -> Self {
+        counter.set(counter.get() + 1);
+        PendingToken(counter.clone())
+    }
+}
+
+impl Drop for PendingToken {
+    fn drop(&mut self) {
+        self.0.set(self.0.get().saturating_sub(1));
+    }
+}
+
+/// Rate-limited diagnostics for recoveries on the edit path (never any text, R8).
+fn diag(msg: &str) {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static COUNT: AtomicU32 = AtomicU32::new(0);
+    if COUNT.fetch_add(1, Ordering::Relaxed) < 20 {
+        t3a_paths::log_error(msg);
+    }
+}
+
+/// Same COM object (identity through IUnknown).
+fn same_object(a: &ITfContext, b: &ITfContext) -> bool {
+    let (Ok(a), Ok(b)) = (
+        a.cast::<windows::core::IUnknown>(),
+        b.cast::<windows::core::IUnknown>(),
+    ) else {
+        return false;
+    };
+    a.as_raw() == b.as_raw()
 }
 
 impl TextService {
@@ -318,6 +373,8 @@ impl TextService {
                 client_id: 0,
                 secure_mode: false,
                 scope: (0, ScopeClass::Normal),
+                scope_stamp: (0, 0, 0, 0),
+                shift_down: None,
                 settings_allowed: false,
                 cookie_thread_mgr: TF_INVALID_COOKIE,
                 cookie_thread_focus: TF_INVALID_COOKIE,
@@ -340,8 +397,12 @@ impl TextService {
                 eaten: [false; 256],
                 popup: None,
                 text_rect: RECT::default(),
-                pending_async: 0,
+                comp_ctx: None,
+                edit_sink: None,
             }),
+            pending: Rc::new(Cell::new(0)),
+            terminated: Cell::new(false),
+            cleaned_up: Cell::new(false),
         })
     }
 }
@@ -369,7 +430,8 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
     }
 
     fn Deactivate(&self) -> windows::core::Result<()> {
-        guard(Ok(()), || {
+        // Not `guard`: unadvising sinks and destroying the popup must also happen in passthrough.
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.finalize_composition();
             let (tm, tid, c_mgr, c_focus, key_sink, preserved, popup) = {
                 let Ok(mut s) = self.state.try_borrow_mut() else {
@@ -377,6 +439,14 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
                 };
                 s.anchor = None;
                 s.recent_words.clear();
+                if let Some((ctx, cookie)) = s.edit_sink.take() {
+                    // SAFETY: plain COM calls on the context we advised.
+                    unsafe {
+                        if let Ok(src) = ctx.cast::<ITfSource>() {
+                            let _ = src.UnadviseSink(cookie);
+                        }
+                    }
+                }
                 let out = (
                     s.thread_mgr.take(),
                     s.client_id,
@@ -415,7 +485,8 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
                 }
             }
             Ok(())
-        })
+        }));
+        r.unwrap_or(Ok(()))
     }
 }
 
@@ -505,14 +576,17 @@ impl ITfThreadMgrEventSink_Impl for TextService_Impl {
         _focus: windows_core::Ref<'_, ITfDocumentMgr>,
         _prev: windows_core::Ref<'_, ITfDocumentMgr>,
     ) -> windows::core::Result<()> {
-        guard(Ok(()), || {
+        let r = guard(Ok(()), || {
             self.finalize_composition();
             if let Ok(mut s) = self.state.try_borrow_mut() {
                 s.anchor = None;
                 s.recent_words.clear();
+                s.eaten = [false; 256]; // their key-ups go to the new focus
             }
             Ok(())
-        })
+        });
+        self.passthrough_cleanup();
+        r
     }
     fn OnPushContext(&self, _: windows_core::Ref<'_, ITfContext>) -> windows::core::Result<()> {
         Ok(())
@@ -524,16 +598,23 @@ impl ITfThreadMgrEventSink_Impl for TextService_Impl {
 
 impl ITfThreadFocusSink_Impl for TextService_Impl {
     fn OnSetThreadFocus(&self) -> windows::core::Result<()> {
-        guard(Ok(()), || {
+        let r = guard(Ok(()), || {
             self.show_popup();
             Ok(())
-        })
+        });
+        self.passthrough_cleanup();
+        r
     }
     fn OnKillThreadFocus(&self) -> windows::core::Result<()> {
-        guard(Ok(()), || {
+        let r = guard(Ok(()), || {
             self.hide_popup();
+            if let Ok(mut s) = self.state.try_borrow_mut() {
+                s.eaten = [false; 256];
+            }
             Ok(())
-        })
+        });
+        self.passthrough_cleanup();
+        r
     }
 }
 
@@ -548,13 +629,16 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> windows::core::Result<BOOL> {
-        guard(Ok(BOOL::from(false)), || {
+        let r = guard(Ok(BOOL::from(false)), || {
+            self.track_shift_tap(wparam, true);
             let (decision, key) = self.decide(pic.as_ref(), wparam, lparam);
             if !decision.eat && key != Key::Modifier {
                 self.drop_anchor();
             }
             Ok(BOOL::from(decision.eat))
-        })
+        });
+        self.passthrough_cleanup();
+        r
     }
 
     fn OnKeyDown(
@@ -563,7 +647,7 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> windows::core::Result<BOOL> {
-        guard(Ok(BOOL::from(false)), || {
+        let r = guard(Ok(BOOL::from(false)), || {
             let (decision, key) = self.decide(pic.as_ref(), wparam, lparam);
             if decision.action != Action::ReEdit && key != Key::Modifier {
                 self.drop_anchor();
@@ -572,6 +656,10 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
                 return Ok(BOOL::from(false));
             };
             if !decision.eat {
+                // A key-up left over from an eaten press that lost its key-up must not eat this one's.
+                if let Ok(mut s) = self.state.try_borrow_mut() {
+                    s.eaten[wparam.0 & 0xFF] = false;
+                }
                 return Ok(BOOL::from(false));
             }
             if let Ok(mut s) = self.state.try_borrow_mut() {
@@ -584,7 +672,9 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
                 }
             }
             Ok(BOOL::from(eaten))
-        })
+        });
+        self.passthrough_cleanup();
+        r
     }
 
     fn OnTestKeyUp(
@@ -594,6 +684,16 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
         _lparam: LPARAM,
     ) -> windows::core::Result<BOOL> {
         guard(Ok(BOOL::from(false)), || {
+            if self.track_shift_tap(wparam, false) {
+                // Shift tapped alone (mode_toggle = ShiftTap): like the Ctrl+Space toggle.
+                let composing = self.state.try_borrow().is_ok_and(|s| s.composing());
+                match (composing, _pic.as_ref()) {
+                    (true, Some(ctx)) => {
+                        self.execute(ctx, Action::CommitThenToggle);
+                    }
+                    _ => self.toggle_mode(),
+                }
+            }
             let eaten = self
                 .state
                 .try_borrow()
@@ -644,6 +744,46 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
     }
 }
 
+impl ITfTextEditSink_Impl for TextService_Impl {
+    /// Any edit of the context ended (ours or the app's). If the selection moved out of our
+    /// composition — the user clicked elsewhere in the field, or the app moved the caret — the word
+    /// being typed is finalized as shown (no learning), and typing continues at the new caret instead
+    /// of editing the word at its old place.
+    fn OnEndEdit(
+        &self,
+        pic: windows_core::Ref<'_, ITfContext>,
+        ecreadonly: u32,
+        peditrecord: windows_core::Ref<'_, ITfEditRecord>,
+    ) -> windows::core::Result<()> {
+        let r = guard(Ok(()), || {
+            let Some(ctx) = pic.as_ref() else {
+                return Ok(());
+            };
+            let comp = match self.state.try_borrow() {
+                Ok(s) if s.composing() => s.composition.clone(),
+                _ => return Ok(()),
+            };
+            let Some(comp) = comp else {
+                return Ok(());
+            };
+            // SAFETY: COM calls inside the read-only edit cookie TSF passed to this callback.
+            let outside = unsafe {
+                let changed = peditrecord
+                    .as_ref()
+                    .and_then(|r| r.GetSelectionStatus().ok())
+                    .is_none_or(|b| b.as_bool());
+                changed && selection_outside(ctx, ecreadonly, &comp)
+            };
+            if outside {
+                self.finalize_composition();
+            }
+            Ok(())
+        });
+        self.passthrough_cleanup();
+        r
+    }
+}
+
 impl ITfCompositionSink_Impl for TextService_Impl {
     fn OnCompositionTerminated(
         &self,
@@ -665,12 +805,17 @@ impl ITfCompositionSink_Impl for TextService_Impl {
                 // SAFETY: ecwrite is the write cookie TSF granted for this callback.
                 unsafe { clear_attr(&ctx, ecwrite, &range) };
             }
-            if let Ok(mut s) = self.state.try_borrow_mut() {
-                s.composition = None;
-                s.session.reset();
-                s.tashkeel = None;
-                s.selected = 0;
-                s.page = 0;
+            match self.state.try_borrow_mut() {
+                Ok(mut s) => {
+                    s.composition = None;
+                    s.comp_ctx = None;
+                    s.session.reset();
+                    s.tashkeel = None;
+                    s.selected = 0;
+                    s.page = 0;
+                }
+                // Busy (re-entered from our own edit): the next key applies it (`drop_dead_state`).
+                Err(_) => self.terminated.set(true),
             }
             self.hide_popup();
             Ok(())
@@ -753,24 +898,56 @@ fn open_settings_app() -> bool {
     else {
         return false;
     };
-    let wide: Vec<u16> = exe
+    // CreateProcessW, not ShellExecuteW: this runs on the host app's UI thread, and the shell path
+    // (COM, associations) took ~0.3 s there — a visible freeze of the app being typed in, longer when
+    // the shell is busy. No handles are inherited from the host.
+    use windows::Win32::System::Threading::{
+        CreateProcessW, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTUPINFOW,
+    };
+    let app: Vec<u16> = exe
         .as_os_str()
         .to_string_lossy()
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect();
-    // SAFETY: NUL-terminated path; ShellExecuteW has no other preconditions.
-    let h = unsafe {
-        windows::Win32::UI::Shell::ShellExecuteW(
-            None,
-            windows::core::w!("open"),
-            windows::core::PCWSTR(wide.as_ptr()),
-            windows::core::PCWSTR::null(),
-            windows::core::PCWSTR::null(),
-            windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
-        )
+    let mut cmd: Vec<u16> = format!("\"{}\"", exe.display())
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let dir: Vec<u16> = exe
+        .parent()
+        .map(|d| d.as_os_str().to_string_lossy().into_owned())
+        .unwrap_or_default()
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let si = STARTUPINFOW {
+        cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+        ..Default::default()
     };
-    h.0 as usize > 32
+    let mut pi = PROCESS_INFORMATION::default();
+    // SAFETY: NUL-terminated buffers that outlive the call; `cmd` is writable as CreateProcessW
+    // requires; the returned handles are closed right away.
+    unsafe {
+        let ok = CreateProcessW(
+            windows::core::PCWSTR(app.as_ptr()),
+            Some(windows::core::PWSTR(cmd.as_mut_ptr())),
+            None,
+            None,
+            false,
+            PROCESS_CREATION_FLAGS(0),
+            None,
+            windows::core::PCWSTR(dir.as_ptr()),
+            &si,
+            &mut pi,
+        )
+        .is_ok();
+        if ok {
+            let _ = windows::Win32::Foundation::CloseHandle(pi.hThread);
+            let _ = windows::Win32::Foundation::CloseHandle(pi.hProcess);
+        }
+        ok
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -783,6 +960,7 @@ impl TextService_Impl {
         if unsafe { GetMessageExtraInfo() }.0 as usize == crate::ids::REINJECT_MAGIC {
             return (PASS, Key::Other);
         }
+        self.drop_dead_state(ctx);
         let Ok((arabic, composing, tid, url_latin)) = self.state.try_borrow().map(|s| {
             (
                 s.arabic_mode,
@@ -799,12 +977,20 @@ impl TextService_Impl {
         // kept for the word. Passwords/PINs/numbers type Latin; IS_PRIVATE disables learning.
         if let Some(c) = ctx.filter(|_| mode != ContextMode::Off) {
             let id = c.as_raw() as usize;
-            if !composing && matches!(key, Key::Char(_) | Key::NumpadDigit(_)) {
+            // Once per keystroke: OnTestKeyDown and OnKeyDown of the same key share the result.
+            // SAFETY: GetMessageTime has no preconditions.
+            let stamp = (id, wparam.0, lparam.0, unsafe { GetMessageTime() });
+            let fresh = self
+                .state
+                .try_borrow()
+                .is_ok_and(|s| s.scope_stamp != stamp);
+            if fresh && !composing && matches!(key, Key::Char(_) | Key::NumpadDigit(_)) {
                 let class = input_scopes(c, tid)
                     .map(|v| classify_scopes(&v, url_latin))
                     .unwrap_or(ScopeClass::Normal);
                 if let Ok(mut s) = self.state.try_borrow_mut() {
                     s.scope = (id, class);
+                    s.scope_stamp = stamp;
                 }
             }
             let class = self
@@ -843,6 +1029,69 @@ impl TextService_Impl {
             keys: s.keys,
         };
         (classify(&rs, key, mods), key)
+    }
+
+    /// Before routing a key: forget a composition the host ended while we were busy, and end ours if
+    /// the key comes from another context (the user clicked into another field of the same window,
+    /// which does not always change the focused document manager). Either would otherwise leave the
+    /// list or diacritics editor showing, eating keys whose edits can no longer land.
+    fn drop_dead_state(&self, ctx: Option<&ITfContext>) {
+        if self.terminated.take() {
+            if let Ok(mut s) = self.state.try_borrow_mut() {
+                s.composition = None;
+                s.comp_ctx = None;
+                s.session.reset();
+                s.tashkeel = None;
+                s.selected = 0;
+                s.page = 0;
+            }
+            self.hide_popup();
+            diag("composition ended by the app while busy; state reset");
+        }
+        let elsewhere = match (ctx, self.state.try_borrow()) {
+            (Some(ctx), Ok(s)) => {
+                s.composing() && s.comp_ctx.as_ref().is_some_and(|c| !same_object(c, ctx))
+            }
+            _ => false,
+        };
+        if elsewhere {
+            self.finalize_composition();
+            diag("key from another context; composition finalized");
+        }
+    }
+
+    /// Safe passthrough (R2): after a caught panic, hide the popup and end the composition once, so
+    /// no frozen list or editor stays on screen. Runs outside `guard` (which does nothing any more).
+    fn passthrough_cleanup(&self) {
+        if !is_disabled() || self.cleaned_up.replace(true) {
+            return;
+        }
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let popup = self
+                .state
+                .try_borrow_mut()
+                .ok()
+                .and_then(|mut s| s.popup.take());
+            if let Some(mut p) = popup {
+                p.hide();
+            }
+            self.finalize_composition();
+        }));
+    }
+
+    /// Shift-tap toggle bookkeeping; true when a tap just completed and the toggle is Shift-tap.
+    fn track_shift_tap(&self, wparam: WPARAM, down: bool) -> bool {
+        const VK_SHIFT: usize = 0x10;
+        const VK_LSHIFT: usize = 0xA0;
+        const VK_RSHIFT: usize = 0xA1;
+        let is_shift = matches!(wparam.0, VK_SHIFT | VK_LSHIFT | VK_RSHIFT);
+        // SAFETY: GetMessageTime has no preconditions.
+        let now = unsafe { GetMessageTime() } as u32;
+        let Ok(mut s) = self.state.try_borrow_mut() else {
+            return false;
+        };
+        let tapped = shift_tap(&mut s.shift_down, is_shift, down, now);
+        tapped && Toggle::parse(&s.config.mode_toggle) == Toggle::ShiftTap
     }
 
     fn drop_anchor(&self) {
@@ -957,6 +1206,11 @@ impl TextService_Impl {
             }
             Action::CommitThenPunctuation(c) => {
                 self.commit(ctx, CommitHow::Punctuation, Some(c));
+                true
+            }
+            Action::CommitThenType(c) => {
+                self.commit(ctx, CommitHow::Enter, None);
+                self.push_char(ctx, InputChar::new(c));
                 true
             }
             Action::CommitAndReinject => {
@@ -1271,6 +1525,7 @@ impl TextService_Impl {
                 s.tashkeel = None;
                 s.selected = 0;
                 s.page = 0;
+                s.comp_ctx = None;
                 s.composition.clone()
             }
             Err(_) => None,
@@ -1318,6 +1573,7 @@ impl TextService_Impl {
             let this = self.to_object();
             p.set_handler(std::rc::Rc::new(move |ev| {
                 guard((), || this.on_popup_event(ev));
+                this.passthrough_cleanup();
             }));
             Some(p)
         }) else {
@@ -1333,24 +1589,24 @@ impl TextService_Impl {
     // Edit sessions
 
     fn run(&self, ctx: &ITfContext, op: DocOp) {
-        let Ok((tid, pending)) = self
-            .state
-            .try_borrow()
-            .map(|s| (s.client_id, s.pending_async))
-        else {
+        let Ok(tid) = self.state.try_borrow().map(|s| s.client_id) else {
             return;
         };
         let this = self.to_object();
         let ctx2 = ctx.clone();
-        let queued = std::rc::Rc::new(std::cell::Cell::new(false));
-        let queued2 = queued.clone();
+        // `ran`: the session has started (sync or async); `slot`: the pending-count token while it
+        // is queued, dropped when it runs or when TSF discards it without running it.
+        let ran = Rc::new(Cell::new(false));
+        let slot: Rc<RefCell<Option<PendingToken>>> = Rc::new(RefCell::new(None));
+        let (ran2, slot2) = (ran.clone(), slot.clone());
         let session: ITfEditSession = EditSession::new(move |ec| {
-            if queued2.get() {
-                if let Ok(mut s) = this.state.try_borrow_mut() {
-                    s.pending_async = s.pending_async.saturating_sub(1);
-                }
+            ran2.set(true);
+            drop(slot2.borrow_mut().take());
+            let r = apply(&this, &ctx2, ec, op);
+            if let Err(e) = &r {
+                diag(&format!("edit session failed: {:#010X}", e.code().0));
             }
-            apply(&this, &ctx2, ec, op)
+            r
         })
         .into();
         // Order is everything: engine state already changed, and each edit must land in request
@@ -1358,24 +1614,20 @@ impl TextService_Impl {
         // So: synchronous when nothing is queued; otherwise, or when TSF refuses a sync lock
         // (TF_E_SYNCHRONOUS, e.g. popup clicks), queue with TF_ES_ASYNC — never ASYNCDONTCARE,
         // which may run at once and overtake the sessions already queued. TSF runs its queue FIFO.
+        // A session that ran and failed is never queued again (its work is done or impossible).
         // SAFETY: plain COM calls; no state borrow is held (the session may run synchronously).
         unsafe {
-            if pending == 0 {
-                let sync = ctx.RequestEditSession(tid, &session, TF_ES_SYNC | TF_ES_READWRITE);
-                if matches!(sync, Ok(hr) if hr.is_ok()) {
+            if self.pending.get() == 0 {
+                let _ = ctx.RequestEditSession(tid, &session, TF_ES_SYNC | TF_ES_READWRITE);
+                if ran.get() {
                     return;
                 }
             }
-            queued.set(true);
-            if let Ok(mut s) = self.state.try_borrow_mut() {
-                s.pending_async += 1;
-            }
+            *slot.borrow_mut() = Some(PendingToken::arm(&self.pending));
             let hr = ctx.RequestEditSession(tid, &session, TF_ES_ASYNC | TF_ES_READWRITE);
-            if !matches!(hr, Ok(h) if h.is_ok()) {
-                queued.set(false);
-                if let Ok(mut s) = self.state.try_borrow_mut() {
-                    s.pending_async = s.pending_async.saturating_sub(1);
-                }
+            if !matches!(hr, Ok(h) if h.is_ok()) && !ran.get() {
+                drop(slot.borrow_mut().take()); // not queued
+                diag("edit session refused by the app");
             }
         }
     }
@@ -1394,11 +1646,12 @@ fn apply(
     unsafe {
         match op {
             DocOp::Preview => {
-                let (comp, atom, text) = match this.state.try_borrow() {
+                let (comp, comp_ctx, atom, text) = match this.state.try_borrow() {
                     // Nothing to show any more (committed or cancelled since the request).
                     Ok(s) if !s.composing() => return Ok(()),
                     Ok(s) => (
                         s.composition.clone(),
+                        s.comp_ctx.clone(),
                         if s.tashkeel.is_some() {
                             s.attr_tashkeel
                         } else {
@@ -1408,13 +1661,35 @@ fn apply(
                     ),
                     Err(_) => return Ok(()),
                 };
-                let range = match comp.and_then(|c| c.GetRange().ok()) {
-                    Some(r) => Some(r),
-                    None => start_composition(this, ctx, ec),
-                };
+                // Our composition, if it still takes text in this context. Apps can end or invalidate
+                // it without telling us (a field re-rendered, text replaced): then start a new one
+                // instead of failing every later key (the list/editor would stop responding).
+                let mut range = None;
+                if let Some(c) = &comp {
+                    let here = comp_ctx.as_ref().is_none_or(|cc| same_object(cc, ctx));
+                    if here {
+                        range = c
+                            .GetRange()
+                            .ok()
+                            .filter(|r| r.SetText(ec, 0, &text).is_ok());
+                    }
+                    if range.is_none() {
+                        if here {
+                            let _ = c.EndComposition(ec);
+                        }
+                        if let Ok(mut s) = this.state.try_borrow_mut() {
+                            s.composition = None;
+                            s.comp_ctx = None;
+                        }
+                        diag("preview: composition lost; restarted");
+                    }
+                }
+                if range.is_none() {
+                    range = start_composition(this, ctx, ec)
+                        .filter(|r| r.SetText(ec, 0, &text).is_ok());
+                }
                 match range {
                     Some(range) => {
-                        range.SetText(ec, 0, &text)?;
                         set_attr(ctx, ec, &range, atom);
                         set_caret_end(ctx, ec, &range);
                         update_text_rect(this, ctx, ec, &range);
@@ -1434,19 +1709,37 @@ fn apply(
                     .try_borrow_mut()
                     .ok()
                     .and_then(|mut s| s.composition.take());
-                match comp {
-                    Some(comp) => {
-                        if let Ok(range) = comp.GetRange() {
-                            let _ = range.SetText(ec, 0, &text);
-                            clear_attr(ctx, ec, &range);
-                            set_caret_end(ctx, ec, &range);
-                        }
-                        let _ = comp.EndComposition(ec);
+                let comp_ctx = this
+                    .state
+                    .try_borrow_mut()
+                    .ok()
+                    .and_then(|mut s| s.comp_ctx.take());
+                let here = comp_ctx.as_ref().is_none_or(|cc| same_object(cc, ctx));
+                let written = comp.as_ref().filter(|_| here).and_then(|comp| {
+                    let range = comp.GetRange().ok()?;
+                    range.SetText(ec, 0, &text).ok()?;
+                    clear_attr(ctx, ec, &range);
+                    set_caret_end(ctx, ec, &range);
+                    Some(())
+                });
+                if let Some(comp) = &comp {
+                    let _ = comp.EndComposition(ec);
+                }
+                match (comp, written) {
+                    (Some(_), Some(())) => {
                         if !suffix.is_empty() {
                             insert_at_caret(ctx, ec, &suffix)?;
                         }
                     }
-                    None => {
+                    (Some(_), None) => {
+                        // The composition was gone: insert the word at the caret instead.
+                        diag("commit: composition lost; inserted at the caret");
+                        let all: Vec<u16> = text.into_iter().chain(suffix).collect();
+                        if !all.is_empty() {
+                            insert_at_caret(ctx, ec, &all)?;
+                        }
+                    }
+                    (None, _) => {
                         let all: Vec<u16> = text.into_iter().chain(suffix).collect();
                         if !all.is_empty() {
                             insert_at_caret(ctx, ec, &all)?;
@@ -1455,11 +1748,10 @@ fn apply(
                 }
             }
             DocOp::Finalize => {
-                let comp = this
-                    .state
-                    .try_borrow_mut()
-                    .ok()
-                    .and_then(|mut s| s.composition.take());
+                let comp = this.state.try_borrow_mut().ok().and_then(|mut s| {
+                    s.comp_ctx = None;
+                    s.composition.take()
+                });
                 if let Some(comp) = comp {
                     if let Ok(range) = comp.GetRange() {
                         clear_attr(ctx, ec, &range);
@@ -1527,14 +1819,78 @@ unsafe fn start_composition(
     let sink: ITfCompositionSink = this.to_interface();
     let comp = cc.StartComposition(ec, &at, &sink).ok()?;
     let range = comp.GetRange().ok()?;
+    ensure_edit_sink(this, ctx);
     match this.state.try_borrow_mut() {
-        Ok(mut s) => s.composition = Some(comp),
+        Ok(mut s) => {
+            s.composition = Some(comp);
+            s.comp_ctx = Some(ctx.clone());
+        }
         Err(_) => {
             let _ = comp.EndComposition(ec);
             return None;
         }
     }
     Some(range)
+}
+
+/// Watch edits of `ctx` (ITfTextEditSink): one context at a time, the one we compose in.
+unsafe fn ensure_edit_sink(this: &TextService_Impl, ctx: &ITfContext) {
+    let old = match this.state.try_borrow_mut() {
+        Ok(mut s) => {
+            if s.edit_sink
+                .as_ref()
+                .is_some_and(|(c, _)| same_object(c, ctx))
+            {
+                return;
+            }
+            s.edit_sink.take()
+        }
+        Err(_) => return,
+    };
+    if let Some((c, cookie)) = old {
+        if let Ok(src) = c.cast::<ITfSource>() {
+            let _ = src.UnadviseSink(cookie);
+        }
+    }
+    let Ok(src) = ctx.cast::<ITfSource>() else {
+        return;
+    };
+    let unk: windows::core::IUnknown = this.to_interface();
+    if let Ok(cookie) = src.AdviseSink(&ITfTextEditSink::IID, &unk) {
+        match this.state.try_borrow_mut() {
+            Ok(mut s) => s.edit_sink = Some((ctx.clone(), cookie)),
+            Err(_) => {
+                let _ = src.UnadviseSink(cookie);
+            }
+        }
+    }
+}
+
+/// Is the selection of `ctx` outside our composition's range (before its start or after its end)?
+unsafe fn selection_outside(ctx: &ITfContext, ec: u32, comp: &ITfComposition) -> bool {
+    let Ok(cr) = comp.GetRange() else {
+        return false;
+    };
+    let mut sel = [TF_SELECTION::default()];
+    let mut n = 0u32;
+    if ctx
+        .GetSelection(ec, TF_DEFAULT_SELECTION, &mut sel, &mut n)
+        .is_err()
+        || n == 0
+    {
+        return false;
+    }
+    let [sel] = sel;
+    let Some(range) = ManuallyDrop::into_inner(sel.range) else {
+        return false;
+    };
+    let before = range
+        .CompareStart(ec, &cr, TF_ANCHOR_START)
+        .is_ok_and(|c| c < 0);
+    let after = range
+        .CompareEnd(ec, &cr, TF_ANCHOR_END)
+        .is_ok_and(|c| c > 0);
+    before || after
 }
 
 unsafe fn insert_at_caret(ctx: &ITfContext, ec: u32, text: &[u16]) -> windows::core::Result<()> {

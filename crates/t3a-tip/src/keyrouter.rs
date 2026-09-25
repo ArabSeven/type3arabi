@@ -96,6 +96,30 @@ impl Toggle {
     }
 }
 
+/// Shift tapped on its own toggles Arabic/Latin (`general.mode_toggle = "ShiftTap"`): Shift pressed,
+/// no other key before it is released, released within `SHIFT_TAP_MS`. Holding Shift for a capital,
+/// Shift+click or a long hold never toggles.
+pub const SHIFT_TAP_MS: u32 = 300; // docs/02 §10
+
+/// Track a Shift tap. `down_at`: tick of the pending Shift press (None = not armed).
+pub fn shift_tap(down_at: &mut Option<u32>, is_shift: bool, key_down: bool, now: u32) -> bool {
+    match (is_shift, key_down) {
+        (true, true) => {
+            // Auto-repeat keeps the first press time.
+            down_at.get_or_insert(now);
+            false
+        }
+        (true, false) => down_at
+            .take()
+            .is_some_and(|t| now.wrapping_sub(t) <= SHIFT_TAP_MS),
+        (false, true) => {
+            *down_at = None;
+            false
+        }
+        (false, false) => false,
+    }
+}
+
 /// A configurable key chord (docs/13 `[keys]`): exact modifier match.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Chord {
@@ -210,6 +234,9 @@ pub enum Action {
     /// Commit the typed Latin as is, plus a space (keys.commit_latin).
     CommitRawSpace,
     CommitThenPunctuation(char),
+    /// Diacritics editor open and a letter/digit that is not an editor command was typed: insert the
+    /// edited word and start a new word with that character (it is never silently dropped).
+    CommitThenType(char),
     CommitAndReinject,
     OpenTashkeel,
     NextCandidate,
@@ -274,7 +301,7 @@ pub fn classify(s: &RouterState, key: Key, m: Mods) -> Decision {
                 '^' => Action::Tashkeel(TashkeelCmd::DaggerAlif),
                 'x' | 'X' => Action::Tashkeel(TashkeelCmd::Clear),
                 '1'..='8' => Action::Tashkeel(TashkeelCmd::QuickPick(c as u8 - b'0')),
-                c if is_token_char(c) => Action::Tashkeel(TashkeelCmd::Ignore),
+                c if is_token_char(c) => Action::CommitThenType(c),
                 c => Action::CommitThenPunctuation(c),
             },
             Key::NumpadDigit(_) => Action::Tashkeel(TashkeelCmd::Ignore),
@@ -673,5 +700,45 @@ mod tests {
                                                                           // A private password field is still a password field.
         assert_eq!(classify_scopes(&[61, 31], true), ScopeClass::Latin);
         assert_eq!(classify_scopes(&[57, 58], true), ScopeClass::Normal); // IS_TEXT, IS_CHAT
+    }
+
+    /// Regression (Owner, 2026-09-25): letters that are not editor commands were swallowed while the
+    /// diacritics editor was open, so typing on looked like a frozen editor.
+    #[test]
+    fn editor_never_swallows_typing() {
+        let s = st(ContextMode::Arabic, true, Popup::Tashkeel);
+        for c in ['b', 's', 't', 'k', '9', '0'] {
+            assert_eq!(
+                classify(&s, Key::Char(c), NONE),
+                eat(Action::CommitThenType(c))
+            );
+        }
+        // Commands keep their meaning.
+        assert_eq!(
+            classify(&s, Key::Char('a'), NONE),
+            eat(Action::Tashkeel(TashkeelCmd::Fatha))
+        );
+        assert_eq!(
+            classify(&s, Key::Char('3'), NONE),
+            eat(Action::Tashkeel(TashkeelCmd::QuickPick(3)))
+        );
+        // Shortcuts leave the editor and reach the app.
+        assert_eq!(
+            classify(&s, Key::Char('c'), CTRL),
+            eat(Action::CommitAndReinject)
+        );
+    }
+
+    #[test]
+    fn shift_tap_toggles_only_for_a_short_lone_tap() {
+        let mut armed = None;
+        assert!(!shift_tap(&mut armed, true, true, 1000));
+        assert!(shift_tap(&mut armed, true, false, 1200)); // quick tap
+        assert!(!shift_tap(&mut armed, true, true, 2000));
+        assert!(!shift_tap(&mut armed, false, true, 2050)); // Shift+A: a capital
+        assert!(!shift_tap(&mut armed, true, false, 2100));
+        assert!(!shift_tap(&mut armed, true, true, 3000));
+        assert!(!shift_tap(&mut armed, true, false, 3000 + SHIFT_TAP_MS + 1)); // held too long
+        assert!(!shift_tap(&mut armed, true, false, 4000)); // release without press
     }
 }

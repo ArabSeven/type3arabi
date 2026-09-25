@@ -121,6 +121,15 @@ mod harness {
     const CLICK_CLEAR_ALL: char = '\u{E004}'; // tashkeel editor: "clear all" button
     const CLICK_DAMMA: char = '\u{E005}'; // tashkeel editor: 2nd palette cell (damma)
     const CLICK_SETTINGS: char = '\u{E007}'; // the Settings tab in the list header's left corner
+
+    // The host changes things behind the TIP's back (chat apps, browsers, autocorrect):
+    const HOST_CLEAR: char = '\u{E008}'; // the app replaces its text (SetWindowText) mid-word
+    const FOCUS_AWAY: char = '\u{E009}'; // focus leaves the field and comes back
+
+    thread_local! {
+        /// The RichEdit under test (for HOST_CLEAR / FOCUS_AWAY).
+        static EDIT: std::cell::Cell<isize> = const { std::cell::Cell::new(0) };
+    }
     /// `SetWindowLongPtrW` takes a LONG_PTR: i32 on x86, isize on x64.
     #[cfg(target_pointer_width = "64")]
     type LongPtr = isize;
@@ -279,6 +288,24 @@ mod harness {
                         pump();
                         std::thread::sleep(std::time::Duration::from_millis(20));
                     }
+                    continue;
+                }
+                HOST_CLEAR => {
+                    let edit = HWND(EDIT.with(|e| e.get()) as *mut _);
+                    unsafe {
+                        let _ = SetWindowTextW(edit, w!(""));
+                    }
+                    pump();
+                    continue;
+                }
+                FOCUS_AWAY => {
+                    let edit = HWND(EDIT.with(|e| e.get()) as *mut _);
+                    unsafe {
+                        let _ = SetFocus(Some(GetAncestor(edit, GA_ROOT)));
+                        pump();
+                        let _ = SetFocus(Some(edit));
+                    }
+                    pump();
                     continue;
                 }
                 CLICK_DAMMA => {
@@ -514,6 +541,7 @@ mod harness {
                 Some(WPARAM(SES_USECTF)),
                 Some(LPARAM(SES_USECTF as isize)),
             );
+            EDIT.with(|e| e.set(edit.0 as isize));
             let _ = SetFocus(Some(edit));
             pump();
 
@@ -573,6 +601,15 @@ mod harness {
                 // Owner request 2026-09-25: the header's Settings tab starts the Settings app; its
                 // window takes the focus, which finalizes the word as shown (U+0645 ... U+064B).
                 ("mar7aba\u{E007}", "مرحباً"),
+                // The app clears its text while the diacritics editor (or the list) is open: that word
+                // is gone with it, and typing goes on normally with a fresh word.
+                ("shukran\t\u{E008}mar7aba ", "مرحباً "), // U+0645 U+0631 U+062D U+0628 U+0627 U+064B
+                ("mar7\u{E008}shukran ", "شكراً "),       // U+0634 U+0643 U+0631 U+0627 U+064B
+                // A letter that is not an editor command inserts the edited word and starts a new
+                // one (it used to be swallowed; Esc then keeps the new word in Latin).
+                ("shukran\tb", "شكراًb"),
+                // Focus leaves and comes back mid-word: the word stays as shown, typing goes on.
+                ("shukran\t\u{E009}mar7aba ", "شكراًمرحباً "),
                 // Every word start also reads the field's input scopes (docs/02 §7, R9). RichEdit does
                 // not report them (GetValue fails), which must mean "no scope": normal typing above.
             ];

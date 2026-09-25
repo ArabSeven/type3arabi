@@ -35,14 +35,14 @@ use windows::Win32::System::LibraryLoader::{
     GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetCapture, ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, LoadCursorW,
     RegisterClassExW, SetWindowLongPtrW, SetWindowPos, ShowWindow, UnregisterClassW, CS_DROPSHADOW,
     CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MA_NOACTIVATE, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, SW_HIDE, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETTINGCHANGE, WNDCLASSEXW, WS_CLIPSIBLINGS,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    SWP_SHOWWINDOW, SW_HIDE, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETTINGCHANGE, WNDCLASSEXW,
+    WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
@@ -226,6 +226,10 @@ impl PopupWindow {
         }
         // SAFETY: hwnd is owned by self and alive until Drop.
         unsafe {
+            // A hidden window must never keep the mouse: every click in the app would go to it.
+            if GetCapture() == self.hwnd {
+                let _ = ReleaseCapture();
+            }
             let _ = ShowWindow(self.hwnd, SW_HIDE);
         }
     }
@@ -1155,11 +1159,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_LBUTTONDOWN | WM_MOUSEMOVE | WM_MOUSEWHEEL => {
             if !ptr.is_null() {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    if msg == WM_LBUTTONDOWN {
-                        SetCapture(hwnd);
-                    }
                     // The borrow ends inside `mouse_event`; the handler may re-render this window.
                     if let Some((handler, event)) = mouse_event(&*ptr, msg, wparam, lparam) {
+                        // Capture only for a drag across the letters (the one gesture that moves
+                        // outside the cell it started in). Other clicks act at once and often
+                        // hide the popup; a capture held by a hidden window would swallow every
+                        // later click in the app.
+                        if msg == WM_LBUTTONDOWN && matches!(event, PopupEvent::Letter { .. }) {
+                            SetCapture(hwnd);
+                        }
                         handler(event);
                     }
                 }));
@@ -1180,8 +1188,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
+        WM_CAPTURECHANGED => {
+            if !ptr.is_null() {
+                if let Ok(mut s) = (*ptr).try_borrow_mut() {
+                    s.drag_letter = None;
+                }
+            }
+            LRESULT(0)
+        }
         WM_LBUTTONUP => {
-            let _ = ReleaseCapture();
+            if GetCapture() == hwnd {
+                let _ = ReleaseCapture();
+            }
             if !ptr.is_null() {
                 if let Ok(mut s) = (*ptr).try_borrow_mut() {
                     s.drag_letter = None;
