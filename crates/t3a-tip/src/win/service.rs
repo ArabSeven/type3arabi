@@ -32,11 +32,11 @@ use t3a_ui::{
     Footer, ListModel, PopupEvent, PopupModel, PopupWindow, Row, RowMarker, TashkeelModel,
 };
 use windows::core::{implement, Interface, BOOL, GUID};
-use windows::Win32::Foundation::{E_FAIL, E_INVALIDARG, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{E_FAIL, E_INVALIDARG, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::System::Variant::VARIANT;
-use windows::Win32::UI::Input::KeyboardAndMouse::VK_SPACE;
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, VK_SPACE};
 use windows::Win32::UI::TextServices::{
     CLSID_TF_CategoryMgr, IEnumTfDisplayAttributeInfo, ITfCategoryMgr, ITfComposition,
     ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextComposition,
@@ -52,7 +52,8 @@ use windows::Win32::UI::TextServices::{
     TF_TMAE_SECUREMODE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetGUIThreadInfo, GetMessageExtraInfo, GetMessageTime, GUITHREADINFO,
+    GetAncestor, GetCursorPos, GetGUIThreadInfo, GetMessageExtraInfo, GetMessageTime, GA_ROOT,
+    GUITHREADINFO,
 };
 use windows_core::IUnknownImpl;
 
@@ -182,6 +183,8 @@ pub struct State {
     eaten: [bool; 256],
     popup: Option<PopupWindow>,
     text_rect: RECT,
+    /// Top-level window of the focused field (docs/02 §9): owns the popup.
+    owner_hwnd: HWND,
     /// The context our composition lives in: keys arriving from another context first finalize it.
     comp_ctx: Option<ITfContext>,
     /// ITfTextEditSink advised on this context (docs/02 §8): a click that moves the caret out of the
@@ -397,6 +400,7 @@ impl TextService {
                 eaten: [false; 256],
                 popup: None,
                 text_rect: RECT::default(),
+                owner_hwnd: HWND::default(),
                 comp_ctx: None,
                 edit_sink: None,
             }),
@@ -860,7 +864,7 @@ impl ITfFunction_Impl for TextService_Impl {
 impl ITfFnConfigure_Impl for TextService_Impl {
     fn Show(
         &self,
-        _hwndparent: windows::Win32::Foundation::HWND,
+        _hwndparent: HWND,
         _langid: u16,
         _rguidprofile: *const GUID,
     ) -> windows::core::Result<()> {
@@ -1558,7 +1562,7 @@ impl TextService_Impl {
     }
 
     fn show_popup(&self) {
-        let (model, rect, popup) = {
+        let (model, rect, popup, owner) = {
             let Ok(mut s) = self.state.try_borrow_mut() else {
                 return;
             };
@@ -1566,10 +1570,17 @@ impl TextService_Impl {
                 return;
             }
             let model = s.popup_model();
-            (model, s.text_rect, s.popup.take())
+            let owner = s.owner_hwnd;
+            // A popup owned by another window (focus moved to another top-level window) or already
+            // destroyed with its owner is replaced; dropping it destroys its window.
+            let popup = s
+                .popup
+                .take()
+                .filter(|p| p.owner() == owner && p.is_alive());
+            (model, s.text_rect, popup, owner)
         };
         let Some(mut popup) = popup.or_else(|| {
-            let mut p = PopupWindow::new().ok()?;
+            let mut p = PopupWindow::new_owned(owner).ok()?;
             let this = self.to_object();
             p.set_handler(std::rc::Rc::new(move |ev| {
                 guard((), || this.on_popup_event(ev));
@@ -1939,7 +1950,9 @@ unsafe fn clear_attr(ctx: &ITfContext, ec: u32, range: &ITfRange) {
 unsafe fn update_text_rect(this: &TextService_Impl, ctx: &ITfContext, ec: u32, range: &ITfRange) {
     let mut rc = RECT::default();
     let mut ok = false;
+    let mut owner = HWND::default();
     if let Ok(view) = ctx.GetActiveView() {
+        owner = view.GetWnd().unwrap_or_default();
         let mut clipped = BOOL::from(false);
         ok = view.GetTextExt(ec, range, &mut rc, &mut clipped).is_ok()
             && (rc.bottom > rc.top || rc.right > rc.left || rc.left != 0 || rc.top != 0);
@@ -1977,7 +1990,15 @@ unsafe fn update_text_rect(this: &TextService_Impl, ctx: &ITfContext, ec: u32, r
             };
         }
     }
+    // docs/02 §9: the view's window, else the focus window; the popup's owner is its top-level window.
+    if owner.is_invalid() {
+        owner = GetFocus();
+    }
+    if !owner.is_invalid() {
+        owner = GetAncestor(owner, GA_ROOT);
+    }
     if let Ok(mut s) = this.state.try_borrow_mut() {
         s.text_rect = rc;
+        s.owner_hwnd = owner;
     }
 }

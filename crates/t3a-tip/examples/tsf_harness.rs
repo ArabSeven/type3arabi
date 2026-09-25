@@ -615,6 +615,20 @@ mod harness {
             ];
             // Quiet mode: create the popup with a warm-up word, then make it transparent.
             let _ = type_keys(&sink, &ctx, "mar7");
+            // docs/02 §9: the popup is owned by the field's top-level window, which keeps it in that
+            // window's z-order band (Windows Search / Start draw above unowned windows).
+            {
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    GetAncestor, GetWindow, GA_ROOT, GW_OWNER,
+                };
+                let root = GetAncestor(edit, GA_ROOT);
+                let owner = popup().and_then(|h| GetWindow(h, GW_OWNER).ok());
+                if owner != Some(root) {
+                    println!("FAIL: popup owner {owner:?}, expected the host window {root:?}");
+                    return 5;
+                }
+                println!("PASS popup is owned by the host window");
+            }
             hide_popup();
             let (esc_w, esc_l) = key(0x1B);
             let _ = sink.OnKeyDown(&ctx, esc_w, esc_l);

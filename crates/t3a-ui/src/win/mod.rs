@@ -37,12 +37,12 @@ use windows::Win32::System::LibraryLoader::{
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetCapture, ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, LoadCursorW,
-    RegisterClassExW, SetWindowLongPtrW, SetWindowPos, ShowWindow, UnregisterClassW, CS_DROPSHADOW,
-    CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MA_NOACTIVATE, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, SW_HIDE, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETTINGCHANGE, WNDCLASSEXW,
-    WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, IsWindow,
+    LoadCursorW, RegisterClassExW, SetWindowLongPtrW, SetWindowPos, ShowWindow, UnregisterClassW,
+    CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MA_NOACTIVATE,
+    SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETTINGCHANGE,
+    WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
@@ -118,6 +118,7 @@ struct PopupState {
 
 pub struct PopupWindow {
     hwnd: HWND,
+    owner: HWND,
     state: Box<RefCell<PopupState>>,
 }
 
@@ -145,6 +146,14 @@ fn contains(r: &RECT, x: i32, y: i32) -> bool {
 
 impl PopupWindow {
     pub fn new() -> windows::core::Result<Self> {
+        Self::new_owned(HWND::default())
+    }
+
+    /// A popup owned by the app's top-level window (docs/02 §9, `ITfContextView::GetWnd`). An owned
+    /// popup lives in its owner's z-order band, so it shows above shell surfaces such as Windows
+    /// Search and Start; an unowned one stays in the desktop band, behind them. Windows destroys it
+    /// together with its owner (see `is_alive`).
+    pub fn new_owned(owner: HWND) -> windows::core::Result<Self> {
         // SAFETY: plain Win32 window creation on the calling (UI) thread; the state pointer stored
         // in GWLP_USERDATA points into a Box that outlives the window (cleared in Drop first).
         unsafe {
@@ -173,7 +182,7 @@ impl PopupWindow {
                 0,
                 200,
                 100,
-                None,
+                (!owner.is_invalid()).then_some(owner),
                 None,
                 Some(hinstance),
                 None,
@@ -188,7 +197,7 @@ impl PopupWindow {
                 drag_letter: None,
             }));
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, &*state as *const _ as _);
-            Ok(Self { hwnd, state })
+            Ok(Self { hwnd, owner, state })
         }
     }
 
@@ -204,6 +213,17 @@ impl PopupWindow {
         if let Ok(mut s) = self.state.try_borrow_mut() {
             s.theme = theme;
         }
+    }
+
+    /// The owner window given to `new_owned` (null for `new`).
+    pub fn owner(&self) -> HWND {
+        self.owner
+    }
+
+    /// False once Windows destroyed the window (it goes with its owner).
+    pub fn is_alive(&self) -> bool {
+        // SAFETY: IsWindow only reads the handle table.
+        unsafe { IsWindow(Some(self.hwnd)).as_bool() }
     }
 
     /// The window handle (tests drive it with synthetic mouse messages).
