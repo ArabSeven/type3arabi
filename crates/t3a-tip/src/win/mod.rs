@@ -9,7 +9,6 @@ pub mod dll;
 pub mod factory;
 pub mod guard;
 pub mod keys;
-pub mod langbar;
 pub mod service;
 
 pub use dll::*;

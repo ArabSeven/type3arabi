@@ -1,10 +1,10 @@
-//! Windows resources for the TIP DLL (docs/07 §1, §3): the input-indicator icons — `101` brand (the TSF
-//! profile's icon, `IDI_BRAND`, docs/02 §2), `102` / `103` mode Arabic / Latin (the tray button, docs/02 §10) —
-//! in Microsoft's black-and-white IME icon style (`res/make_icons.py`), and VERSIONINFO from the crate version.
+//! Windows resources for the TIP DLL (docs/07 §1, §3): the brand icon, which the TSF profile points at
+//! (`IDI_BRAND`, docs/02 §2) — black and white, as Microsoft's IME requirements demand of input-indicator icons
+//! (`res/make_icons.py`) — and VERSIONINFO generated from the crate version.
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=res");
+    println!("cargo:rerun-if-changed=res/brand.ico");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
@@ -20,19 +20,7 @@ fn main() {
         .unwrap();
 }
 
-/// Absolute path of `res/<name>` as rc.exe wants it: no `\\?\` prefix, backslashes escaped.
-fn res(name: &str) -> String {
-    std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("res")
-        .join(name)
-        .canonicalize()
-        .unwrap()
-        .to_string_lossy()
-        .replace(r"\\?\", "")
-        .replace('\\', r"\\")
-}
-
-/// Icons + VERSIONINFO (t3a-hotkey/build.rs has the same VERSIONINFO with the color app icon).
+/// `101 ICON` (the brand icon) + VERSIONINFO. Same VERSIONINFO in t3a-hotkey/build.rs (with the color app icon).
 fn version_rc(description: &str, file: &str, file_type: u32) -> String {
     let version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let nums: Vec<u16> = version
@@ -41,13 +29,18 @@ fn version_rc(description: &str, file: &str, file_type: u32) -> String {
         .map(|p| p.parse().unwrap_or(0))
         .collect();
     let (a, b, c) = (nums[0], nums[1], nums[2]);
-    let (brand, mode_ar, mode_latin) =
-        (res("brand.ico"), res("mode-ar.ico"), res("mode-latin.ico"));
+    let icon = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .join("res/brand.ico")
+        .canonicalize()
+        .unwrap();
+    // rc.exe wants a plain path with escaped backslashes (no \\?\ prefix).
+    let icon = icon
+        .to_string_lossy()
+        .replace(r"\\?\", "")
+        .replace('\\', r"\\");
     format!(
         r#"#pragma code_page(65001)
-101 ICON "{brand}"
-102 ICON "{mode_ar}"
-103 ICON "{mode_latin}"
+101 ICON "{icon}"
 1 VERSIONINFO
 FILEVERSION {a},{b},{c},0
 PRODUCTVERSION {a},{b},{c},0

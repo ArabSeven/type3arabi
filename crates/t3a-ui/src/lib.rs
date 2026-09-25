@@ -38,6 +38,9 @@ pub struct ListModel {
     pub rows: Vec<Row>,
     pub highlighted: usize,
     pub footer: Footer,
+    /// Show the Settings button in the header's corner (false where no process may be started:
+    /// the secure desktop and AppContainer apps, docs/02 §14).
+    pub settings: bool,
 }
 
 /// Tashkeel editor state (docs/05 §4).
@@ -76,6 +79,8 @@ pub enum PopupEvent {
     ClearAll,
     /// Click on quick-pick chip `n`.
     Pick(usize),
+    /// Click on the Settings button of the candidate list's header.
+    Settings,
 }
 
 /// Label of the "clear all diacritics" button at the top of the tashkeel editor (drawn with ✕).

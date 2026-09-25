@@ -35,6 +35,7 @@ fn main() {
             rows: rows(r),
             highlighted: hl,
             footer: Footer::Hints,
+            settings: true,
         })
     };
     let models = [

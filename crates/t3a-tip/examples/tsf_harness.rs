@@ -11,6 +11,18 @@ fn main() {}
 
 #[cfg(windows)]
 fn main() {
+    // A copy of this exe stands in for the Settings app (see `run`): when the popup's Settings
+    // button starts it, it only leaves a marker for the harness and exits.
+    let exe = std::env::current_exe().unwrap_or_default();
+    if exe
+        .file_name()
+        .is_some_and(|n| n == "Type3arabi Settings.exe")
+    {
+        if let Some(dir) = std::env::var_os("LOCALAPPDATA") {
+            let _ = std::fs::write(harness::settings_marker(dir.as_ref()), "");
+        }
+        return;
+    }
     std::process::exit(harness::run());
 }
 
@@ -18,7 +30,6 @@ fn main() {
 mod harness {
     use t3a_tip::service::TextService;
     use windows::core::{w, Interface, PCWSTR};
-    use windows::Win32::Foundation::POINT;
     use windows::Win32::Foundation::RECT;
     use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows::Win32::System::Com::{
@@ -27,23 +38,16 @@ mod harness {
     use windows::Win32::System::LibraryLoader::LoadLibraryW;
     use windows::Win32::UI::HiDpi::GetDpiForWindow;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetKeyboardState, MapVirtualKeyW, SetFocus, SetKeyboardState, MAPVK_VK_TO_VSC,
+        GetFocus, GetKeyboardState, MapVirtualKeyW, SetFocus, SetKeyboardState, MAPVK_VK_TO_VSC,
     };
-    use windows::Win32::UI::TextServices::TF_LBI_CLK_RIGHT;
     use windows::Win32::UI::TextServices::{
-        CLSID_TF_ThreadMgr, ITfContext, ITfKeyEventSink, ITfLangBarItemButton, ITfLangBarItemMgr,
-        ITfTextInputProcessor, ITfThreadMgr, GUID_LBI_INPUTMODE, TF_LANGBARITEMINFO,
-        TF_LBI_CLK_LEFT, TF_LBI_STYLE_SHOWNINTRAY,
+        CLSID_TF_ThreadMgr, ITfContext, ITfKeyEventSink, ITfTextInputProcessor, ITfThreadMgr,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetWindowTextLengthW, GetWindowTextW,
-        PeekMessageW, RegisterClassW, SendMessageW, SetWindowTextW, ShowWindow, TranslateMessage,
-        MSG, PM_REMOVE, SW_SHOW, WINDOW_EX_STYLE, WNDCLASSW, WS_CHILD, WS_OVERLAPPEDWINDOW,
-        WS_VISIBLE,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::{
-        DestroyIcon, EndMenu, GetMenuItemCount, GetMenuState, GetMenuStringW, KillTimer, SetTimer,
-        HMENU, MF_BYPOSITION, MF_CHECKED, MF_GRAYED, MN_GETHMENU,
+        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetWindowTextLengthW,
+        GetWindowTextW, PeekMessageW, RegisterClassW, SendMessageW, SetForegroundWindow,
+        SetWindowTextW, ShowWindow, TranslateMessage, GA_ROOT, MSG, PM_REMOVE, SW_SHOW,
+        WINDOW_EX_STYLE, WNDCLASSW, WS_CHILD, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         FindWindowExW, GetClientRect, GetWindowThreadProcessId, WM_LBUTTONDOWN, WM_LBUTTONUP,
@@ -112,110 +116,11 @@ mod harness {
     const SHIFT_SPACE: char = '\u{E003}'; // Shift+Space
     const CLICK_CLEAR_ALL: char = '\u{E004}'; // tashkeel editor: "clear all" button
     const CLICK_DAMMA: char = '\u{E005}'; // tashkeel editor: 2nd palette cell (damma)
-    const TRAY_CLICK: char = '\u{E007}'; // left click on the input-indicator button (Arabic <-> Latin)
-    const TRAY_MENU_LATIN: char = '\u{E008}'; // input-indicator menu: "Latin"
-    const TRAY_MENU_ARABIC: char = '\u{E009}'; // input-indicator menu: "Arabic"
+    const CLICK_SETTINGS: char = '\u{E007}'; // the Settings tab in the list header's left corner
 
-    /// The TIP's input-indicator button, found the way Windows finds it: by GUID_LBI_INPUTMODE.
-    fn tray_button(tm: &ITfThreadMgr) -> Option<ITfLangBarItemButton> {
-        unsafe {
-            let mgr: ITfLangBarItemMgr = tm.cast().ok()?;
-            mgr.GetItem(&GUID_LBI_INPUTMODE).ok()?.cast().ok()
-        }
-    }
-
-    /// Items of the open right-click menu, read from the live menu window: (text, checked, grayed).
-    static MENU_SEEN: std::sync::Mutex<Vec<(String, bool, bool)>> =
-        std::sync::Mutex::new(Vec::new());
-
-    /// Timer callback running inside the menu's modal loop: record the items, then close the menu.
-    unsafe extern "system" fn read_and_close_menu(_: HWND, _: u32, id: usize, _: u32) {
-        let _ = KillTimer(None, id);
-        let me = std::process::id();
-        let mut after: Option<HWND> = None;
-        while let Ok(h) = FindWindowExW(None, after, w!("#32768"), PCWSTR::null()) {
-            let mut pid = 0u32;
-            GetWindowThreadProcessId(h, Some(&mut pid));
-            if pid == me {
-                let menu = HMENU(SendMessageW(h, MN_GETHMENU, None, None).0 as *mut _);
-                let mut seen = MENU_SEEN.lock().unwrap();
-                for i in 0..GetMenuItemCount(Some(menu)).max(0) {
-                    let mut buf = [0u16; 128];
-                    let n = GetMenuStringW(menu, i as u32, Some(&mut buf), MF_BYPOSITION) as usize;
-                    let state = GetMenuState(menu, i as u32, MF_BYPOSITION);
-                    seen.push((
-                        String::from_utf16_lossy(&buf[..n]),
-                        state & MF_CHECKED.0 != 0,
-                        state & MF_GRAYED.0 != 0,
-                    ));
-                }
-                break;
-            }
-            after = Some(h);
-        }
-        // T3A_MENU_HOLD_MS keeps the menu open (for a screenshot) before closing it.
-        if let Some(ms) = std::env::var("T3A_MENU_HOLD_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-        {
-            std::thread::sleep(std::time::Duration::from_millis(ms));
-        }
-        let _ = EndMenu();
-    }
-
-    /// Right click: the menu must open with Arabic checked, Latin, and Settings, then close cleanly.
-    fn check_tray_menu(tm: &ITfThreadMgr) -> Result<(), String> {
-        let b = tray_button(tm).ok_or("no tray button")?;
-        MENU_SEEN.lock().unwrap().clear();
-        unsafe {
-            SetTimer(None, 0, 300, Some(read_and_close_menu));
-            let area = RECT {
-                left: 600,
-                top: 400,
-                right: 624,
-                bottom: 424,
-            };
-            b.OnClick(TF_LBI_CLK_RIGHT, POINT { x: 612, y: 400 }, &area)
-                .map_err(|e| format!("OnClick(right): {e}"))?;
-        }
-        pump();
-        let seen = MENU_SEEN.lock().unwrap().clone();
-        println!("  tray menu: {seen:?}");
-        let texts: Vec<&str> = seen.iter().map(|(t, _, _)| t.as_str()).collect();
-        let ok = seen.len() == 4
-            && texts[0].starts_with("Arabic")
-            && seen[0].1
-            && texts[1].starts_with("Latin")
-            && !seen[1].1
-            && texts[3].starts_with("Type3arabi Settings")
-            && !seen[3].2;
-        if ok {
-            Ok(())
-        } else {
-            Err("unexpected menu items".into())
-        }
-    }
-
-    /// Checks of the tray button itself (docs/02 §10). Returns a failure message.
-    fn check_tray(tm: &ITfThreadMgr) -> Result<(), String> {
-        let b = tray_button(tm).ok_or("no GUID_LBI_INPUTMODE item")?;
-        unsafe {
-            let mut info = TF_LANGBARITEMINFO::default();
-            b.GetInfo(&mut info).map_err(|e| format!("GetInfo: {e}"))?;
-            if info.guidItem != GUID_LBI_INPUTMODE || info.dwStyle & TF_LBI_STYLE_SHOWNINTRAY == 0 {
-                return Err("GetInfo: wrong item/style".into());
-            }
-            let icon = b.GetIcon().map_err(|e| format!("GetIcon: {e}"))?;
-            if icon.is_invalid() {
-                return Err("GetIcon: no icon".into());
-            }
-            let _ = DestroyIcon(icon); // the caller owns it
-            let tip = b.GetTooltipString().map_err(|e| format!("tooltip: {e}"))?;
-            if !tip.to_string().contains("Arabic") {
-                return Err(format!("tooltip: {tip}"));
-            }
-        }
-        Ok(())
+    /// File the stand-in Settings app writes when it is started.
+    pub fn settings_marker(local_app_data: &std::path::Path) -> std::path::PathBuf {
+        local_app_data.join("Type3arabi").join("settings-opened")
     }
 
     /// Our own popup: another process (e.g. an app using the installed Type3arabi) may have a
@@ -263,31 +168,10 @@ mod harness {
         true
     }
 
-    fn type_keys(tm: &ITfThreadMgr, sink: &ITfKeyEventSink, ctx: &ITfContext, keys: &str) -> bool {
+    fn type_keys(sink: &ITfKeyEventSink, ctx: &ITfContext, keys: &str) -> bool {
         for c in keys.chars() {
             let px = |v: f32, s: f32| (v * s).round() as i32;
             match c {
-                TRAY_CLICK | TRAY_MENU_LATIN | TRAY_MENU_ARABIC => {
-                    let Some(b) = tray_button(tm) else {
-                        println!("  tray button not found");
-                        return false;
-                    };
-                    let r = unsafe {
-                        match c {
-                            TRAY_CLICK => {
-                                b.OnClick(TF_LBI_CLK_LEFT, POINT { x: 0, y: 0 }, &RECT::default())
-                            }
-                            TRAY_MENU_LATIN => b.OnMenuSelect(2),
-                            _ => b.OnMenuSelect(1),
-                        }
-                    };
-                    if r.is_err() {
-                        println!("  tray call failed: {r:?}");
-                        return false;
-                    }
-                    pump();
-                    continue;
-                }
                 CLICK_ROW_1 => {
                     // header 22 + one row of 34, then the middle of the 2nd row
                     if !mouse(WM_LBUTTONDOWN, 0x1, |w, _, s| {
@@ -307,6 +191,44 @@ mod harness {
                 CLICK_CLEAR_ALL => {
                     if !mouse(WM_LBUTTONDOWN, 0x1, |_, _, s| (px(24.0, s), px(20.0, s))) {
                         return false;
+                    }
+                    continue;
+                }
+                CLICK_SETTINGS => {
+                    let marker = settings_marker(&std::path::PathBuf::from(
+                        std::env::var_os("LOCALAPPDATA").unwrap_or_default(),
+                    ));
+                    let _ = std::fs::remove_file(&marker);
+                    let focus = unsafe { GetFocus() };
+                    // tab: x 6..36, y 0..19 at 96 DPI
+                    if !mouse(WM_LBUTTONDOWN, 0x1, |_, _, s| (px(21.0, s), px(9.0, s))) {
+                        return false;
+                    }
+                    // Keep pumping like a real app's UI thread (ShellExecute finishes on it).
+                    let t0 = std::time::Instant::now();
+                    let started = (0..500).any(|_| {
+                        pump();
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                        marker.exists()
+                    });
+                    println!(
+                        "  settings stand-in started: {started} after {:?}",
+                        t0.elapsed()
+                    );
+                    if !started {
+                        println!("  Settings app was not started by the popup's Settings button");
+                        return false;
+                    }
+                    // The new window took the focus (the word was finalized, as on any focus
+                    // change); give it back to the test control for the next scenarios.
+                    unsafe {
+                        let _ = SetForegroundWindow(GetAncestor(focus, GA_ROOT));
+                        let _ = SetFocus(Some(focus));
+                    }
+                    // Let the activation/focus messages settle before the next scenario types.
+                    for _ in 0..25 {
+                        pump();
+                        std::thread::sleep(std::time::Duration::from_millis(20));
                     }
                     continue;
                 }
@@ -445,6 +367,11 @@ mod harness {
             HARNESS_CONFIG,
         );
         std::env::set_var("LOCALAPPDATA", &sandbox);
+        // The TIP starts "Type3arabi Settings.exe" found next to its module (here, this exe).
+        let stand_in = std::env::current_exe()
+            .map(|p| p.with_file_name("Type3arabi Settings.exe"))
+            .unwrap_or_default();
+        let _ = std::fs::copy(std::env::current_exe().unwrap_or_default(), &stand_in);
         let code = run_in_sandbox();
         let _ = std::fs::remove_dir_all(&sandbox);
         code
@@ -540,12 +467,6 @@ mod harness {
                 }
             }
 
-            // The input-indicator (tray) button, as Windows sees it.
-            if let Err(e) = check_tray(&tm).and_then(|_| check_tray_menu(&tm)) {
-                println!("FAIL: tray button: {e}");
-                return 5;
-            }
-
             // The 2nd row depends on the data build (e.g. مرحبة vs مرحبه), not on the UI under test:
             // ask the engine for it, with the same data file and default settings as the TIP.
             let dat = std::env::current_exe()
@@ -575,10 +496,9 @@ mod harness {
                 ("mar7aba\u{E002} ", &row2),
                 ("shukran\t\u{E004}\n", "شكرا"), // clear all diacritics (drops the tanween)
                 ("shukran\t\u{E005}\n", "شُكراً"), // U+0634 U+064F ...: damma on the 1st letter
-                // Tray button (2026-09-25): a click switches to Latin (letters go in as typed), a
-                // second click back to Arabic; the menu's Latin / Arabic items do the same.
-                ("\u{E007}hello\u{E007}mar7aba ", "helloمرحباً "),
-                ("\u{E008}hello\u{E009}shukran ", "helloشكراً "),
+                // Owner request 2026-09-25: the header's Settings tab starts the Settings app; its
+                // window takes the focus, which finalizes the word as shown (U+0645 ... U+064B).
+                ("mar7aba\u{E007}", "مرحباً"),
             ];
             let mut failures = 0;
             // Every scenario runs several times in one process: edit-session ordering bugs are
@@ -591,7 +511,7 @@ mod harness {
             for (keys, expected) in all {
                 let _ = SetWindowTextW(edit, w!(""));
                 pump();
-                let ok = type_keys(&tm, &sink, &ctx, keys);
+                let ok = type_keys(&sink, &ctx, keys);
                 // Close any still-open composition so the control text is final.
                 let (esc_w, esc_l) = key(0x1B);
                 let _ = sink.OnKeyDown(&ctx, esc_w, esc_l);

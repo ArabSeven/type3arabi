@@ -1,8 +1,7 @@
-"""Input-indicator icons for the TIP DLL, per Microsoft's IME icon guidelines
+"""The TIP DLL's brand icon (input indicator and Windows' keyboard lists), per Microsoft's IME icon guidelines
 (learn.microsoft.com/windows/apps/develop/input/input-method-editor-requirements#ime-icons):
 black-and-white only, sizes 16/20/24/32/40/48 with alpha;
-- brand icon: a black glyph in a white box with a 1 px outer stroke in black at 50 % opacity;
-- mode icon: a white glyph with a 1 px outer stroke in black at 50 % opacity.
+a black glyph in a white box with a 1 px outer stroke in black at 50 % opacity.
 Glyphs come from the project's own OFL fonts (Manrope, Kufam), never from Windows' fonts.
 
 Run from the repo root:  python crates/t3a-tip/res/make_icons.py
@@ -38,15 +37,6 @@ def stroke(alpha: Image.Image) -> Image.Image:
     return grown.point(lambda v: v // 2)
 
 
-def mode_icon(text: str, font_file: str, size: int, box: float) -> Image.Image:
-    g = glyph_mask(text, font_file, size, box)
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    img.putalpha(stroke(g))  # black outline
-    white = Image.new("RGBA", (size, size), (255, 255, 255, 255))
-    white.putalpha(g)
-    return Image.alpha_composite(img, white)
-
-
 def brand_icon(size: int) -> Image.Image:
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     big = size * SS
@@ -70,6 +60,4 @@ def save(frames, name):
 
 
 save([brand_icon(s) for s in SIZES], "brand.ico")
-save([mode_icon("ع", "kufam-arabic-700-normal.woff2", s, 0.86) for s in SIZES], "mode-ar.ico")
-save([mode_icon("A", "manrope-latin-800-normal.woff2", s, 0.78) for s in SIZES], "mode-latin.ico")
 print("wrote", ", ".join(p.name for p in sorted(OUT.glob("*.ico"))))

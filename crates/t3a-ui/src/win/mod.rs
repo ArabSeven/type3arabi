@@ -102,6 +102,7 @@ enum Hit {
     Mark(usize),
     ClearAll,
     Pick(usize),
+    Settings,
 }
 
 struct PopupState {
@@ -313,6 +314,28 @@ unsafe fn font(px: i32, weight: i32) -> HFONT {
         FONT_QUALITY(5), // CLEARTYPE_QUALITY
         0u32,
         w!("Segoe UI"),
+    )
+}
+
+/// "Settings" (gear) in Segoe MDL2 Assets, the icon font of every Windows 10/11.
+const GLYPH_SETTINGS: &str = "\u{E713}";
+
+unsafe fn icon_font(px: i32) -> HFONT {
+    CreateFontW(
+        -px,
+        0,
+        0,
+        0,
+        FW_NORMAL.0 as i32,
+        0,
+        0,
+        0,
+        FONT_CHARSET(1), // DEFAULT_CHARSET
+        FONT_OUTPUT_PRECISION(0),
+        FONT_CLIP_PRECISION(0),
+        FONT_QUALITY(5), // CLEARTYPE_QUALITY
+        0u32,
+        w!("Segoe MDL2 Assets"),
     )
 }
 
@@ -540,14 +563,18 @@ impl PopupState {
         let f_mark = font(self.px(11.0), FW_NORMAL.0 as i32);
         let old_font = SelectObject(dc, f_small.into());
 
-        // Header: Latin buffer (left), dialect badge (right)
+        // Header: Settings tab (left corner), Latin buffer, dialect badge (right)
         let header_h = self.px(metrics::HEADER_H);
+        let mut latin_left = pad;
+        if list.settings {
+            latin_left = self.paint_settings_tab(dc, header_h).right + self.px(8.0);
+        }
         SetTextColor(dc, to_colorref(th.secondary));
         draw(
             dc,
             &list.latin,
             RECT {
-                left: pad,
+                left: latin_left,
                 top: 0,
                 right: width / 2,
                 bottom: header_h,
@@ -649,6 +676,47 @@ impl PopupState {
         for f in [f_small, f_row, f_mark] {
             let _ = DeleteObject(f.into());
         }
+    }
+
+    /// The Settings button: a small tab hanging from the popup's top edge in the header's left corner
+    /// (rounded bottom corners, the keycaps' fill and outline) with the Windows settings glyph. The
+    /// header's full height above it is clickable. Returns the tab's rectangle.
+    unsafe fn paint_settings_tab(&mut self, dc: HDC, header_h: i32) -> RECT {
+        let th = self.theme;
+        let radius = self.px(10.0);
+        let tab = RECT {
+            left: self.px(6.0),
+            top: -radius, // the top corners fall outside the window: only the bottom ones show
+            right: self.px(6.0 + 30.0),
+            bottom: header_h - self.px(3.0),
+        };
+        round(
+            dc,
+            tab,
+            radius,
+            Some(blend(th.border, th.bg, 0.35)),
+            Some(th.border),
+        );
+        let glyph = icon_font(self.px(12.0));
+        let old = SelectObject(dc, glyph.into());
+        SetTextColor(dc, to_colorref(th.secondary));
+        draw(
+            dc,
+            GLYPH_SETTINGS,
+            RECT { top: 0, ..tab },
+            DT_CENTER | DT_VCENTER,
+        );
+        SelectObject(dc, old);
+        let _ = DeleteObject(glyph.into());
+        self.targets.push((
+            RECT {
+                top: 0,
+                bottom: header_h,
+                ..tab
+            },
+            Hit::Settings,
+        ));
+        tab
     }
 
     unsafe fn paint_tashkeel(&mut self, dc: HDC, width: i32, t: &TashkeelModel) {
@@ -996,6 +1064,7 @@ fn mouse_event(
             Hit::Mark(i) => PopupEvent::Mark(i),
             Hit::ClearAll => PopupEvent::ClearAll,
             Hit::Pick(i) => PopupEvent::Pick(i),
+            Hit::Settings => PopupEvent::Settings,
             Hit::Letter(i) => {
                 s.drag_letter = Some(i);
                 PopupEvent::Letter {
