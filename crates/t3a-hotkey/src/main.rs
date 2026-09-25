@@ -1,6 +1,8 @@
 //! t3a-hotkey — global activation hotkey companion (docs/02 §11) and small installer helper.
 //!
-//!   t3a-hotkey.exe                    run the hotkey loop (exits at once if disabled in config)
+//!   t3a-hotkey.exe                    at sign-in: tidy the keyboard list, run the hotkey loop
+//!                                     (without the hotkey, exits once the tidy-up is done)
+//!   t3a-hotkey.exe --tidy             unload Arabic layouts the user did not choose (see profile.rs)
 //!   t3a-hotkey.exe --enable-profile   enable the Type3arabi keyboard for the signed-in user
 //!   t3a-hotkey.exe --disable-profile  remove it from the user's keyboards
 //!   t3a-hotkey.exe --restart-warning  explain what may not work until the next restart
@@ -63,8 +65,30 @@ mod win {
                 restart_warning();
                 0
             }
-            _ => run_hotkey_loop(),
+            "--tidy" => {
+                crate::profile::tidy();
+                0
+            }
+            _ => {
+                let tidy = sign_in_tidy();
+                let code = run_hotkey_loop();
+                // Without the hotkey loop, stay only until the tidy-up is done.
+                let _ = tidy.join();
+                code
+            }
         }
+    }
+
+    /// Windows loads the session's keyboards during and shortly after sign-in, so the stray Arabic
+    /// layout can appear after this process starts: check now and a few times over three minutes,
+    /// then stop (no polling afterwards).
+    fn sign_in_tidy() -> std::thread::JoinHandle<()> {
+        std::thread::spawn(|| {
+            for wait in [0, 5, 15, 40, 120] {
+                std::thread::sleep(std::time::Duration::from_secs(wait));
+                crate::profile::tidy();
+            }
+        })
     }
 
     fn load_config() -> Config {

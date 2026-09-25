@@ -5,12 +5,20 @@
 //! app (R6). Windows adds a language's *default keyboard* (Arabic 101 for ar-SA) whenever a TIP is
 //! enabled for a language the user did not have, so `enable` removes the layouts that came with it:
 //! a user who had no Arabic before sees exactly one new entry, "Arabic (Saudi Arabia) · Type3arabi".
+//!
+//! `tidy` (run by the companion at every sign-in) covers the other way Arabic 101 comes back: Windows
+//! (or an app walking `Keyboard Layout\Preload` without substitutes) *loads* the Arabic layout into
+//! the session although the user's language list does not contain it, and the switcher lists every
+//! loaded layout. Unloading it (`UnloadKeyboardLayout`, documented user32) changes no setting.
 use windows::core::{w, Interface, PCSTR, PCWSTR};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
 };
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_MULTI_SZ};
+use windows::Win32::System::Registry::{
+    RegCloseKey, RegEnumValueW, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
+    RRF_RT_REG_MULTI_SZ,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{UnloadKeyboardLayout, HKL};
 use windows::Win32::UI::TextServices::{
     CLSID_TF_InputProcessorProfiles, ITfInputProcessorProfileMgr, ITfInputProcessorProfiles,
@@ -68,7 +76,54 @@ fn user_languages() -> Vec<String> {
         .collect()
 }
 
-/// Enabled ar-SA *keyboard layouts* (not TIPs) as InstallLayoutOrTip strings, e.g. "0401:00000401".
+/// The user's saved inputs for `LANG` (Settings → Language → Arabic → Keyboards), as
+/// InstallLayoutOrTip strings: the value names under `User Profile\ar-SA`, e.g. "0401:00000401".
+fn saved_inputs() -> Vec<String> {
+    let path: Vec<u16> = format!("Control Panel\\International\\User Profile\\{LANG}")
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut out = Vec::new();
+    // SAFETY: read-only key opened and closed here; every buffer and size pair matches.
+    unsafe {
+        let mut key = HKEY::default();
+        if RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(path.as_ptr()),
+            None,
+            KEY_READ,
+            &mut key,
+        )
+        .is_err()
+        {
+            return out;
+        }
+        for i in 0.. {
+            let mut name = [0u16; 256];
+            let mut len = name.len() as u32;
+            if RegEnumValueW(
+                key,
+                i,
+                Some(windows::core::PWSTR(name.as_mut_ptr())),
+                &mut len,
+                None,
+                None,
+                None,
+                None,
+            )
+            .is_err()
+            {
+                break;
+            }
+            out.push(String::from_utf16_lossy(&name[..len as usize]));
+        }
+        let _ = RegCloseKey(key);
+    }
+    out
+}
+
+/// Keyboard layouts (not TIPs) that TSF currently lists for ar-SA, as InstallLayoutOrTip strings
+/// with their HKLs, e.g. ("0401:00000401", 0x04010401) = Arabic 101.
 fn arabic_layouts() -> Vec<(String, HKL)> {
     list_profiles(0x0401)
         .into_iter()
@@ -77,13 +132,36 @@ fn arabic_layouts() -> Vec<(String, HKL)> {
         .collect()
 }
 
+/// Remove from the session the Arabic layouts the user did not choose (not in `keep`); the ones
+/// in the saved list are removed from it too (they came with the TIP, see `enable`).
+fn drop_layouts_except(keep: &[String]) -> usize {
+    let saved = saved_inputs();
+    let mut dropped = 0;
+    for (layout, hkl) in arabic_layouts() {
+        if !t3a_hotkey::stray_arabic_layout(&layout, keep) {
+            continue;
+        }
+        if saved.iter().any(|k| k.eq_ignore_ascii_case(&layout))
+            && !install_layout_or_tip(&layout, ILOT_UNINSTALL)
+        {
+            t3a_paths::log_error("enable-profile: could not remove an added Arabic layout");
+        }
+        // A loaded layout stays listed by Win+Space until sign-out otherwise.
+        // SAFETY: plain Win32 call; it fails harmlessly while a window still uses the layout.
+        let _ = unsafe { UnloadKeyboardLayout(hkl) };
+        dropped += 1;
+    }
+    dropped
+}
+
 /// `--enable-profile`. Exit code 0 = enabled.
 pub fn enable() -> i32 {
     let had_arabic = user_languages()
         .iter()
         .any(|l| l.eq_ignore_ascii_case(LANG));
+    // What the user chose, from the saved list: a layout that is merely loaded is not a choice.
     let before = if had_arabic {
-        arabic_layouts()
+        saved_inputs()
     } else {
         Vec::new()
     };
@@ -91,18 +169,19 @@ pub fn enable() -> i32 {
         return 1;
     }
     // Keep only the layouts the user already had for Arabic; drop what Windows added with the TIP.
-    for (layout, hkl) in arabic_layouts() {
-        if before.iter().any(|(l, _)| *l == layout) {
-            continue;
-        }
-        if !install_layout_or_tip(&layout, ILOT_UNINSTALL) {
-            t3a_paths::log_error("enable-profile: could not remove an added Arabic layout");
-        }
-        // The removed layout stays loaded (and listed by Win+Space) until sign-out otherwise.
-        // SAFETY: plain Win32 call; it fails harmlessly while a window still uses the layout.
-        let _ = unsafe { UnloadKeyboardLayout(hkl) };
-    }
+    drop_layouts_except(&before);
     0
+}
+
+/// At sign-in (and a few times shortly after, see the companion's main): if Type3arabi is one of
+/// the user's keyboards, unload the Arabic layouts that are loaded but not in their saved list.
+/// Changes no setting; returns how many were unloaded.
+pub fn tidy() -> usize {
+    let saved = saved_inputs();
+    if !saved.iter().any(|k| k.eq_ignore_ascii_case(TIP)) {
+        return 0;
+    }
+    drop_layouts_except(&saved)
 }
 
 /// `--disable-profile`. Exit code 0 = removed.

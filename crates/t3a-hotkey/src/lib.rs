@@ -1,4 +1,15 @@
-//! Hotkey spec parsing shared by the companion and the Settings app (docs/13 `general.global_hotkey`).
+//! Hotkey spec parsing shared by the companion and the Settings app (docs/13 `general.global_hotkey`),
+//! and the companion's keyboard-list rule (`stray_arabic_layout`).
+
+/// Should the companion drop this ar-SA keyboard layout ("0401:<KLID>")? Only an *Arabic* layout
+/// (KLID ending in 0401, e.g. Arabic 101 = "0401:00000401") that the user did not keep. Windows'
+/// hidden US layout under Arabic ("0401:00000409"), which the TIP runs on, is never a stray.
+pub fn stray_arabic_layout(layout: &str, keep: &[String]) -> bool {
+    layout.len() == 13
+        && layout[..5].eq_ignore_ascii_case("0401:")
+        && layout.ends_with("0401")
+        && !keep.iter().any(|k| k.eq_ignore_ascii_case(layout))
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HotkeySpec {
@@ -61,6 +72,20 @@ fn vk_of(key: &str) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Regression (Owner 2026-09-25): Arabic 101 back in Win+Space after a reinstall and restart.
+    #[test]
+    fn only_unchosen_arabic_layouts_are_strays() {
+        let tip =
+            "0401:{8A4B9277-1E2E-45E0-92A2-83FED833D8BF}{90D49398-54D3-4F08-9C15-0B38D0820A87}";
+        let only_tip = vec![tip.to_string()];
+        assert!(stray_arabic_layout("0401:00000401", &only_tip));
+        assert!(!stray_arabic_layout("0401:00000409", &only_tip)); // hidden base layout
+        let with_101 = vec![tip.to_string(), "0401:00000401".to_string()];
+        assert!(!stray_arabic_layout("0401:00000401", &with_101)); // the user's own choice
+        assert!(!stray_arabic_layout(tip, &[])); // never a TIP
+        assert!(!stray_arabic_layout("0409:00000401", &[])); // other languages untouched
+    }
     #[test]
     fn parses_defaults_and_rejects_bare_keys() {
         let h = parse("Ctrl+Alt+A").unwrap();
