@@ -12,6 +12,8 @@ pub const SNAPSHOT_FILE_NAME: &str = "snapshot.t3u";
 pub const LOG_SUBDIR: &str = "logs";
 pub const ERROR_LOG_NAME: &str = "errors.log";
 pub const ERROR_LOG_MAX_BYTES: u64 = 256 * 1024;
+/// Written by the hotkey companion, read by Settings: `<state>\t<hotkey>`, state = ok | taken | invalid | off.
+pub const HOTKEY_STATUS_NAME: &str = "hotkey-status.txt";
 /// SDDL SIDs granted read access to the user dir.
 pub const APPCONTAINER_SIDS: [&str; 2] = ["S-1-15-2-1", "S-1-15-2-2"];
 /// Named mutex for journal compaction (docs/03 §9.4).
@@ -73,6 +75,25 @@ pub fn error_log_path() -> PathBuf {
 
 pub fn config_path() -> PathBuf {
     user_dir().join(CONFIG_FILE_NAME)
+}
+
+pub fn hotkey_status_path() -> PathBuf {
+    user_dir().join(HOTKEY_STATUS_NAME)
+}
+
+/// The companion's hotkey registration result, for the Settings app (docs/05 §7 "shows conflicts").
+/// Holds only the configured chord, never typed text (R8).
+pub fn write_hotkey_status(state: &str, hotkey: &str) {
+    let _ = std::fs::create_dir_all(user_dir());
+    let _ = std::fs::write(hotkey_status_path(), format!("{state}\t{hotkey}\n"));
+}
+
+/// `(state, hotkey)` as last written by the companion, if any.
+pub fn read_hotkey_status() -> Option<(String, String)> {
+    let text = std::fs::read_to_string(hotkey_status_path()).ok()?;
+    let line = text.lines().next()?;
+    let (state, hotkey) = line.split_once('\t').unwrap_or((line, ""));
+    Some((state.to_string(), hotkey.to_string()))
 }
 
 #[cfg(windows)]

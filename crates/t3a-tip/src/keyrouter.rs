@@ -337,6 +337,58 @@ pub fn classify(s: &RouterState, key: Key, m: Mods) -> Decision {
     }
 }
 
+/// What a text field's input scopes (docs/02 §7) allow. Values are the Windows `InputScope`
+/// numbers (inputscope.h), so this stays portable and testable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScopeClass {
+    /// Normal text: Arabic or Latin per the mode toggle, learning allowed.
+    Normal,
+    /// Passwords, PINs, numbers, phone numbers, dates, times, amounts; URL and e-mail fields when
+    /// `typing.latin_in_url_email` is on: Latin characters only, no transliteration, no learning.
+    Latin,
+    /// `IS_PRIVATE` (InPrivate/incognito): Arabic as usual, but nothing is learned (R9).
+    NoLearning,
+}
+
+/// docs/02 §7, AGENTS.md R9.
+pub fn classify_scopes(scopes: &[i32], latin_in_url_email: bool) -> ScopeClass {
+    const LATIN: &[i32] = &[
+        31, // IS_PASSWORD
+        63, // IS_NUMERIC_PASSWORD
+        64, // IS_NUMERIC_PIN
+        65, // IS_ALPHANUMERIC_PIN
+        66, // IS_ALPHANUMERIC_PIN_SET
+        28, // IS_DIGITS
+        29, // IS_NUMBER
+        39, // IS_NUMBER_FULLWIDTH
+        32, // IS_TELEPHONE_FULLTELEPHONENUMBER
+        33, // IS_TELEPHONE_COUNTRYCODE
+        34, // IS_TELEPHONE_AREACODE
+        35, // IS_TELEPHONE_LOCALNUMBER
+        20, // IS_CURRENCY_AMOUNTANDSYMBOL
+        21, // IS_CURRENCY_AMOUNT
+        22, 23, 24, 25, 26, 27, // IS_DATE_FULLDATE, _MONTH, _DAY, _YEAR, _MONTHNAME, _DAYNAME
+        36, 37, 38, // IS_TIME_FULLTIME, _HOUR, _MINORSEC
+    ];
+    const URL_EMAIL: &[i32] = &[
+        1,  // IS_URL
+        4,  // IS_EMAIL_USERNAME
+        5,  // IS_EMAIL_SMTPEMAILADDRESS
+        6,  // IS_LOGINNAME
+        60, // IS_EMAILNAME_OR_ADDRESS
+    ];
+    const IS_PRIVATE: i32 = 61;
+    if scopes.iter().any(|s| LATIN.contains(s))
+        || (latin_in_url_email && scopes.iter().any(|s| URL_EMAIL.contains(s)))
+    {
+        ScopeClass::Latin
+    } else if scopes.contains(&IS_PRIVATE) {
+        ScopeClass::NoLearning
+    } else {
+        ScopeClass::Normal
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -602,5 +654,24 @@ mod tests {
         ] {
             assert_eq!(classify(&s, k, NONE), classify(&s, k, NONE));
         }
+    }
+
+    #[test]
+    fn input_scopes_gate_transliteration_and_learning() {
+        // R9: passwords/PINs/numbers are Latin-only, private fields never learn.
+        assert_eq!(classify_scopes(&[], true), ScopeClass::Normal);
+        assert_eq!(classify_scopes(&[0], true), ScopeClass::Normal); // IS_DEFAULT
+        assert_eq!(classify_scopes(&[31], false), ScopeClass::Latin); // IS_PASSWORD
+        assert_eq!(classify_scopes(&[64], false), ScopeClass::Latin); // IS_NUMERIC_PIN
+        assert_eq!(classify_scopes(&[29], false), ScopeClass::Latin); // IS_NUMBER
+        assert_eq!(classify_scopes(&[32], false), ScopeClass::Latin); // IS_TELEPHONE_FULLTELEPHONENUMBER
+        assert_eq!(classify_scopes(&[22], false), ScopeClass::Latin); // IS_DATE_FULLDATE
+        assert_eq!(classify_scopes(&[1], true), ScopeClass::Latin); // IS_URL, setting on
+        assert_eq!(classify_scopes(&[1], false), ScopeClass::Normal); // IS_URL, setting off
+        assert_eq!(classify_scopes(&[5], true), ScopeClass::Latin); // IS_EMAIL_SMTPEMAILADDRESS
+        assert_eq!(classify_scopes(&[61], true), ScopeClass::NoLearning); // IS_PRIVATE
+                                                                          // A private password field is still a password field.
+        assert_eq!(classify_scopes(&[61, 31], true), ScopeClass::Latin);
+        assert_eq!(classify_scopes(&[57, 58], true), ScopeClass::Normal); // IS_TEXT, IS_CHAT
     }
 }

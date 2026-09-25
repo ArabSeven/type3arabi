@@ -5,6 +5,10 @@
 //! control's text. Exit code 0 = every scenario produced the expected text and nothing crashed.
 //!
 //!   cargo run -p t3a-tip --example tsf_harness --target x86_64-pc-windows-msvc
+//!
+//! Quiet by default: the host window is transparent, never activated and not on the taskbar, and the
+//! candidate popup is made transparent after a warm-up word, so a run does not disturb the desktop
+//! (it still needs a desktop session). `T3A_HARNESS_VISIBLE=1` shows everything, as before.
 
 #[cfg(not(windows))]
 fn main() {}
@@ -117,6 +121,39 @@ mod harness {
     const CLICK_CLEAR_ALL: char = '\u{E004}'; // tashkeel editor: "clear all" button
     const CLICK_DAMMA: char = '\u{E005}'; // tashkeel editor: 2nd palette cell (damma)
     const CLICK_SETTINGS: char = '\u{E007}'; // the Settings tab in the list header's left corner
+    /// `SetWindowLongPtrW` takes a LONG_PTR: i32 on x86, isize on x64.
+    #[cfg(target_pointer_width = "64")]
+    type LongPtr = isize;
+    #[cfg(target_pointer_width = "32")]
+    type LongPtr = i32;
+
+    fn visible() -> bool {
+        std::env::var_os("T3A_HARNESS_VISIBLE").is_some()
+    }
+
+    /// Quiet mode: make our own popup fully transparent (it is non-activating already), so
+    /// scenarios do not flash windows on the user's screen. Messages still reach it.
+    fn hide_popup() {
+        if visible() {
+            return;
+        }
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE,
+            LWA_ALPHA, WS_EX_LAYERED,
+        };
+        if let Some(h) = popup() {
+            unsafe {
+                let ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
+                let _ = SetWindowLongPtrW(h, GWL_EXSTYLE, ex | WS_EX_LAYERED.0 as LongPtr);
+                let _ = SetLayeredWindowAttributes(
+                    h,
+                    windows::Win32::Foundation::COLORREF(0),
+                    0,
+                    LWA_ALPHA,
+                );
+            }
+        }
+    }
 
     /// File the stand-in Settings app writes when it is started.
     pub fn settings_marker(local_app_data: &std::path::Path) -> std::path::PathBuf {
@@ -221,8 +258,20 @@ mod harness {
                     }
                     // The new window took the focus (the word was finalized, as on any focus
                     // change); give it back to the test control for the next scenarios.
+                    // Quiet mode: the harness is never the active window, so the stand-in cannot
+                    // take the focus from it; move the focus off the field ourselves, as the real
+                    // Settings window does.
                     unsafe {
-                        let _ = SetForegroundWindow(GetAncestor(focus, GA_ROOT));
+                        if !visible() {
+                            let _ = SetFocus(Some(GetAncestor(focus, GA_ROOT)));
+                            for _ in 0..10 {
+                                pump();
+                                std::thread::sleep(std::time::Duration::from_millis(10));
+                            }
+                        }
+                        if visible() {
+                            let _ = SetForegroundWindow(GetAncestor(focus, GA_ROOT));
+                        }
                         let _ = SetFocus(Some(focus));
                     }
                     // Let the activation/focus messages settle before the next scenario types.
@@ -395,11 +444,25 @@ mod harness {
                 ..Default::default()
             };
             RegisterClassW(&wc);
+            use windows::Win32::UI::WindowsAndMessaging::{
+                SetLayeredWindowAttributes, LWA_ALPHA, SW_SHOWNOACTIVATE, WS_EX_LAYERED,
+                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+            };
+            let quiet_ex = if visible() {
+                WINDOW_EX_STYLE(0)
+            } else {
+                WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+            };
             let top = CreateWindowExW(
-                WINDOW_EX_STYLE(0),
+                quiet_ex,
                 class,
                 w!("Type3arabi TSF harness"),
-                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                WS_OVERLAPPEDWINDOW
+                    | if visible() {
+                        WS_VISIBLE
+                    } else {
+                        Default::default()
+                    },
                 100,
                 100,
                 600,
@@ -410,7 +473,18 @@ mod harness {
                 None,
             )
             .expect("top window");
-            let _ = ShowWindow(top, SW_SHOW);
+            if visible() {
+                let _ = ShowWindow(top, SW_SHOW);
+            } else {
+                // Fully transparent and never activated: nothing to see, no focus taken.
+                let _ = SetLayeredWindowAttributes(
+                    top,
+                    windows::Win32::Foundation::COLORREF(0),
+                    0,
+                    LWA_ALPHA,
+                );
+                let _ = ShowWindow(top, SW_SHOWNOACTIVATE);
+            }
 
             let tm: ITfThreadMgr =
                 CoCreateInstance(&CLSID_TF_ThreadMgr, None, CLSCTX_INPROC_SERVER)
@@ -499,7 +573,15 @@ mod harness {
                 // Owner request 2026-09-25: the header's Settings tab starts the Settings app; its
                 // window takes the focus, which finalizes the word as shown (U+0645 ... U+064B).
                 ("mar7aba\u{E007}", "مرحباً"),
+                // Every word start also reads the field's input scopes (docs/02 §7, R9). RichEdit does
+                // not report them (GetValue fails), which must mean "no scope": normal typing above.
             ];
+            // Quiet mode: create the popup with a warm-up word, then make it transparent.
+            let _ = type_keys(&sink, &ctx, "mar7");
+            hide_popup();
+            let (esc_w, esc_l) = key(0x1B);
+            let _ = sink.OnKeyDown(&ctx, esc_w, esc_l);
+            pump();
             let mut failures = 0;
             // Every scenario runs several times in one process: edit-session ordering bugs are
             // intermittent (T3A_ROUNDS overrides; default 3).

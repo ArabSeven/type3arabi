@@ -33,6 +33,8 @@ where
         Ok(res) => res,
         Err(_) => {
             set_disabled();
+            // Unit tests panic on purpose: they must not write into the real user's error log.
+            #[cfg(not(test))]
             t3a_paths::log_error("panic caught across COM boundary; entering safe passthrough");
             fallback
         }
@@ -55,6 +57,7 @@ where
         },
         Err(_) => {
             set_disabled();
+            #[cfg(not(test))]
             t3a_paths::log_error("panic caught in COM method; entering safe passthrough");
             E_FAIL
         }

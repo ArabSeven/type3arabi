@@ -6,9 +6,12 @@
 //! edit sessions (`DocOp` + `apply`), which read and write state the same way.
 
 use crate::ids::GUID_PRESERVED_TOGGLE;
-use crate::keyrouter::{classify, Action, Decision, Key, KeyMap, Popup, RouterState, Toggle};
+use crate::keyrouter::{
+    classify, classify_scopes, Action, ContextMode, Decision, Key, KeyMap, Popup, RouterState,
+    ScopeClass, Toggle,
+};
 use crate::win::compose::EditSession;
-use crate::win::context::evaluate_context_mode;
+use crate::win::context::{evaluate_context_mode, input_scopes};
 use crate::win::display::{
     DisplayAttributeInfo, EnumDisplayAttributeInfo, GUID_ATTR_INPUT, GUID_ATTR_TASHKEEL,
 };
@@ -179,6 +182,9 @@ pub struct State {
     /// Edit sessions queued asynchronously and not yet run. While > 0, new sessions are queued too,
     /// so document edits always apply in request order (docs/02 §8).
     pending_async: u32,
+    /// Input-scope class of the field the current word is typed in (docs/02 §7, R9), read when a word
+    /// starts; with the context it was read for (raw pointer, identity only).
+    scope: (usize, ScopeClass),
 }
 
 impl State {
@@ -311,6 +317,7 @@ impl TextService {
                 thread_mgr: None,
                 client_id: 0,
                 secure_mode: false,
+                scope: (0, ScopeClass::Normal),
                 settings_allowed: false,
                 cookie_thread_mgr: TF_INVALID_COOKIE,
                 cookie_thread_focus: TF_INVALID_COOKIE,
@@ -776,11 +783,45 @@ impl TextService_Impl {
         if unsafe { GetMessageExtraInfo() }.0 as usize == crate::ids::REINJECT_MAGIC {
             return (PASS, Key::Other);
         }
-        let Ok(arabic) = self.state.try_borrow().map(|s| s.arabic_mode) else {
+        let Ok((arabic, composing, tid, url_latin)) = self.state.try_borrow().map(|s| {
+            (
+                s.arabic_mode,
+                s.composing(),
+                s.client_id,
+                s.config.latin_in_url_email,
+            )
+        }) else {
             return (PASS, Key::Other);
         };
-        let mode = evaluate_context_mode(ctx, arabic);
+        let mut mode = evaluate_context_mode(ctx, arabic);
         let (key, mods) = translate_key(wparam, lparam);
+        // Input scopes (R9): read when a word may start (a character key outside a composition), then
+        // kept for the word. Passwords/PINs/numbers type Latin; IS_PRIVATE disables learning.
+        if let Some(c) = ctx.filter(|_| mode != ContextMode::Off) {
+            let id = c.as_raw() as usize;
+            if !composing && matches!(key, Key::Char(_) | Key::NumpadDigit(_)) {
+                let class = input_scopes(c, tid)
+                    .map(|v| classify_scopes(&v, url_latin))
+                    .unwrap_or(ScopeClass::Normal);
+                if let Ok(mut s) = self.state.try_borrow_mut() {
+                    s.scope = (id, class);
+                }
+            }
+            let class = self
+                .state
+                .try_borrow()
+                .map(|s| {
+                    if s.scope.0 == id {
+                        s.scope.1
+                    } else {
+                        ScopeClass::Normal
+                    }
+                })
+                .unwrap_or(ScopeClass::Normal);
+            if class == ScopeClass::Latin && mode == ContextMode::Arabic {
+                mode = ContextMode::Latin;
+            }
+        }
         let Ok(s) = self.state.try_borrow() else {
             return (PASS, key);
         };
@@ -1143,7 +1184,14 @@ impl TextService_Impl {
                     (c.text, c.key, c.base, space, c.learnable)
                 }
             };
-            if learnable && s.config.learning_enabled && !s.secure_mode && !key.is_empty() {
+            // R9: no learning on the secure desktop, in private (IS_PRIVATE) or Latin-only fields.
+            let scope_learns = s.scope.1 == ScopeClass::Normal;
+            if learnable
+                && s.config.learning_enabled
+                && !s.secure_mode
+                && scope_learns
+                && !key.is_empty()
+            {
                 if let Some(store) = user_store() {
                     if !store.is_read_only() {
                         store.record(&key, &base, idx, idx > 0, top.as_deref());
