@@ -13,6 +13,18 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 still needs the Owner's runs. **Next gate: the Owner's manual test of 1.0.0-rc.2.** Only after that: public
 repository, public unsigned release, SignPath inquiry, signing workflow, Microsoft Store (Owner, 2026-09-25).
 
+## Release candidate 1.1.0 (2026-09-26) — branch `release/1.1.0`, awaiting the Owner's local test
+Owner requests 2026-09-26 after installing 1.0.0 (D54–D57). Not merged to `main`, not tagged, not released.
+Local build `target\installer\Type3arabi-1.1.0-x64.msi` (= `Type3arabi-x64.msi`), 24,322,048 bytes, SHA-256
+`2c44b799a52b36685e7b5c8f7776abcc36fd5a8d899c8387884c445924fe17ce`, release model (= `data/model.lock.toml`),
+built with `scripts\build-installer.ps1 -Data target\type3arabi-rc2.dat`. `scripts\validate-msi.ps1 … -ModelSha256 <lock>`:
+all checks pass, incl. 18 new uninstall checks. Gates: fmt; clippy x64 + i686; `cargo test --workspace` 102 passed;
+`cargo deny` both workspaces; `tsf_harness` x64 and x86: new popup-owner check PASS, 0 scenarios failed.
+**Not verified by the agent (needs the Owner's PC):** the word list above Windows Search / Start and in Settings (D55:
+root cause read from the code and the spec, not reproduced here); upgrade 1.0.0 → 1.1.0 shows one "Type3arabi" in
+Settings › Apps; its Uninstall opens the new page; kept vs erased learning and the two finish messages (D56).
+Notes: `docs/releases/v1.1.0.md`.
+
 ## Release 1.0.0 (2026-09-25) — public, unsigned
 Owner approval 2026-09-25 (after testing rc.3): deploy the website, make the repository public, publish on GitHub Releases.
 **Published:** https://github.com/ArabSeven/type3arabi/releases/tag/v1.0.0 (latest, not a pre-release), tag `v1.0.0` on `2c86a7f`,
@@ -370,6 +382,23 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O19 | Cloudflare Web Analytics auto-injects its beacon into type3arabi.com (found 2026-09-25 after deploy). Disable it: dashboard → Analytics & Logs → Web Analytics → type3arabi.com → disable (or turn off automatic setup) | Left on; our CSP blocks the script, so nothing is collected (R10 holds) |
 
 ## Agent decisions (one line each: what, why)
+- D57: README/AGENTS/glossary/vision: an LRM (U+200E) after each Arabic letter or word that sits among Latin text, so
+  digits stay next to their letters on GitHub (bidi rule W2; Owner screenshot 2026-09-26). Checked on GitHub's own
+  rendering (markdown API) in a browser; the website already separates them (flex items, `<bdi>`), not redeployed.
+- D56: Uninstall choice (Owner, 2026-09-26): Windows removes an MSI from Settings › Apps without dialogs, so the MSI's
+  entry is hidden (ARPSYSTEMCOMPONENT=1) and the package writes `Uninstall\Type3arabi` (UninstallString
+  `MsiExec.exe /I{ProductCode}` = maintenance mode, QuietUninstallString `/X … /qn`). T3RemoveDlg: erase checkbox
+  (ERASEUSERDATA, off); finish page "Type3arabi is successfully uninstalled" + "still saved…" when kept. Erase =
+  util:RemoveFolderEx on %LOCALAPPDATA%\Type3arabi, %LOCALAPPDATA%\com.type3arabi.settings, %APPDATA%\Type3arabi,
+  never on an upgrade. Files an open app still holds are removed at the next restart by Windows Installer.
+- D55: Candidate popup owned by the field's top-level window (docs/02 §9 had it; the code created it unowned). An
+  unowned topmost window stays in the desktop z-order band, below the Start/Search shell band, which matches the
+  Owner's report (conversion works, list invisible). Recreated when the owner changes or was destroyed.
+- D54: Owner sensed an accuracy regression in 1.0.0. Checked: installed `type3arabi.dat` = lock = rc.2 model
+  (SHA-256 20c60ad0…); engine/config code unchanged since rc.3 (only CLI self-train + DllUnregisterServer); held-out
+  eval of the installed file identical to the rc.2 record (all 50.4% / 78.9%, LEV 65.1% / 90.8%, MAG 47.1% / 76.3%);
+  the dev-install model `target/type3arabi.dat` scores the same. No regression; the user store (215+ learned records)
+  and config (only the hotkey differs from defaults) are intact. Specific words go to `data/eval/regressions.tsv`.
 - D53: CI `settings` job ran the container action cargo-deny-action on Windows (unsupported); Settings `cargo deny` moved to the Linux `portable` job.
 - D52: DllUnregisterServer also calls `ITfInputProcessorProfiles::Unregister(clsid)` (TSF API, R6): the x64 CI smoke once found `CTF\TIP\{clsid}` left after `regsvr32 /u`, which on a user PC would be a ghost keyboard after uninstall. Regression check: ci.yml regsvr32 smoke.
 - D51: Owner confirmed on rc.3 (2026-09-25): the keyboard steps aside by itself in the browser's address bar (Latin) and in password fields (D34 input scopes verified in a real app); Settings shortcut refusal confirmed; the Owner could not break the editor any more. Website: new hero chapter 02 "Steps aside by itself" (a browser: address bar, e-mail, password typed Latin with no switch, then Arabic again) and feature card #2; README feature row 2. Website deploy pending the Owner's review.
@@ -432,6 +461,8 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 Triage 2026-09-25 (Owner: "clear the backlog"): done items are in D34–D44 and removed here; the rest is deferred with a
 reason. New TSF sinks or UI in host processes are deferred past the manual RC test on purpose (each needs an app-compat
 pass; the RC should change as little as possible between the Owner's test and release).
+- M8 (test hygiene, found 2026-09-26): unit tests of the error log write "test error event" lines into the real
+  `%LOCALAPPDATA%\Type3arabi\logs\errors.log`; point them at a temp dir.
 - M7 (Owner, needs UAC/real machines): install/upgrade/uninstall of rc.2 (`scripts/test-installer.ps1 -Uninstall`); fresh
   second account shows exactly one ar-SA entry and the Settings "Add" row works; Arabic 101 does not return after a real
   restart (D33); where Windows 11 Settings shows ITfFnConfigure; browser password field gets Latin (D34).
@@ -456,6 +487,9 @@ pass; the RC should change as little as possible between the Owner's test and re
 - M7: Store listing text; `docs/releases/` notes per release.
 
 ## Session log
+- 2026-09-26 — Agent (Claude): 1.0.0 follow-ups. Old orphaned commits: no public reference found (repo, website, release
+  notes, refs), Owner closed the purge request. Accuracy: no regression (D54). Windows Search/Settings popup (D55),
+  uninstall choice + confirmation (D56), bidi in README/docs (D57, on `main`). RC 1.1.0 on `release/1.1.0` (above).
 - 2026-09-25 (late night) — Agent (Claude): Owner test of rc.2: upgrade + restart fine, Arabic 101 removed at sign-in;
   diacritics editor froze once; a screenshot shortcut could not be captured; Ctrl+C was accepted. Root-caused and fixed
   (D45–D50): swallowed editor letters, edit-session re-queue leak, dead/foreign composition handling, passthrough
