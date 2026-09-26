@@ -1,7 +1,7 @@
 //! t3a-hotkey — global activation hotkey companion (docs/02 §11) and small installer helper.
 //!
-//!   t3a-hotkey.exe                    at sign-in: tidy the keyboard list, run the hotkey loop
-//!                                     (without the hotkey, exits once the tidy-up is done)
+//!   t3a-hotkey.exe                    at sign-in; stays running: keeps the keyboard list tidy and
+//!                                     runs the hotkey (if enabled)
 //!   t3a-hotkey.exe --tidy             unload Arabic layouts the user did not choose (see profile.rs)
 //!   t3a-hotkey.exe --enable-profile   enable the Type3arabi keyboard for the signed-in user
 //!   t3a-hotkey.exe --disable-profile  remove it from the user's keyboards
@@ -10,8 +10,10 @@
 //!
 //! Hotkey loop: a message-only window registers the hotkey (MOD_NOREPEAT); WM_HOTKEY switches the
 //! foreground window between the Arabic (Type3arabi) keyboard and the last non-Arabic one via
-//! WM_INPUTLANGCHANGEREQUEST. No polling, no hooks (R5). The Settings app posts `WM_APP_RELOAD` to the
-//! window class `Type3arabi_Hotkey` after changing the hotkey.
+//! WM_INPUTLANGCHANGEREQUEST. No hooks (R5). The Settings app posts `WM_APP_RELOAD` to the window class
+//! `Type3arabi_Hotkey` after changing the hotkey. Tidy-up: a 10 s timer compares the session's loaded
+//! layouts (one user32 call) and runs `profile::tidy` only when they changed, so an Arabic 101 that
+//! Windows loads at any time (sign-in, unlock, an app) is gone within seconds.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 fn main() {
@@ -39,14 +41,16 @@ mod win {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetForegroundWindow, GetMessageW,
-        GetWindowThreadProcessId, MessageBoxW, PostMessageW, RegisterClassW, HWND_MESSAGE,
-        MB_ICONINFORMATION, MB_OK, MSG, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_HOTKEY,
-        WM_INPUTLANGCHANGEREQUEST, WNDCLASSW,
+        GetWindowThreadProcessId, MessageBoxW, PostMessageW, RegisterClassW, SetTimer,
+        HWND_MESSAGE, MB_ICONINFORMATION, MB_OK, MSG, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP,
+        WM_HOTKEY, WM_INPUTLANGCHANGEREQUEST, WM_TIMER, WNDCLASSW,
     };
 
     /// Sent by the Settings app after it rewrote `config.toml`.
     pub const WM_APP_RELOAD: u32 = WM_APP + 1;
     const HOTKEY_ID: i32 = 1;
+    const TIDY_TIMER: usize = 1;
+    const TIDY_EVERY_MS: u32 = 10_000;
     const LANG_ARABIC: u16 = 0x01;
 
     pub fn main() -> i32 {
@@ -63,29 +67,32 @@ mod win {
                 0
             }
             "--tidy" => {
-                t3a_hotkey::profile::tidy();
+                let _ = t3a_hotkey::profile::tidy();
                 0
             }
-            _ => {
-                let tidy = sign_in_tidy();
-                let code = run_hotkey_loop();
-                // Without the hotkey loop, stay only until the tidy-up is done.
-                let _ = tidy.join();
-                code
-            }
+            _ => run_companion(),
         }
     }
 
-    /// Windows loads the session's keyboards during and shortly after sign-in, so the stray Arabic
-    /// layout can appear after this process starts: check now and a few times over three minutes,
-    /// then stop (no polling afterwards).
-    fn sign_in_tidy() -> std::thread::JoinHandle<()> {
-        std::thread::spawn(|| {
-            for wait in [0, 5, 15, 40, 120] {
-                std::thread::sleep(std::time::Duration::from_secs(wait));
-                t3a_hotkey::profile::tidy();
-            }
-        })
+    /// Loaded layouts at the last tidy-up that left nothing behind (message thread only). Only the
+    /// list is compared, so a user's own Arabic 101 costs one tidy-up per change, not one per tick.
+    static TIDY_SEEN: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
+
+    /// Tidy up if the session's loaded layouts changed since the last clean check. Windows loads
+    /// layouts during sign-in, on unlock and when apps ask, so this runs at start and on the timer.
+    fn tidy_if_changed() {
+        let now = t3a_hotkey::profile::loaded_layouts();
+        let mut seen = TIDY_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+        if *seen == now {
+            return;
+        }
+        let done = t3a_hotkey::profile::tidy();
+        // Remember the list only when nothing was left behind, so a failed unload is retried.
+        *seen = if done.failed == 0 {
+            t3a_hotkey::profile::loaded_layouts()
+        } else {
+            Vec::new()
+        };
     }
 
     fn load_config() -> Config {
@@ -228,10 +235,10 @@ mod win {
                 }
             } else {
                 LAST_LATIN.store(cur.0 as isize, Ordering::Relaxed);
-                loaded
-                    .iter()
-                    .copied()
-                    .find(|h| primary_lang(*h) == LANG_ARABIC)
+                t3a_hotkey::arabic_hotkey_target(
+                    &loaded.iter().map(|h| h.0 as usize).collect::<Vec<_>>(),
+                )
+                .map(|h| HKL(h as *mut _))
             };
             if let Some(hkl) = target {
                 let _ = PostMessageW(
@@ -254,19 +261,22 @@ mod win {
                 register(h);
                 LRESULT(0)
             }
+            WM_TIMER if w.0 == TIDY_TIMER => {
+                tidy_if_changed();
+                LRESULT(0)
+            }
             _ => DefWindowProcW(h, msg, w, l),
         }
     }
 
-    fn run_hotkey_loop() -> i32 {
-        if !load_config().global_hotkey_enabled {
-            t3a_paths::write_hotkey_status("off", "");
-            return 0;
-        }
+    /// The resident companion: hotkey (if enabled) and the keyboard-list tidy-up. Idle cost: blocked
+    /// in `GetMessageW` between 10 s timer ticks that make one user32 call.
+    fn run_companion() -> i32 {
         // SAFETY: single-instance mutex, message-only window and a standard message loop.
         unsafe {
             let _mutex = CreateMutexW(None, true, w!("Local\\Type3arabi.Hotkey"));
             if GetLastError() == ERROR_ALREADY_EXISTS {
+                let _ = t3a_hotkey::profile::tidy();
                 return 0;
             }
             let hinst = GetModuleHandleW(None).unwrap_or_default();
@@ -295,6 +305,8 @@ mod win {
                 return 1;
             };
             register(hwnd);
+            tidy_if_changed();
+            SetTimer(Some(hwnd), TIDY_TIMER, TIDY_EVERY_MS, None);
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                 DispatchMessageW(&msg);

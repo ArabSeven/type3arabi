@@ -61,11 +61,16 @@ Order (mirror in unregister, reversed):
    `t3a-hotkey --list-profiles` prints what the Win+Space flyout enumerates.
    **At every sign-in** Arabic 101 can come back without being in the saved list: the session *loads* the
    raw `00000401` layout (Owner report 2026-09-25, after reinstall + restart: saved list = Type3arabi only,
-   yet `04010401` loaded and listed). The companion (`t3a-hotkey`, started by the Run key) therefore runs
-   `tidy` at start and 5 / 20 / 60 / 180 s later, then stops: if Type3arabi is in the user's ar-SA list,
+   yet `04010401` loaded and listed; again 2026-09-26 after several restarts, later than the old 3-minute
+   schedule). Suspected source: the sign-in screen's own keyboards (`HKU\.DEFAULT` = system accounts; on the
+   Owner's PC en-US + Arabic (Jordan) with Arabic (101), set by Windows, not by us) — unproven, the tidy log
+   below is the evidence. The companion (`t3a-hotkey`, started by the Run key) therefore stays running and
+   runs `tidy` at start and whenever the session's loaded layouts change (checked every 10 s with one
+   `GetKeyboardLayoutList` call; a failed unload is retried): if Type3arabi is in the user's ar-SA list,
    every loaded *Arabic* layout (KLID `…0401`) that is not in that list is unloaded (`UnloadKeyboardLayout`).
    It writes nothing, never touches the hidden US base layout (`0401:00000409`) the TIP runs on, and keeps
-   any Arabic layout the user added themselves. Manual run: `t3a-hotkey --tidy`.
+   any Arabic layout the user added themselves. Each unload writes one line to the error log with the
+   layouts loaded at that moment (layout ids only, R8). Manual run: `t3a-hotkey --tidy`.
    Never write `HKCU\Keyboard Layout\Preload` or similar directly (the dev uninstall script is the one
    exception: it repairs Preload entries an early broken build left behind).
 
@@ -358,8 +363,9 @@ to Type3arabi, and pressing it again switches back. The TIP itself cannot do thi
 while another keyboard is active).
 
 - Process: `t3a-hotkey.exe`, no window except a message-only window, started at logon via
-  `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` (installer); on start it runs the sign-in tidy-up (§2 step 4),
-  then reads config and, if `general.global_hotkey_enabled = false`, exits once the tidy-up is done (≤ 3 min). Idle cost: blocked in `GetMessageW` (0 CPU, ~1–2 MB).
+  `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` (installer); it stays running for the keyboard-list tidy-up
+  (§2 step 4) and registers the hotkey only if `general.global_hotkey_enabled = true`. Idle cost: blocked in
+  `GetMessageW` between 10 s timer ticks that make one user32 call (~1–2 MB).
 - `RegisterHotKey(msgWnd, 1, mods | MOD_NOREPEAT, vk)`; default **Ctrl+Alt+A** (configurable). If
   registration fails, write `hotkey_conflict = true` into `%LOCALAPPDATA%\Type3arabi\state.toml` so Settings can show it.
 - On `WM_HOTKEY`: `fg = GetForegroundWindow()`, `cur = GetKeyboardLayout(GetWindowThreadProcessId(fg))`.

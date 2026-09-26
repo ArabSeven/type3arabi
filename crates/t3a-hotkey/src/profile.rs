@@ -6,10 +6,12 @@
 //! enabled for a language the user did not have, so `enable` removes the layouts that came with it:
 //! a user who had no Arabic before sees exactly one new entry, "Arabic (Saudi Arabia) · Type3arabi".
 //!
-//! `tidy` (run by the companion at every sign-in) covers the other way Arabic 101 comes back: Windows
-//! (or an app walking `Keyboard Layout\Preload` without substitutes) *loads* the Arabic layout into
-//! the session although the user's language list does not contain it, and the switcher lists every
-//! loaded layout. Unloading it (`UnloadKeyboardLayout`, documented user32) changes no setting.
+//! `tidy` (run by the companion at sign-in and whenever the session's loaded layouts change) covers
+//! the other way Arabic 101 comes back: Windows *loads* the Arabic layout into the session although
+//! the user's list does not contain it, and the switcher lists every loaded layout. Suspected sources: the
+//! sign-in screen's own keyboards (`HKU\.DEFAULT`, e.g. Arabic (101) copied there by Windows setup)
+//! and apps walking `Keyboard Layout\Preload` without substitutes. Unloading it
+//! (`UnloadKeyboardLayout`, documented user32) changes no setting.
 use windows::core::{w, Interface, PCSTR, PCWSTR};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
@@ -19,7 +21,9 @@ use windows::Win32::System::Registry::{
     RegCloseKey, RegEnumValueW, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
     RRF_RT_REG_MULTI_SZ,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{UnloadKeyboardLayout, HKL};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyboardLayoutList, UnloadKeyboardLayout, HKL,
+};
 use windows::Win32::UI::TextServices::{
     CLSID_TF_InputProcessorProfiles, ITfInputProcessorProfileMgr, ITfInputProcessorProfiles,
     TF_INPUTPROCESSORPROFILE, TF_IPP_FLAG_ENABLED, TF_PROFILETYPE_INPUTPROCESSOR,
@@ -132,15 +136,44 @@ fn arabic_layouts() -> Vec<(String, HKL)> {
         .collect()
 }
 
+/// What one tidy-up did: layouts unloaded, and layouts Windows would not unload (retried later).
+#[derive(Default)]
+pub struct Tidy {
+    pub unloaded: usize,
+    pub failed: usize,
+}
+
+/// The keyboard layouts loaded in this session (what `GetKeyboardLayoutList` returns), as raw HKLs.
+/// A cheap user32 call: the companion compares it on a timer and runs `tidy` only when it changes.
+pub fn loaded_layouts() -> Vec<usize> {
+    let mut list = [HKL::default(); 64];
+    // SAFETY: the slice is a valid writable buffer.
+    let n = unsafe { GetKeyboardLayoutList(Some(&mut list)) } as usize;
+    list[..n.min(list.len())]
+        .iter()
+        .map(|h| h.0 as usize)
+        .collect()
+}
+
+/// "04090409 04010401 …" for the error log (layout ids only, never text; R8).
+fn hkl_list() -> String {
+    loaded_layouts()
+        .iter()
+        .map(|h| format!("{:08X}", *h as u32))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Remove from the session the Arabic layouts the user did not choose (not in `keep`); the ones
 /// in the saved list are removed from it too (they came with the TIP, see `enable`).
-fn drop_layouts_except(keep: &[String]) -> usize {
+fn drop_layouts_except(keep: &[String]) -> Tidy {
     let saved = saved_inputs();
-    let mut dropped = 0;
+    let mut done = Tidy::default();
     for (layout, hkl) in arabic_layouts() {
         if !crate::stray_arabic_layout(&layout, keep) {
             continue;
         }
+        let before = hkl_list();
         if saved.iter().any(|k| k.eq_ignore_ascii_case(&layout))
             && !install_layout_or_tip(&layout, ILOT_UNINSTALL)
         {
@@ -148,10 +181,21 @@ fn drop_layouts_except(keep: &[String]) -> usize {
         }
         // A loaded layout stays listed by Win+Space until sign-out otherwise.
         // SAFETY: plain Win32 call; it fails harmlessly while a window still uses the layout.
-        let _ = unsafe { UnloadKeyboardLayout(hkl) };
-        dropped += 1;
+        let ok = unsafe { UnloadKeyboardLayout(hkl) }.is_ok()
+            && !loaded_layouts().contains(&(hkl.0 as usize));
+        if ok {
+            done.unloaded += 1;
+        } else {
+            done.failed += 1;
+        }
+        // Evidence for where it came from (docs/02 §2 step 4): which layouts were loaded with it.
+        t3a_paths::log_error(&format!(
+            "tidy: {} stray layout {:08X}; loaded before: {before}",
+            if ok { "unloaded" } else { "could not unload" },
+            hkl.0 as usize as u32,
+        ));
     }
-    dropped
+    done
 }
 
 /// `--enable-profile`. Exit code 0 = enabled.
@@ -169,17 +213,17 @@ pub fn enable() -> i32 {
         return 1;
     }
     // Keep only the layouts the user already had for Arabic; drop what Windows added with the TIP.
-    drop_layouts_except(&before);
+    let _ = drop_layouts_except(&before);
     0
 }
 
-/// At sign-in (and a few times shortly after, see the companion's main): if Type3arabi is one of
-/// the user's keyboards, unload the Arabic layouts that are loaded but not in their saved list.
-/// Changes no setting; returns how many were unloaded.
-pub fn tidy() -> usize {
+/// If Type3arabi is one of the user's keyboards, unload the Arabic layouts that are loaded but not
+/// in their saved list. Changes no setting. Run by the companion at sign-in and whenever the loaded
+/// layouts change (see its main), and by `--tidy`.
+pub fn tidy() -> Tidy {
     let saved = saved_inputs();
     if !saved.iter().any(|k| k.eq_ignore_ascii_case(TIP)) {
-        return 0;
+        return Tidy::default();
     }
     drop_layouts_except(&saved)
 }

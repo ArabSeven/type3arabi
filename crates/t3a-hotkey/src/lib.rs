@@ -1,6 +1,7 @@
 //! Hotkey spec parsing shared by the companion and the Settings app (docs/13 `general.global_hotkey`),
-//! and the companion's keyboard-list rule (`stray_arabic_layout`). `profile` (Windows): enabling the
-//! keyboard for the signed-in user, used by the companion and by the Settings app.
+//! and the companion's keyboard-list rules (`stray_arabic_layout`, `arabic_hotkey_target`).
+//! `profile` (Windows): enabling the keyboard for the signed-in user, used by the companion and by
+//! the Settings app.
 
 #[cfg(windows)]
 pub mod profile;
@@ -13,6 +14,17 @@ pub fn stray_arabic_layout(layout: &str, keep: &[String]) -> bool {
         && layout[..5].eq_ignore_ascii_case("0401:")
         && layout.ends_with("0401")
         && !keep.iter().any(|k| k.eq_ignore_ascii_case(layout))
+}
+
+/// The Arabic keyboard the hotkey switches to, from the session's loaded HKLs (raw values). Type3arabi
+/// runs on Windows' hidden non-Arabic base layout under Arabic (e.g. 0x04090401), so that one wins
+/// over a real Arabic layout (0x04010401 = Arabic 101) whatever the load order.
+pub fn arabic_hotkey_target(loaded: &[usize]) -> Option<usize> {
+    const ARABIC: usize = 0x01;
+    let arabic = || loaded.iter().copied().filter(|h| h & 0x3FF == ARABIC);
+    arabic()
+        .find(|h| (h >> 16) & 0x3FF != ARABIC)
+        .or_else(|| arabic().next())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -89,6 +101,14 @@ mod tests {
         assert!(!stray_arabic_layout("0401:00000401", &with_101)); // the user's own choice
         assert!(!stray_arabic_layout(tip, &[])); // never a TIP
         assert!(!stray_arabic_layout("0409:00000401", &[])); // other languages untouched
+    }
+    // Regression (Owner 2026-09-26): with a stray Arabic 101 loaded first, the hotkey picked it.
+    #[test]
+    fn hotkey_prefers_the_type3arabi_base_layout() {
+        let (us, ar101, ar_on_us) = (0x0409_0409, 0x0401_0401, 0x0409_0401);
+        assert_eq!(arabic_hotkey_target(&[us, ar101, ar_on_us]), Some(ar_on_us));
+        assert_eq!(arabic_hotkey_target(&[us, ar101]), Some(ar101)); // only Arabic 101: still Arabic
+        assert_eq!(arabic_hotkey_target(&[us]), None);
     }
     #[test]
     fn parses_defaults_and_rejects_bare_keys() {
