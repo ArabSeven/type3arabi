@@ -17,15 +17,17 @@ repository, public unsigned release, SignPath inquiry, signing workflow, Microso
 Owner requests 2026-09-26 after installing 1.0.0 (D54–D57). Not merged to `main`, not tagged, not released.
 Owner test of the first 1.1.0 build (2026-09-26): uninstall pages work; the list shows in the Settings app's search.
 Found: overlapping progress title while uninstalling (D59), list first placed far above Start's search box (D58), and
-a whole sentence after `mar7aba` in Start only (D60: not produced by Type3arabi). Rebuilt with D58 + D59:
-local build `target\installer\Type3arabi-1.1.0-x64.msi` (= `Type3arabi-x64.msi`), 24,367,104 bytes, SHA-256
-`a6568e653f2c95b1b7129d129e4fc2f24abb3343a0fd4124c71a9b241bf6f6fc`, release model (= `data/model.lock.toml`),
+a whole sentence after `mar7aba` in Start only (D60: not produced by Type3arabi; Owner confirmed with a paste test,
+documented in README "Good to know" and `docs/app-quirks.md`). Second Owner test: the erase checkbox erased nothing
+(D61). Rebuilt with D58 + D59 + D61: local build `target\installer\Type3arabi-1.1.0-x64.msi` (= `Type3arabi-x64.msi`),
+24,367,104 bytes, SHA-256 `317bb4967e084fc400f477715b9098b6f0b2b20b6dffa908bd445f7ec87f808d`, release model (= `data/model.lock.toml`),
 built with `scripts\build-installer.ps1 -Data target\type3arabi-rc2.dat`. `scripts\validate-msi.ps1 … -ModelSha256 <lock>`:
 all checks pass, incl. 18 new uninstall checks. Gates: fmt; clippy x64 + i686; `cargo test --workspace` 102 passed;
 `cargo deny` both workspaces; `tsf_harness` x64 and x86: popup-owner and popup-follows-layout checks PASS,
 0 scenarios failed.
 **Not verified by the agent (needs the Owner's PC):** the list's first position in Start's search box (D58: depends on
-Start reporting its layout change); the single progress title (D59); upgrade 1.0.0 → 1.1.0 shows one "Type3arabi" in
+Start reporting its layout change); the single progress title (D59); the erase checkbox removing
+%LOCALAPPDATA%\Type3arabi (settings, learned words, export history) (D61); upgrade 1.0.0 → 1.1.0 shows one "Type3arabi" in
 Settings › Apps; its Uninstall opens the new page; kept vs erased learning and the two finish messages (D56).
 Notes: `docs/releases/v1.1.0.md`.
 
@@ -386,6 +388,11 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O19 | Cloudflare Web Analytics auto-injects its beacon into type3arabi.com (found 2026-09-25 after deploy). Disable it: dashboard → Analytics & Logs → Web Analytics → type3arabi.com → disable (or turn off automatic setup) | Left on; our CSP blocks the script, so nothing is collected (R10 holds) |
 
 ## Agent decisions (one line each: what, why)
+- D61: The erase paths (SetT3ERASE_*, before CostInitialize) were conditioned on REMOVE="ALL", which an uninstall
+  started from T3RemoveDlg (Remove event) only gets at InstallValidate: nothing was erased (Owner, 2026-09-26). Now
+  `ERASEUSERDATA = 1 AND NOT UPGRADINGPRODUCTCODE` (RemoveFolderEx acts only when its component is removed).
+  validate-msi rejects any action before InstallValidate that tests REMOVE (it flags the old build). The journal is
+  opened per write and closed, so no running app blocks the erase; a later write fails since the folder is gone.
 - D60: Owner saw "مرحباً كيف حالك يا صديقي الغالي" after typing `mar7aba` in Start's search box only. Checked that
   Type3arabi cannot produce it: every document write is one chosen candidate + the typed key (Commit), a typed
   character (Insert) or a deletion (ReEdit); no next-word prediction or auto-commit exists; phrases come only from
