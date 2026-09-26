@@ -398,9 +398,23 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O9 | Answers from the two provisional sources (Talafha et al.: email 2026-09-24; Khanafer: HF discussion #2, 2026-09-25) | Used under ADR-0011; on a decline: `blocked`, rebuild with `--exclude-provisional`, new release |
 | O16 | Make the repository public (the website's GitHub/Datasets/download links return 404 until then) and upload the model asset `model-2026092502/type3arabi.dat` | **Done 2026-09-25**: repo public, model asset uploaded, v1.0.0 published |
 | O17 | SignPath inquiry: ask whether the CC BY-NC-SA model (incl. provisional sources) inside the MSI is acceptable under "OSI license for all components" | Not contacted (O15) |
+| O20 | Arabic (101) at sign-in (D62): this PC's sign-in screen / system accounts keep their own list, en-US + Arabic (Jordan) with Arabic (101) (`HKU\.DEFAULT`; likely Windows setup — our code never wrote it). Test the suspected source: Settings › Time & language › Language & region › Administrative language settings › Copy settings › tick "Welcome screen and system accounts" (copies en-US + Arabic·Type3arabi; our TIP is not secure-mode, so the sign-in screen gets the plain base layout), then restart a few times | Companion unloads it within 10 s regardless (D62) |
 | O18 | Contact channel: the site lists GitHub issues + Linktree; add a public email address? | No email published |
 
 ## Agent decisions (one line each: what, why)
+- D62: Arabic (101) back after several restarts (Owner, 2026-09-26) although the sign-in tidy (D33) ran: the old
+  schedule stopped after 3 min and never checked whether the unload worked. Found in the session at 20:14: `04010401`
+  loaded, saved ar-SA list = Type3arabi only, `--tidy` removed it at once. Our code does not load it: the TIP never
+  calls LoadKeyboardLayout (keys.rs only reads the loaded list), the companion never did, and no commit ever wrote
+  `HKU\.DEFAULT`. Suspect: the sign-in screen's own keyboards (`HKU\.DEFAULT` Preload `00002c01` → `00000401`,
+  ar-JO with Arabic 101; Windows install Jan 2025) — unproven (O20). Fix in the companion: it now stays running;
+  a 10 s timer compares `GetKeyboardLayoutList` (one user32 call) and runs `tidy` only when the list changed; an
+  unload is verified and retried if it failed; each unload logs the loaded HKLs (ids only, R8) as evidence of the
+  source. The hotkey now prefers the HKL Type3arabi runs on (`04090401`) over a real Arabic layout (it picked the
+  first Arabic HKL, i.e. Arabic 101 when that was loaded first). Test: `cargo test -p t3a-hotkey` (new
+  `hotkey_prefers_the_type3arabi_base_layout`). Live on this PC (staging build replacing the running companion):
+  `LoadKeyboardLayoutW("00000401")` → `04010401` listed → gone after 8 s; again → gone after 10 s; both logged;
+  hotkey status `ok`; installed companion restored afterwards. Needs the Owner: a restart with the new build.
 - D61: The erase paths (SetT3ERASE_*, before CostInitialize) were conditioned on REMOVE="ALL", which an uninstall
   started from T3RemoveDlg (Remove event) only gets at InstallValidate: nothing was erased (Owner, 2026-09-26). Now
   `ERASEUSERDATA = 1 AND NOT UPGRADINGPRODUCTCODE` (RemoveFolderEx acts only when its component is removed).
@@ -523,6 +537,8 @@ pass; the RC should change as little as possible between the Owner's test and re
 - M7: Store listing text; `docs/releases/` notes per release.
 
 ## Session log
+- 2026-09-26 (evening) — Agent (Claude): Arabic (101) after restarts investigated and the companion hardened (D62, O20).
+  Not released; the installed 1.1.0 companion still has the 3-minute schedule until the next build.
 - 2026-09-26 — Agent (Claude): 1.1.0 released; website deploys: analytics allowed (O19), then the hero demo centred
   between the two text columns at >= 1181 px (`align-self: center`; measured 163/175 px above/below at 1920x1080,
   no drift across chapters; phone/tablet layouts unchanged). Worker version edbd5167-5b0b-436f-b381-123711769104.
