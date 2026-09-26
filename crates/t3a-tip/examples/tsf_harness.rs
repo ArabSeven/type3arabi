@@ -628,6 +628,64 @@ mod harness {
                     return 5;
                 }
                 println!("PASS popup is owned by the host window");
+
+                // docs/02 §9: the popup follows the composition when the host reports that the field
+                // moved (ITfTextLayoutSink).
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
+                };
+                let rect = |h: HWND| {
+                    let mut r = windows::Win32::Foundation::RECT::default();
+                    let _ = GetWindowRect(h, &mut r);
+                    r
+                };
+                if let Some(p) = popup() {
+                    let (host0, pop0) = (rect(root), rect(p));
+                    let _ = SetWindowPos(
+                        root,
+                        None,
+                        host0.left,
+                        host0.top + 60,
+                        0,
+                        0,
+                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                    );
+                    pump();
+                    // Hosts like Start report a moved field through ITfTextLayoutSink (RichEdit only does
+                    // for text changes), so report this move the way such a host does.
+                    if let (Ok(sink), Ok(view)) = (
+                        tip.cast::<windows::Win32::UI::TextServices::ITfTextLayoutSink>(),
+                        ctx.GetActiveView(),
+                    ) {
+                        let _ = sink.OnLayoutChange(
+                            &ctx,
+                            windows::Win32::UI::TextServices::TF_LC_CHANGE,
+                            &view,
+                        );
+                    }
+                    pump();
+                    let pop1 = rect(p);
+                    let (dx, dy) = (pop1.left - pop0.left, pop1.top - pop0.top);
+                    let _ = SetWindowPos(
+                        root,
+                        None,
+                        host0.left,
+                        host0.top,
+                        0,
+                        0,
+                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                    );
+                    pump();
+                    // Vertical only: the list is right-aligned to the word and clamped at the screen's left
+                    // edge, so a horizontal move near that edge need not move it.
+                    if (dx, dy) != (0, 60) {
+                        println!(
+                            "FAIL: popup moved by ({dx}, {dy}) when the host moved by (0, 60)"
+                        );
+                        return 6;
+                    }
+                    println!("PASS popup follows the field when its window moves");
+                }
             }
             hide_popup();
             let (esc_w, esc_l) = key(0x1B);

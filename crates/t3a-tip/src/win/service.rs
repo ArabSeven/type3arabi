@@ -39,17 +39,17 @@ use windows::Win32::System::Variant::VARIANT;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, VK_SPACE};
 use windows::Win32::UI::TextServices::{
     CLSID_TF_CategoryMgr, IEnumTfDisplayAttributeInfo, ITfCategoryMgr, ITfComposition,
-    ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextComposition,
+    ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextComposition, ITfContextView,
     ITfDisplayAttributeInfo, ITfDisplayAttributeProvider, ITfDisplayAttributeProvider_Impl,
     ITfDocumentMgr, ITfEditRecord, ITfEditSession, ITfFnConfigure, ITfFnConfigure_Impl,
     ITfFunction_Impl, ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr,
     ITfRange, ITfSource, ITfTextEditSink, ITfTextEditSink_Impl, ITfTextInputProcessor,
     ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
-    ITfThreadFocusSink, ITfThreadFocusSink_Impl, ITfThreadMgr, ITfThreadMgrEventSink,
-    ITfThreadMgrEventSink_Impl, GUID_PROP_ATTRIBUTE, TF_AE_NONE, TF_ANCHOR_END, TF_ANCHOR_START,
-    TF_DEFAULT_SELECTION, TF_ES_ASYNC, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_QUERYONLY,
-    TF_INVALID_COOKIE, TF_MOD_CONTROL, TF_PRESERVEDKEY, TF_SELECTION, TF_SELECTIONSTYLE,
-    TF_TMAE_SECUREMODE,
+    ITfTextLayoutSink, ITfTextLayoutSink_Impl, ITfThreadFocusSink, ITfThreadFocusSink_Impl,
+    ITfThreadMgr, ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl, TfLayoutCode,
+    GUID_PROP_ATTRIBUTE, TF_AE_NONE, TF_ANCHOR_END, TF_ANCHOR_START, TF_DEFAULT_SELECTION,
+    TF_ES_ASYNC, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_QUERYONLY, TF_INVALID_COOKIE, TF_MOD_CONTROL,
+    TF_PRESERVEDKEY, TF_SELECTION, TF_SELECTIONSTYLE, TF_TMAE_SECUREMODE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetCursorPos, GetGUIThreadInfo, GetMessageExtraInfo, GetMessageTime, GA_ROOT,
@@ -190,6 +190,9 @@ pub struct State {
     /// ITfTextEditSink advised on this context (docs/02 §8): a click that moves the caret out of the
     /// word being typed finalizes it, so typing goes on at the new caret.
     edit_sink: Option<(ITfContext, u32)>,
+    /// ITfTextLayoutSink cookie on the same context (docs/02 §9): the popup follows the composition when
+    /// the app moves or re-lays out the field (Start's search box settles after its panel animates in).
+    layout_sink: u32,
     /// Input-scope class of the field the current word is typed in (docs/02 §7, R9), read when a word
     /// starts; with the context it was read for (raw pointer, identity only).
     scope: (usize, ScopeClass),
@@ -294,6 +297,8 @@ enum DocOp {
     Commit { text: Vec<u16>, suffix: Vec<u16> },
     /// End the composition keeping whatever it shows (focus change, deactivation).
     Finalize,
+    /// Re-read the composition's screen rectangle and move the popup (layout change, docs/02 §9).
+    Relayout,
     /// Insert text at the caret (no composition).
     Insert(Vec<u16>),
     /// If the text before the caret is `expect`, turn it back into a composition showing the
@@ -311,6 +316,7 @@ enum DocOp {
     ITfThreadFocusSink,
     ITfKeyEventSink,
     ITfTextEditSink,
+    ITfTextLayoutSink,
     ITfCompositionSink,
     ITfDisplayAttributeProvider,
     ITfFnConfigure
@@ -403,6 +409,7 @@ impl TextService {
                 owner_hwnd: HWND::default(),
                 comp_ctx: None,
                 edit_sink: None,
+                layout_sink: TF_INVALID_COOKIE,
             }),
             pending: Rc::new(Cell::new(0)),
             terminated: Cell::new(false),
@@ -443,11 +450,15 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
                 };
                 s.anchor = None;
                 s.recent_words.clear();
+                let layout = std::mem::replace(&mut s.layout_sink, TF_INVALID_COOKIE);
                 if let Some((ctx, cookie)) = s.edit_sink.take() {
                     // SAFETY: plain COM calls on the context we advised.
                     unsafe {
                         if let Ok(src) = ctx.cast::<ITfSource>() {
                             let _ = src.UnadviseSink(cookie);
+                            if layout != TF_INVALID_COOKIE {
+                                let _ = src.UnadviseSink(layout);
+                            }
                         }
                     }
                 }
@@ -780,6 +791,38 @@ impl ITfTextEditSink_Impl for TextService_Impl {
             };
             if outside {
                 self.finalize_composition();
+            }
+            Ok(())
+        });
+        self.passthrough_cleanup();
+        r
+    }
+}
+
+impl ITfTextLayoutSink_Impl for TextService_Impl {
+    /// The app re-laid out or moved the field (docs/02 §9): while the list is shown, re-read the
+    /// composition's screen rectangle and move the popup there. Start's search box reports a stale
+    /// position for the first word while its panel animates in.
+    fn OnLayoutChange(
+        &self,
+        pic: windows_core::Ref<'_, ITfContext>,
+        _lcode: TfLayoutCode,
+        _pview: windows_core::Ref<'_, ITfContextView>,
+    ) -> windows::core::Result<()> {
+        let r = guard(Ok(()), || {
+            let Some(ctx) = pic.as_ref() else {
+                return Ok(());
+            };
+            let ours = match self.state.try_borrow() {
+                Ok(s) => {
+                    s.composing()
+                        && s.popup.as_ref().is_some_and(|p| p.is_visible())
+                        && s.comp_ctx.as_ref().is_some_and(|c| same_object(c, ctx))
+                }
+                Err(_) => false,
+            };
+            if ours {
+                self.run(ctx, DocOp::Relayout);
             }
             Ok(())
         });
@@ -1714,6 +1757,20 @@ fn apply(
                 }
                 this.show_popup();
             }
+            DocOp::Relayout => {
+                let (comp, before) = match this.state.try_borrow() {
+                    Ok(s) if s.composing() => (s.composition.clone(), s.text_rect),
+                    _ => return Ok(()),
+                };
+                if let Some(range) = comp.and_then(|c| c.GetRange().ok()) {
+                    update_text_rect(this, ctx, ec, &range);
+                    // Our own typing changes the layout too: only a real move repositions the popup.
+                    let moved = this.state.try_borrow().is_ok_and(|s| s.text_rect != before);
+                    if moved {
+                        this.show_popup();
+                    }
+                }
+            }
             DocOp::Commit { text, suffix } => {
                 let comp = this
                     .state
@@ -1854,13 +1911,19 @@ unsafe fn ensure_edit_sink(this: &TextService_Impl, ctx: &ITfContext) {
             {
                 return;
             }
-            s.edit_sink.take()
+            (
+                s.edit_sink.take(),
+                std::mem::replace(&mut s.layout_sink, TF_INVALID_COOKIE),
+            )
         }
         Err(_) => return,
     };
-    if let Some((c, cookie)) = old {
+    if let (Some((c, cookie)), layout) = old {
         if let Ok(src) = c.cast::<ITfSource>() {
             let _ = src.UnadviseSink(cookie);
+            if layout != TF_INVALID_COOKIE {
+                let _ = src.UnadviseSink(layout);
+            }
         }
     }
     let Ok(src) = ctx.cast::<ITfSource>() else {
@@ -1868,10 +1931,20 @@ unsafe fn ensure_edit_sink(this: &TextService_Impl, ctx: &ITfContext) {
     };
     let unk: windows::core::IUnknown = this.to_interface();
     if let Ok(cookie) = src.AdviseSink(&ITfTextEditSink::IID, &unk) {
+        // Not every host supports layout notifications; the edit sink works without it.
+        let layout = src
+            .AdviseSink(&ITfTextLayoutSink::IID, &unk)
+            .unwrap_or(TF_INVALID_COOKIE);
         match this.state.try_borrow_mut() {
-            Ok(mut s) => s.edit_sink = Some((ctx.clone(), cookie)),
+            Ok(mut s) => {
+                s.edit_sink = Some((ctx.clone(), cookie));
+                s.layout_sink = layout;
+            }
             Err(_) => {
                 let _ = src.UnadviseSink(cookie);
+                if layout != TF_INVALID_COOKIE {
+                    let _ = src.UnadviseSink(layout);
+                }
             }
         }
     }
