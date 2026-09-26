@@ -153,6 +153,15 @@ try {
     $seqView.Close()
     $clear = $uiSeq["SetPreselected"]
     Check ($clear -and $clear -gt $uiSeq["MaintenanceWelcomeDlg"] -and $clear -lt $uiSeq["ResumeDlg"] -and $clear -lt $uiSeq["ProgressDlg"]) "uninstall: Preselected cleared after MaintenanceWelcomeDlg, before ResumeDlg/ProgressDlg (one progress title)"
+    # An uninstall started from the UI (Remove event) only has REMOVE="ALL" from InstallValidate on: a
+    # condition on REMOVE before it is never true there (the erase paths stayed empty, 2026-09-26).
+    $execView = $db.OpenView("SELECT Action, Condition, Sequence FROM InstallExecuteSequence")
+    $execView.Execute(); $early = @(); $validateAt = 0; $rows = @()
+    while ($r = $execView.Fetch()) { $rows += , @($r.StringData(1), $r.StringData(2), [int]$r.StringData(3)) }
+    $execView.Close()
+    $validateAt = ($rows | Where-Object { $_[0] -eq "InstallValidate" })[2]
+    $early = @($rows | Where-Object { $_[2] -lt $validateAt -and $_[1] -match '\bREMOVE\b' } | ForEach-Object { $_[0] })
+    Check ($validateAt -gt 0 -and $early.Count -eq 0) "no action before InstallValidate depends on REMOVE (UI uninstalls set it only there)$(if ($early) { ': ' + ($early -join ', ') })"
     $exit = @(Nodes "//w:Dialog[@Id='ExitDialog']/w:Control[@Id='Title']")
     Check ($exit.Count -eq 1 -and $exit[0].Text -match '\[T3EXITTITLE\]') "finish page title follows the uninstall outcome"
     Check (@(Nodes "//w:Shortcut").Count -ge 2) "Start menu + optional desktop shortcut"

@@ -160,13 +160,16 @@
     <CustomAction Id="RestartWarning" Directory="INSTALLFOLDER" Execute="immediate" Return="asyncNoWait"
                   ExeCommand="&quot;[#HotkeyExe]&quot; --restart-warning" />
 
-    <!-- Erase paths for the user running the uninstall; only a full removal, never an upgrade. -->
+    <!-- Erase paths for the user running the uninstall, never on an upgrade. No REMOVE test: these run before
+         InstallValidate, and an uninstall started from T3RemoveDlg (Remove event) only gets REMOVE="ALL" at
+         InstallValidate, so the paths stayed empty (Owner, 2026-09-26). RemoveFolderEx acts only when its
+         component (Hotkey) is removed, i.e. on a real uninstall. -->
     <SetProperty Id="T3ERASE_LOCAL" Value="[LocalAppDataFolder]Type3arabi" Before="Wix4RemoveFoldersEx_X64"
-                 Sequence="execute" Condition="ERASEUSERDATA = 1 AND REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+                 Sequence="execute" Condition="ERASEUSERDATA = 1 AND NOT UPGRADINGPRODUCTCODE" />
     <SetProperty Id="T3ERASE_WEBVIEW" Value="[LocalAppDataFolder]com.type3arabi.settings" Before="Wix4RemoveFoldersEx_X64"
-                 Sequence="execute" Condition="ERASEUSERDATA = 1 AND REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+                 Sequence="execute" Condition="ERASEUSERDATA = 1 AND NOT UPGRADINGPRODUCTCODE" />
     <SetProperty Id="T3ERASE_ROAMING" Value="[AppDataFolder]Type3arabi" Before="Wix4RemoveFoldersEx_X64"
-                 Sequence="execute" Condition="ERASEUSERDATA = 1 AND REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+                 Sequence="execute" Condition="ERASEUSERDATA = 1 AND NOT UPGRADINGPRODUCTCODE" />
 
     <InstallExecuteSequence>
       <Custom Action="SetStopHotkeyCmd" Before="StopHotkey" />
