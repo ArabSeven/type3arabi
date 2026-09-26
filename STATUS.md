@@ -13,7 +13,17 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 still needs the Owner's runs. **Next gate: the Owner's manual test of 1.0.0-rc.2.** Only after that: public
 repository, public unsigned release, SignPath inquiry, signing workflow, Microsoft Store (Owner, 2026-09-25).
 
-## Release candidate 1.1.0 (2026-09-26) — branch `release/1.1.0`, awaiting the Owner's local test
+## Release 1.1.0 (2026-09-26) — published, unsigned
+**Published:** https://github.com/ArabSeven/type3arabi/releases/tag/v1.1.0 (latest), tag `v1.1.0` on `cebd823`
+(`release/1.1.0` fast-forwarded into `main`), built by `release.yml` run 36207908846. `Type3arabi-1.1.0-x64.msi` =
+`Type3arabi-x64.msi`, 24,383,488 bytes, SHA-256 `eff9dc3d65eff9346939138f5370e5af845a2a4d7e099f4cab6674868df45470`
+(= SHA256SUMS.txt; the site's `releases/latest/download/Type3arabi-x64.msi` serves it). Downloaded back:
+`validate-msi.ps1 … -ModelSha256 <lock>` all checks pass (ProductVersion 1.1.0, release model). The Owner confirmed
+on the local build: uninstall pages, single progress title, erase checkbox (D59, D61), list in Settings search.
+Website deployed (Worker version 97036791-6ec3-4645-8ebf-a94f914629f6): updated privacy text (uninstall choice;
+Cloudflare Web Analytics, O19), CSP admits the beacon; live check: beacon loads (200), no CSP errors, pages 200.
+
+### Candidate history (local builds before the release)
 Owner requests 2026-09-26 after installing 1.0.0 (D54–D57). Not merged to `main`, not tagged, not released.
 Owner test of the first 1.1.0 build (2026-09-26): uninstall pages work; the list shows in the Settings app's search.
 Found: overlapping progress title while uninstalling (D59), list first placed far above Start's search box (D58), and
@@ -345,6 +355,10 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 - [x] Record baseline numbers in STATUS.md.
 
 ## Owner decisions recorded
+- **2026-09-26 (O19 closed)**: Website analytics allowed: Cloudflare Web Analytics (cookieless, aggregate) on
+  type3arabi.com only; the site's CSP now admits its beacon and the privacy page describes it (EN + AR). The Owner
+  ruled no ADR is needed because the website is separate from the product. R10 is unchanged for every shipped binary:
+  the keyboard, helper and Settings app still have no telemetry or network code.
 - **2026-09-25 (O15)**: Release architecture from the release audit: one MSI for GitHub Releases and the Microsoft
   Store's MSI/EXE route (MSIX does not fit a TSF input method); SignPath Foundation first, fallback signing only
   without purchase for now. Implement the fixes that help regardless of signing, clear the backlog, prepare the
@@ -385,7 +399,6 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O16 | Make the repository public (the website's GitHub/Datasets/download links return 404 until then) and upload the model asset `model-2026092502/type3arabi.dat` | **Done 2026-09-25**: repo public, model asset uploaded, v1.0.0 published |
 | O17 | SignPath inquiry: ask whether the CC BY-NC-SA model (incl. provisional sources) inside the MSI is acceptable under "OSI license for all components" | Not contacted (O15) |
 | O18 | Contact channel: the site lists GitHub issues + Linktree; add a public email address? | No email published |
-| O19 | Cloudflare Web Analytics auto-injects its beacon into type3arabi.com (found 2026-09-25 after deploy). Disable it: dashboard → Analytics & Logs → Web Analytics → type3arabi.com → disable (or turn off automatic setup) | Left on; our CSP blocks the script, so nothing is collected (R10 holds) |
 
 ## Agent decisions (one line each: what, why)
 - D61: The erase paths (SetT3ERASE_*, before CostInitialize) were conditioned on REMOVE="ALL", which an uninstall
