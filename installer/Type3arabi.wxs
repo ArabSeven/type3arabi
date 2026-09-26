@@ -191,6 +191,10 @@
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT"
               Value="Type3arabi is installed. Press Win+Space and choose Arabic (Saudi Arabia) · Type3arabi, or use Ctrl+Alt+A. Shortcuts can be changed in Type3arabi Settings." />
+    <!-- T3RemoveDlg sets Preselected only to skip WixUI's MaintenanceWelcomeDlg; clear it again before the
+         progress page, whose "Installing" title also shows while Preselected is set (it overlapped "Removing"). -->
+    <SetProperty Id="Preselected" Value="[T3NOVALUE]" After="MaintenanceWelcomeDlg" Sequence="ui"
+                 Condition="WixUI_InstallMode = &quot;Remove&quot;" />
     <!-- Finish page title/description: Type3arabi.wxl routes them through these; T3RemoveDlg changes them. -->
     <Property Id="T3EXITTITLE" Value="Completed the Type3arabi Setup Wizard" />
     <Property Id="T3EXITDESCRIPTION" Value="Click the Finish button to exit the Setup Wizard." />

@@ -145,6 +145,14 @@ try {
         $seq = @(Nodes "//w:InstallExecuteSequence/w:Custom" | Where-Object { $_.Action -in ($ca | ForEach-Object { $_.Id }) })
         Check ($seq.Count -eq 1 -and $seq[0].Condition -match 'ERASEUSERDATA = 1' -and $seq[0].Condition -match 'NOT UPGRADINGPRODUCTCODE') "$p set only when ERASEUSERDATA=1 on a full removal (never an upgrade)"
     }
+    # Preselected (set by T3RemoveDlg to skip MaintenanceWelcomeDlg) must be cleared before ResumeDlg and
+    # ProgressDlg: both react to it (a Resume page; an "Installing" title drawn over "Removing").
+    $seqView = $db.OpenView("SELECT Action, Sequence FROM InstallUISequence")
+    $seqView.Execute(); $uiSeq = @{}
+    while ($r = $seqView.Fetch()) { $uiSeq[$r.StringData(1)] = [int]$r.StringData(2) }
+    $seqView.Close()
+    $clear = $uiSeq["SetPreselected"]
+    Check ($clear -and $clear -gt $uiSeq["MaintenanceWelcomeDlg"] -and $clear -lt $uiSeq["ResumeDlg"] -and $clear -lt $uiSeq["ProgressDlg"]) "uninstall: Preselected cleared after MaintenanceWelcomeDlg, before ResumeDlg/ProgressDlg (one progress title)"
     $exit = @(Nodes "//w:Dialog[@Id='ExitDialog']/w:Control[@Id='Title']")
     Check ($exit.Count -eq 1 -and $exit[0].Text -match '\[T3EXITTITLE\]') "finish page title follows the uninstall outcome"
     Check (@(Nodes "//w:Shortcut").Count -ge 2) "Start menu + optional desktop shortcut"
