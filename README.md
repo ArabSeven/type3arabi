@@ -179,6 +179,13 @@ word, in every app — no restart.
   and private/incognito fields never teach it anything.
 - **Open source**, so anyone can check all of the above.
 
+## Good to know
+
+- **Extra words after yours in the Start menu's search.** The search box in Start completes what you type with its
+  own suggestions, so after «مرحباً»‎ it can show a whole sentence such as «مرحباً كيف حالك يا صديقي الغالي»‎. That text comes from Windows,
+  not from Type3arabi: Type3arabi only ever inserts the word you picked (and the space or punctuation you typed). To
+  see it for yourself, switch Type3arabi off, paste «مرحباً»‎ into Start's search box, and the same sentence appears.
+
 ## How it works
 
 Type3arabi is a Text Services Framework input processor written in Rust. For every key you type, the engine
