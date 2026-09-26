@@ -13,7 +13,14 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 still needs the Owner's runs. **Next gate: the Owner's manual test of 1.0.0-rc.2.** Only after that: public
 repository, public unsigned release, SignPath inquiry, signing workflow, Microsoft Store (Owner, 2026-09-25).
 
-## Release 1.1.2 (2026-09-26) — in progress
+## Release 1.1.2 (2026-09-26) — published, unsigned
+**Published:** https://github.com/ArabSeven/type3arabi/releases/tag/v1.1.2 (latest), annotated tag `v1.1.2` on `4beb3a3`
+(`main`; CI run 36259901703 all 6 jobs green), built by `release.yml` run 36260269783 (signing skipped).
+`Type3arabi-1.1.2-x64.msi` = `Type3arabi-x64.msi`, 24,367,104 bytes, SHA-256
+`ac1b0f925c93c9a72ac40f33f782dc2028e5edce679609c4e0e82d933e66522a` (= SHA256SUMS.txt). Downloaded back:
+`validate-msi.ps1 … -ModelSha256 <lock>` all checks pass (ProductVersion 1.1.2 on the MSI and all four binaries).
+`releases/latest/download/Type3arabi-x64.msi` serves it (24,367,104 bytes); the website has no version text, no redeploy.
+Notes: `docs/releases/v1.1.2.md`.
 Owner request 2026-09-26: the stray-keyboard check every 5 minutes instead of 10 s, toggleable in Settings (Learning &
 privacy, before import/export, on by default, with an explanation), version 1.1.2 ("1.12": a patch), commit and run the
 release pipeline once every test passes. D62, D63.
