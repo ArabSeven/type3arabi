@@ -13,6 +13,20 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 still needs the Owner's runs. **Next gate: the Owner's manual test of 1.0.0-rc.2.** Only after that: public
 repository, public unsigned release, SignPath inquiry, signing workflow, Microsoft Store (Owner, 2026-09-25).
 
+## Release 1.1.2 (2026-09-26) — in progress
+Owner request 2026-09-26: the stray-keyboard check every 5 minutes instead of 10 s, toggleable in Settings (Learning &
+privacy, before import/export, on by default, with an explanation), version 1.1.2 ("1.12": a patch), commit and run the
+release pipeline once every test passes. D62, D63.
+Local gates (after the version bump): fmt; clippy x64 workspace + i686 (tip/ui/hotkey/paths); `cargo test --workspace`
+104 passed; Settings fmt + clippy + 6 tests; `cargo deny` both workspaces; pipeline pytest 11/11; `tsf_harness` 5 rounds
+× x64 and x86: 0 scenarios failed. Settings page checked in the browser pane with a stubbed backend (row + bilingual
+explanation render; Save sends `remove_stray_keyboards: false`). Live companion (release build replacing the running
+one): Arabic 101 loaded before start → unloaded 0.3 s after start; loaded again → unloaded at the 20 s check; hotkey `ok`;
+installed companion restored. Local MSI `target\installer\Type3arabi-1.1.2-x64.msi`, 24,317,952 bytes, release model
+(= lock): `validate-msi.ps1 -ModelSha256 <lock>` all checks pass.
+**Not verified by the agent:** the 5-minute check and the exit with both options off over real time (schedule covered by
+`stray_checks_at_sign_in_then_every_five_minutes_if_enabled`); upgrade 1.1.0 → 1.1.2 and a restart on the Owner's PC.
+
 ## Release 1.1.0 (2026-09-26) — published, unsigned
 **Published:** https://github.com/ArabSeven/type3arabi/releases/tag/v1.1.0 (latest), tag `v1.1.0` on `cebd823`
 (`release/1.1.0` fast-forwarded into `main`), built by `release.yml` run 36207908846. `Type3arabi-1.1.0-x64.msi` =
@@ -402,6 +416,9 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O18 | Contact channel: the site lists GitHub issues + Linktree; add a public email address? | No email published |
 
 ## Agent decisions (one line each: what, why)
+- D63: `privacy.remove_stray_keyboards` (default on, Owner 2026-09-26) replaces D62's 10 s timer: the companion checks at
+  start, 20 s, 1 min and 3 min (always; that was 1.1.0's behaviour), then every 5 minutes while the option is on; with
+  it and the hotkey both off it exits after the sign-in checks. Settings saving the option starts the companion if needed.
 - D62: Arabic (101) back after several restarts (Owner, 2026-09-26) although the sign-in tidy (D33) ran: the old
   schedule stopped after 3 min and never checked whether the unload worked. Found in the session at 20:14: `04010401`
   loaded, saved ar-SA list = Type3arabi only, `--tidy` removed it at once. Our code does not load it: the TIP never
@@ -537,8 +554,8 @@ pass; the RC should change as little as possible between the Owner's test and re
 - M7: Store listing text; `docs/releases/` notes per release.
 
 ## Session log
-- 2026-09-26 (evening) — Agent (Claude): Arabic (101) after restarts investigated and the companion hardened (D62, O20).
-  Not released; the installed 1.1.0 companion still has the 3-minute schedule until the next build.
+- 2026-09-26 (evening) — Agent (Claude): Arabic (101) after restarts investigated and the companion hardened (D62, O20);
+  then per the Owner: 5-minute check with a Settings option (D63), release 1.1.2.
 - 2026-09-26 — Agent (Claude): 1.1.0 released; website deploys: analytics allowed (O19), then the hero demo centred
   between the two text columns at >= 1181 px (`align-self: center`; measured 163/175 px above/below at 1920x1080,
   no drift across chapters; phone/tablet layouts unchanged). Worker version edbd5167-5b0b-436f-b381-123711769104.
