@@ -15,13 +15,17 @@ repository, public unsigned release, SignPath inquiry, signing workflow, Microso
 
 ## Release candidate 1.1.0 (2026-09-26) — branch `release/1.1.0`, awaiting the Owner's local test
 Owner requests 2026-09-26 after installing 1.0.0 (D54–D57). Not merged to `main`, not tagged, not released.
-Local build `target\installer\Type3arabi-1.1.0-x64.msi` (= `Type3arabi-x64.msi`), 24,322,048 bytes, SHA-256
-`2c44b799a52b36685e7b5c8f7776abcc36fd5a8d899c8387884c445924fe17ce`, release model (= `data/model.lock.toml`),
+Owner test of the first 1.1.0 build (2026-09-26): uninstall pages work; the list shows in the Settings app's search.
+Found: overlapping progress title while uninstalling (D59), list first placed far above Start's search box (D58), and
+a whole sentence after `mar7aba` in Start only (D60: not produced by Type3arabi). Rebuilt with D58 + D59:
+local build `target\installer\Type3arabi-1.1.0-x64.msi` (= `Type3arabi-x64.msi`), 24,367,104 bytes, SHA-256
+`a6568e653f2c95b1b7129d129e4fc2f24abb3343a0fd4124c71a9b241bf6f6fc`, release model (= `data/model.lock.toml`),
 built with `scripts\build-installer.ps1 -Data target\type3arabi-rc2.dat`. `scripts\validate-msi.ps1 … -ModelSha256 <lock>`:
 all checks pass, incl. 18 new uninstall checks. Gates: fmt; clippy x64 + i686; `cargo test --workspace` 102 passed;
-`cargo deny` both workspaces; `tsf_harness` x64 and x86: new popup-owner check PASS, 0 scenarios failed.
-**Not verified by the agent (needs the Owner's PC):** the word list above Windows Search / Start and in Settings (D55:
-root cause read from the code and the spec, not reproduced here); upgrade 1.0.0 → 1.1.0 shows one "Type3arabi" in
+`cargo deny` both workspaces; `tsf_harness` x64 and x86: popup-owner and popup-follows-layout checks PASS,
+0 scenarios failed.
+**Not verified by the agent (needs the Owner's PC):** the list's first position in Start's search box (D58: depends on
+Start reporting its layout change); the single progress title (D59); upgrade 1.0.0 → 1.1.0 shows one "Type3arabi" in
 Settings › Apps; its Uninstall opens the new page; kept vs erased learning and the two finish messages (D56).
 Notes: `docs/releases/v1.1.0.md`.
 
@@ -382,6 +386,18 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O19 | Cloudflare Web Analytics auto-injects its beacon into type3arabi.com (found 2026-09-25 after deploy). Disable it: dashboard → Analytics & Logs → Web Analytics → type3arabi.com → disable (or turn off automatic setup) | Left on; our CSP blocks the script, so nothing is collected (R10 holds) |
 
 ## Agent decisions (one line each: what, why)
+- D60: Owner saw "مرحباً كيف حالك يا صديقي الغالي" after typing `mar7aba` in Start's search box only. Checked that
+  Type3arabi cannot produce it: every document write is one chosen candidate + the typed key (Commit), a typed
+  character (Insert) or a deletion (ReEdit); no next-word prediction or auto-commit exists; phrases come only from
+  the 56-entry `data/seed/phrases.tsv` (exact keys; none has it); the engine offers single words for `mar7aba`
+  (مرحباً first); no installed file contains "كيف حالك" (UTF-8/UTF-16); the Owner's learning journal holds 274
+  single-word records (`mar7aba` → مرحبا only). So it is the Start search box's own completion; the Owner can confirm
+  by pasting مرحباً into Start with Type3arabi switched off.
+- D59: WixUI's ProgressDlg shows "Installing" (and ResumeDlg shows itself) while `Preselected` is set, which
+  T3RemoveDlg used to skip MaintenanceWelcomeDlg: `SetPreselected` clears it right after that dialog.
+- D58: ITfTextLayoutSink advised with the edit sink (docs/02 §9 asked for it): on a layout change while the list is
+  shown, a Relayout edit session re-reads the composition rectangle and moves the popup if it moved. RichEdit reports
+  layout changes only for text edits, so the harness reports a window move itself.
 - D57: README/AGENTS/glossary/vision: an LRM (U+200E) after each Arabic letter or word that sits among Latin text, so
   digits stay next to their letters on GitHub (bidi rule W2; Owner screenshot 2026-09-26). Checked on GitHub's own
   rendering (markdown API) in a browser; the website already separates them (flex items, `<bdi>`), not redeployed.
