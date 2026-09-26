@@ -523,6 +523,10 @@ pass; the RC should change as little as possible between the Owner's test and re
 - M7: Store listing text; `docs/releases/` notes per release.
 
 ## Session log
+- 2026-09-26 — Agent (Claude): 1.1.0 released; website deploys: analytics allowed (O19), then the hero demo centred
+  between the two text columns at >= 1181 px (`align-self: center`; measured 163/175 px above/below at 1920x1080,
+  no drift across chapters; phone/tablet layouts unchanged). Worker version edbd5167-5b0b-436f-b381-123711769104.
+  Download stays `releases/latest/download/Type3arabi-x64.msi` (release.yml uploads that version-free copy).
 - 2026-09-26 — Agent (Claude): 1.0.0 follow-ups. Old orphaned commits: no public reference found (repo, website, release
   notes, refs), Owner closed the purge request. Accuracy: no regression (D54). Windows Search/Settings popup (D55),
   uninstall choice + confirmation (D56), bidi in README/docs (D57, on `main`). RC 1.1.0 on `release/1.1.0` (above).
