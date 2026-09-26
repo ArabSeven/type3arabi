@@ -1,7 +1,7 @@
 //! t3a-hotkey — global activation hotkey companion (docs/02 §11) and small installer helper.
 //!
-//!   t3a-hotkey.exe                    at sign-in; stays running: keeps the keyboard list tidy and
-//!                                     runs the hotkey (if enabled)
+//!   t3a-hotkey.exe                    at sign-in: runs the hotkey and keeps the keyboard list tidy;
+//!                                     exits after the sign-in checks if both are off in Settings
 //!   t3a-hotkey.exe --tidy             unload Arabic layouts the user did not choose (see profile.rs)
 //!   t3a-hotkey.exe --enable-profile   enable the Type3arabi keyboard for the signed-in user
 //!   t3a-hotkey.exe --disable-profile  remove it from the user's keyboards
@@ -11,9 +11,10 @@
 //! Hotkey loop: a message-only window registers the hotkey (MOD_NOREPEAT); WM_HOTKEY switches the
 //! foreground window between the Arabic (Type3arabi) keyboard and the last non-Arabic one via
 //! WM_INPUTLANGCHANGEREQUEST. No hooks (R5). The Settings app posts `WM_APP_RELOAD` to the window class
-//! `Type3arabi_Hotkey` after changing the hotkey. Tidy-up: a 10 s timer compares the session's loaded
+//! `Type3arabi_Hotkey` after changing settings. Tidy-up: checks at start, 20 s, 1 min and 3 min, then
+//! every 5 minutes if `privacy.remove_stray_keyboards` is on. Each check compares the session's loaded
 //! layouts (one user32 call) and runs `profile::tidy` only when they changed, so an Arabic 101 that
-//! Windows loads at any time (sign-in, unlock, an app) is gone within seconds.
+//! Windows loads later (sign-in screen, unlock, an app) does not stay in the list.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 fn main() {
@@ -25,7 +26,7 @@ fn main() {
 
 #[cfg(windows)]
 mod win {
-    use std::sync::atomic::{AtomicIsize, Ordering};
+    use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering};
     use t3a_engine::Config;
     use t3a_hotkey::{parse, HotkeySpec};
     use windows::core::{w, PCWSTR};
@@ -41,16 +42,15 @@ mod win {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetForegroundWindow, GetMessageW,
-        GetWindowThreadProcessId, MessageBoxW, PostMessageW, RegisterClassW, SetTimer,
-        HWND_MESSAGE, MB_ICONINFORMATION, MB_OK, MSG, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP,
-        WM_HOTKEY, WM_INPUTLANGCHANGEREQUEST, WM_TIMER, WNDCLASSW,
+        GetWindowThreadProcessId, KillTimer, MessageBoxW, PostMessageW, PostQuitMessage,
+        RegisterClassW, SetTimer, HWND_MESSAGE, MB_ICONINFORMATION, MB_OK, MSG, WINDOW_EX_STYLE,
+        WINDOW_STYLE, WM_APP, WM_HOTKEY, WM_INPUTLANGCHANGEREQUEST, WM_TIMER, WNDCLASSW,
     };
 
     /// Sent by the Settings app after it rewrote `config.toml`.
     pub const WM_APP_RELOAD: u32 = WM_APP + 1;
     const HOTKEY_ID: i32 = 1;
     const TIDY_TIMER: usize = 1;
-    const TIDY_EVERY_MS: u32 = 10_000;
     const LANG_ARABIC: u16 = 0x01;
 
     pub fn main() -> i32 {
@@ -259,18 +259,44 @@ mod win {
             }
             WM_APP_RELOAD => {
                 register(h);
+                schedule_tidy(h);
                 LRESULT(0)
             }
             WM_TIMER if w.0 == TIDY_TIMER => {
                 tidy_if_changed();
+                TIDY_CHECKS.fetch_add(1, Ordering::Relaxed);
+                schedule_tidy(h);
                 LRESULT(0)
             }
             _ => DefWindowProcW(h, msg, w, l),
         }
     }
 
-    /// The resident companion: hotkey (if enabled) and the keyboard-list tidy-up. Idle cost: blocked
-    /// in `GetMessageW` between 10 s timer ticks that make one user32 call.
+    /// Stray-keyboard checks run so far (message thread only).
+    static TIDY_CHECKS: AtomicUsize = AtomicUsize::new(0);
+
+    /// Arm the timer for the next check, or stop checking; with the hotkey off too, quit.
+    fn schedule_tidy(hwnd: HWND) {
+        let config = load_config();
+        let done = TIDY_CHECKS.load(Ordering::Relaxed);
+        // SAFETY: timer calls on our own window; PostQuitMessage ends this thread's loop.
+        unsafe {
+            match t3a_hotkey::next_stray_check_ms(done, config.remove_stray_keyboards) {
+                Some(ms) => {
+                    SetTimer(Some(hwnd), TIDY_TIMER, ms, None);
+                }
+                None => {
+                    let _ = KillTimer(Some(hwnd), TIDY_TIMER);
+                    if !config.global_hotkey_enabled {
+                        PostQuitMessage(0);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The companion: hotkey (if enabled) and the keyboard-list tidy-up. Idle cost: blocked in
+    /// `GetMessageW` between timer ticks that make one user32 call.
     fn run_companion() -> i32 {
         // SAFETY: single-instance mutex, message-only window and a standard message loop.
         unsafe {
@@ -306,7 +332,8 @@ mod win {
             };
             register(hwnd);
             tidy_if_changed();
-            SetTimer(Some(hwnd), TIDY_TIMER, TIDY_EVERY_MS, None);
+            TIDY_CHECKS.store(1, Ordering::Relaxed);
+            schedule_tidy(hwnd);
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                 DispatchMessageW(&msg);

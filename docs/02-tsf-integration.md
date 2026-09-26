@@ -64,9 +64,11 @@ Order (mirror in unregister, reversed):
    yet `04010401` loaded and listed; again 2026-09-26 after several restarts, later than the old 3-minute
    schedule). Suspected source: the sign-in screen's own keyboards (`HKU\.DEFAULT` = system accounts; on the
    Owner's PC en-US + Arabic (Jordan) with Arabic (101), set by Windows, not by us) — unproven, the tidy log
-   below is the evidence. The companion (`t3a-hotkey`, started by the Run key) therefore stays running and
-   runs `tidy` at start and whenever the session's loaded layouts change (checked every 10 s with one
-   `GetKeyboardLayoutList` call; a failed unload is retried): if Type3arabi is in the user's ar-SA list,
+   below is the evidence. The companion (`t3a-hotkey`, started by the Run key) therefore checks at start,
+   20 s, 1 min and 3 min after sign-in (always), then every 5 minutes while `privacy.remove_stray_keyboards`
+   is on (default; Settings › Learning & privacy, Owner 2026-09-26: not time critical). Each check makes one
+   `GetKeyboardLayoutList` call and runs `tidy` only when the loaded layouts changed; a failed unload is
+   retried at the next check. `tidy`: if Type3arabi is in the user's ar-SA list,
    every loaded *Arabic* layout (KLID `…0401`) that is not in that list is unloaded (`UnloadKeyboardLayout`).
    It writes nothing, never touches the hidden US base layout (`0401:00000409`) the TIP runs on, and keeps
    any Arabic layout the user added themselves. Each unload writes one line to the error log with the
@@ -364,8 +366,9 @@ while another keyboard is active).
 
 - Process: `t3a-hotkey.exe`, no window except a message-only window, started at logon via
   `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` (installer); it stays running for the keyboard-list tidy-up
-  (§2 step 4) and registers the hotkey only if `general.global_hotkey_enabled = true`. Idle cost: blocked in
-  `GetMessageW` between 10 s timer ticks that make one user32 call (~1–2 MB).
+  (§2 step 4) and registers the hotkey only if `general.global_hotkey_enabled = true`. With the hotkey and
+  `privacy.remove_stray_keyboards` both off it exits after the sign-in checks (≤ 3 min). Idle cost: blocked in
+  `GetMessageW` between 5-minute timer ticks that make one user32 call (~1–2 MB).
 - `RegisterHotKey(msgWnd, 1, mods | MOD_NOREPEAT, vk)`; default **Ctrl+Alt+A** (configurable). If
   registration fails, write `hotkey_conflict = true` into `%LOCALAPPDATA%\Type3arabi\state.toml` so Settings can show it.
 - On `WM_HOTKEY`: `fg = GetForegroundWindow()`, `cur = GetKeyboardLayout(GetWindowThreadProcessId(fg))`.

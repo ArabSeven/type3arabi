@@ -38,6 +38,7 @@ sticky_last_choice = true
 
 [privacy]
 use_surrounding_text = true
+remove_stray_keyboards = true
 
 [appearance]
 theme = "system"

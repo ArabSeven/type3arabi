@@ -114,6 +114,9 @@ pub struct Config {
     pub learning_enabled: bool,
     pub sticky_last_choice: bool,
     pub use_surrounding_text: bool,
+    /// `privacy.remove_stray_keyboards`: the companion checks every 5 minutes for keyboards the user
+    /// did not choose (Arabic 101 loaded by Windows) and removes them (docs/02 §2 step 4).
+    pub remove_stray_keyboards: bool,
     pub theme: String,
     pub font_family: String,
     pub font_size: i64,
@@ -156,6 +159,7 @@ impl Default for Config {
             learning_enabled: true,
             sticky_last_choice: true,
             use_surrounding_text: true,
+            remove_stray_keyboards: true,
             theme: "system".into(),
             font_family: "Segoe UI".into(),
             font_size: 18,
@@ -218,6 +222,9 @@ impl Config {
                 }
                 ("privacy.use_surrounding_text", Value::Bool(b)) => {
                     set(&mut c.use_surrounding_text, b)
+                }
+                ("privacy.remove_stray_keyboards", Value::Bool(b)) => {
+                    set(&mut c.remove_stray_keyboards, b)
                 }
                 ("appearance.theme", Value::Str(s)) => set(&mut c.theme, s),
                 ("appearance.font_family", Value::Str(s)) => set(&mut c.font_family, s),
@@ -321,6 +328,7 @@ sticky_last_choice = {}
 
              [privacy]
 use_surrounding_text = {}
+remove_stray_keyboards = {}
 
              [appearance]
 theme = {}
@@ -364,6 +372,7 @@ commit_harakat = {}
             c.learning_enabled,
             c.sticky_last_choice,
             c.use_surrounding_text,
+            c.remove_stray_keyboards,
             q(&c.theme),
             q(&c.font_family),
             c.font_size,
@@ -578,7 +587,7 @@ fn set<T>(slot: &mut T, v: T) -> bool {
     true
 }
 
-const KNOWN: [&str; 36] = [
+const KNOWN: [&str; 37] = [
     "schema",
     "general.mode_toggle",
     "general.mode_scope",
@@ -604,6 +613,7 @@ const KNOWN: [&str; 36] = [
     "learning.enabled",
     "learning.sticky_last_choice",
     "privacy.use_surrounding_text",
+    "privacy.remove_stray_keyboards",
     "appearance.theme",
     "appearance.font_family",
     "appearance.font_size",
@@ -705,6 +715,7 @@ mod tests {
             key_commit_latin: "Ctrl+Shift+L".into(),
             global_hotkey: "Ctrl+Alt+Q".into(),
             learning_enabled: false,
+            remove_stray_keyboards: false,
             excluded_apps: vec!["game.exe".into(), "vim.exe".into()],
             candidates_per_page: 9,
             ..Default::default()

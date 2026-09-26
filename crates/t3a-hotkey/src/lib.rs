@@ -27,6 +27,23 @@ pub fn arabic_hotkey_target(loaded: &[usize]) -> Option<usize> {
         .or_else(|| arabic().next())
 }
 
+/// Gaps between the companion's sign-in checks for stray keyboards (after the one at start): at
+/// 20 s, 1 min and 3 min, while Windows is still loading the session's keyboards. Always run.
+const SIGN_IN_GAPS_MS: [u32; 3] = [20_000, 40_000, 120_000];
+/// The periodic check afterwards (`privacy.remove_stray_keyboards`, Owner 2026-09-26: not time
+/// critical, so every 5 minutes).
+pub const STRAY_CHECK_EVERY_MS: u32 = 5 * 60_000;
+
+/// Delay before the next stray-keyboard check, when `done` checks have run (the first at start).
+/// `None` = no more checks: the sign-in checks are over and the periodic one is off.
+pub fn next_stray_check_ms(done: usize, periodic: bool) -> Option<u32> {
+    match SIGN_IN_GAPS_MS.get(done.saturating_sub(1)) {
+        Some(ms) if done > 0 => Some(*ms),
+        _ if periodic => Some(STRAY_CHECK_EVERY_MS),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HotkeySpec {
     pub ctrl: bool,
@@ -109,6 +126,24 @@ mod tests {
         assert_eq!(arabic_hotkey_target(&[us, ar101, ar_on_us]), Some(ar_on_us));
         assert_eq!(arabic_hotkey_target(&[us, ar101]), Some(ar101)); // only Arabic 101: still Arabic
         assert_eq!(arabic_hotkey_target(&[us]), None);
+    }
+    #[test]
+    fn stray_checks_at_sign_in_then_every_five_minutes_if_enabled() {
+        let gaps = |periodic| {
+            (1..6)
+                .map(|n| next_stray_check_ms(n, periodic))
+                .collect::<Vec<_>>()
+        };
+        let five = Some(300_000);
+        assert_eq!(
+            gaps(true),
+            [Some(20_000), Some(40_000), Some(120_000), five, five]
+        );
+        // Turned off in Settings: the sign-in checks still run, then none.
+        assert_eq!(
+            gaps(false),
+            [Some(20_000), Some(40_000), Some(120_000), None, None]
+        );
     }
     #[test]
     fn parses_defaults_and_rejects_bare_keys() {

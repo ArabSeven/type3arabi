@@ -36,6 +36,7 @@ struct Settings {
     learning_enabled: bool,
     sticky_last_choice: bool,
     use_surrounding_text: bool,
+    remove_stray_keyboards: bool,
 }
 
 impl From<&Config> for Settings {
@@ -63,6 +64,7 @@ impl From<&Config> for Settings {
             learning_enabled: c.learning_enabled,
             sticky_last_choice: c.sticky_last_choice,
             use_surrounding_text: c.use_surrounding_text,
+            remove_stray_keyboards: c.remove_stray_keyboards,
         }
     }
 }
@@ -198,13 +200,14 @@ fn save_settings(settings: Settings) -> Result<(), Vec<String>> {
     c.learning_enabled = s.learning_enabled;
     c.sticky_last_choice = s.sticky_last_choice;
     c.use_surrounding_text = s.use_surrounding_text;
+    c.remove_stray_keyboards = s.remove_stray_keyboards;
 
     let path = t3a_paths::config_path();
     let _ = t3a_paths::ensure_user_dir();
     let tmp = path.with_extension("toml.tmp");
     std::fs::write(&tmp, c.to_toml()).map_err(|e| vec![format!("cannot write settings: {e}")])?;
     std::fs::rename(&tmp, &path).map_err(|e| vec![format!("cannot save settings: {e}")])?;
-    notify_hotkey(c.global_hotkey_enabled);
+    notify_companion(&c);
     Ok(())
 }
 
@@ -431,7 +434,7 @@ fn import_learning(
             let tmp = path.with_extension("toml.tmp");
             std::fs::write(&tmp, c.to_toml()).map_err(|e| format!("cannot write settings: {e}"))?;
             std::fs::rename(&tmp, &path).map_err(|e| format!("cannot save settings: {e}"))?;
-            notify_hotkey(c.global_hotkey_enabled);
+            notify_companion(&c);
             settings_restored = true;
         }
     }
@@ -506,8 +509,10 @@ fn about() -> About {
     }
 }
 
-/// Re-register the global hotkey in the running companion, or start it if it is not running.
-fn notify_hotkey(enabled: bool) {
+/// Tell the companion (`t3a-hotkey`) to re-read the config, or start it if it is needed and not
+/// running: it handles the global hotkey and the check for stray keyboards (docs/02 §2 step 4, §11).
+fn notify_companion(c: &Config) {
+    let enabled = c.global_hotkey_enabled || c.remove_stray_keyboards;
     #[cfg(windows)]
     {
         use windows::core::{w, PCWSTR};

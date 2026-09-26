@@ -11,7 +11,7 @@ back to defaults with one error-log line. The canonical defaults file is `config
 | **[general]** | | | |
 | `mode_toggle` | string | `"Ctrl+Space"` | `Ctrl+Space`, `Shift+Space`, `Ctrl+Shift+Space`, `ShiftTap`, `none` |
 | `mode_scope` | string | `"global"` | `global` (one Arabic/Latin state everywhere) or `per_app` |
-| `global_hotkey_enabled` | bool | `true` | run `t3a-hotkey` |
+| `global_hotkey_enabled` | bool | `true` | register the global hotkey in `t3a-hotkey` |
 | `global_hotkey` | string | `"Ctrl+Alt+A"` | modifiers `Ctrl`, `Alt`, `Shift`, `Win` + key name |
 | **[typing]** | | | |
 | `latin_layout` | string | `"auto"` | `auto` or KLID like `"0000040C"` |
@@ -38,6 +38,7 @@ back to defaults with one error-log line. The canonical defaults file is `config
 | `sticky_last_choice` | bool | `true` | |
 | **[privacy]** | | | |
 | `use_surrounding_text` | bool | `true` | read ≤ 64 chars before the caret for context (never stored) |
+| `remove_stray_keyboards` | bool | `true` | `t3a-hotkey` checks every 5 minutes for Arabic keyboards Windows loaded that are not in the user's list (Arabic 101) and removes them from the session (`docs/02 §2` step 4); off = checks only in the first 3 minutes after sign-in |
 | **[appearance]** | | | |
 | `theme` | string | `"system"` | `system`, `light`, `dark` |
 | `font_family` | string | `"Segoe UI"` | |

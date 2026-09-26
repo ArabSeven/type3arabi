@@ -88,8 +88,8 @@ reinstall picks up where you left off), and confirms when Type3arabi is removed.
   Services Framework input method, 64- and 32-bit), then turns it on for the account that installed it. Other
   accounts on the PC can add it from Type3arabi Settings → General.
 - Adds a small helper that starts when you sign in (`t3a-hotkey.exe`): it provides the global shortcut and removes
-  the extra *Arabic (101)* keyboard that Windows adds next to Type3arabi. With the shortcut turned off in Settings
-  it exits right after that tidy-up.
+  the extra *Arabic (101)* keyboard that Windows adds next to Type3arabi (right after sign-in, then every 5 minutes;
+  Settings → Learning & privacy). With the shortcut and that check both turned off it exits after the sign-in check.
 - Adds *Type3arabi Settings* to the Start menu, and to the desktop unless you untick it.
 - Keeps your settings and learned words in `%LOCALAPPDATA%\Type3arabi`. Nothing is sent anywhere.
 - Never closes your apps and never restarts the PC by itself. Apps that are already open pick up a new version
