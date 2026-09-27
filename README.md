@@ -8,15 +8,17 @@
 ### Type Arabic the way you already text.
 ### اكتب بالعربيزي، واقرأها بالعربية.
 
-A native Arabic keyboard for Windows: write Arabizi (`mar7aba`, `3ala`, `2albi`) in any app,<br>
-and Type3arabi turns it into the Arabic you meant, with the most likely word already picked.
+A free, open-source Arabic keyboard for Windows 10 and 11: write Arabizi, also called Franco-Arabic<br>
+(`mar7aba`, `3ala`, `2albi`), in any app, and Type3arabi turns it into the Arabic you meant,<br>
+with the most likely word already picked. It works like Yamli, but in every Windows app and offline,<br>
+as Microsoft Maren did.
 
 [![Code license: Apache-2.0](https://img.shields.io/badge/code-Apache--2.0-1F5BFF)](LICENSE)
 [![Model license: CC BY-NC-SA 4.0](https://img.shields.io/badge/model-CC%20BY--NC--SA%204.0-1BC7C7)](DATASETS.md)
 [![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0F1F3D)](#download)
 [![Latest release](https://img.shields.io/github/v/release/ArabSeven/type3arabi?include_prereleases&label=release&color=FF795C)](https://github.com/ArabSeven/type3arabi/releases)
 
-**[Download](#download)** · **[Try it in your browser](https://type3arabi.com/#try)** · **[Features](#features)** · **[Settings](#settings)** · **[Privacy](#privacy)** · **[Licenses](#licenses)**
+**[Download](#download)** · **[Try it in your browser](https://type3arabi.com/#try)** · **[Features](#features)** · **[Settings](#settings)** · **[Privacy](#privacy)** · **[FAQ](https://type3arabi.com/faq)** · **[Arabizi chart](https://type3arabi.com/arabizi)** · **[Licenses](#licenses)**
 
 </div>
 
@@ -178,6 +180,22 @@ word, in every app — no restart.
   app marks as password, PIN, number, phone, date or amount get plain Latin letters (no Arabic, nothing learned),
   and private/incognito fields never teach it anything.
 - **Open source**, so anyone can check all of the above.
+
+## Compared with Yamli, Microsoft Maren and Google Input Tools
+
+All four let you type Arabic in Latin letters and pick the Arabic word from a list. The difference is where they work.
+
+| | Type3arabi | Yamli | Microsoft Maren | Google Input Tools |
+|---|---|---|---|---|
+| What it is | Windows keyboard (input method) | Website and Chrome extension | Windows keyboard (input method), 2009 | Chrome extension; the Windows version was removed in 2018 |
+| Types into any Windows app | Yes | No, web pages only | Yes, on Windows XP, Vista and 7 | No, Chrome only |
+| Works offline | Yes | No | Yes | No |
+| Available today | Yes, Windows 10 and 11 | Yes | No, no longer supported by Microsoft | Chrome extension only |
+| Open source | Yes (Apache-2.0) | No | No | No |
+
+Checked September 2026; sources and details on [type3arabi.com/compare](https://type3arabi.com/compare). Type3arabi is
+an independent project, not connected to Yamli, Microsoft or Google. It does not translate English into Arabic: it
+turns Arabic written in Latin letters into Arabic letters. It runs on Windows only (x64; ARM PCs are not supported yet).
 
 ## Good to know
 

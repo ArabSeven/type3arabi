@@ -423,6 +423,15 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O18 | Contact channel: the site lists GitHub issues + Linktree; add a public email address? | No email published |
 
 ## Agent decisions (one line each: what, why)
+- D64: SEO pass (Owner request 2026-09-27, after ChatGPT's web search failed to suggest Type3arabi for "Yamli/Maren for
+  Windows"). Cause: repo public 2 days, site likely not yet in Bing's index (ChatGPT's main search source), and the site/README
+  never used the words people search with (Yamli, Maren, Franco-Arabic, transliteration: 0 hits). Website (local, not
+  deployed): new bilingual `/faq` (FAQPage JSON-LD generated from the page's own questions), `/arabizi` (chart; every
+  example checked as the release model's top candidate with `t3a-cli repl --data target/type3arabi-rc2.dat`), `/compare`
+  (Yamli, Maren, Google Input Tools; facts + sources, no claims about their accuracy), `llms.txt`, sitemap with lastmod,
+  richer home JSON-LD, plain eyebrow/lede/dialect lines, a "Common questions" block, shared header/footer for the text
+  pages (`<!--NAV:x-->`, `<!--FOOTER-->` in build.mjs). README: searchable intro + comparison table. Apps named are the
+  README's existing list; the app-compat matrix is still not run, so no new app claims (Discord/Telegram not named).
 - D63: `privacy.remove_stray_keyboards` (default on, Owner 2026-09-26) replaces D62's 10 s timer: the companion checks at
   start, 20 s, 1 min and 3 min (always; that was 1.1.0's behaviour), then every 5 minutes while the option is on; with
   it and the hotkey both off it exits after the sign-in checks. Settings saving the option starts the companion if needed.
@@ -561,6 +570,9 @@ pass; the RC should change as little as possible between the Owner's test and re
 - M7: Store listing text; `docs/releases/` notes per release.
 
 ## Session log
+- 2026-09-27 — Agent (Claude): SEO/AI-search analysis and on-site fixes (D64), for the Owner's review before deploying.
+  Owner actions after deploy: Bing Webmaster Tools + Google Search Console (submit sitemap), Cloudflare Crawler Hints and
+  AI Crawl Control check, GitHub topics/description, Microsoft Q&A answers, AlternativeTo listings, winget.
 - 2026-09-26 (evening) — Agent (Claude): Arabic (101) after restarts investigated and the companion hardened (D62, O20);
   then per the Owner: 5-minute check with a Settings option (D63), release 1.1.2.
 - 2026-09-26 — Agent (Claude): 1.1.0 released; website deploys: analytics allowed (O19), then the hero demo centred
