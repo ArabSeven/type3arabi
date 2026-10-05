@@ -71,7 +71,10 @@ public static class T3aInput {
     foreach ($view in @(
             @("HKLM:\SOFTWARE\Classes\CLSID\$Clsid\InprocServer32", $regsvr64),
             @("HKLM:\SOFTWARE\WOW6432Node\Classes\CLSID\$Clsid\InprocServer32", $regsvr32),
-            @("HKCU:\SOFTWARE\Classes\CLSID\$Clsid\InprocServer32", $regsvr64))) {
+            @("HKCU:\SOFTWARE\Classes\CLSID\$Clsid\InprocServer32", $regsvr64),
+            # A non-elevated regsvr32 of a 32-bit dev build registers per user, here: every 32-bit
+            # app then loaded that target\ DLL instead of the installed one.
+            @("HKCU:\SOFTWARE\Classes\WOW6432Node\CLSID\$Clsid\InprocServer32", $regsvr32))) {
         $key, $exe = $view
         $path = (Get-ItemProperty $key -ErrorAction SilentlyContinue).'(default)'
         if ($path) { $dlls += , @($exe, $path) }
@@ -92,7 +95,8 @@ public static class T3aInput {
             "HKCU:\SOFTWARE\Microsoft\CTF\TIP\$Clsid",
             "HKLM:\SOFTWARE\Classes\CLSID\$Clsid",
             "HKLM:\SOFTWARE\WOW6432Node\Classes\CLSID\$Clsid",
-            "HKCU:\SOFTWARE\Classes\CLSID\$Clsid")) {
+            "HKCU:\SOFTWARE\Classes\CLSID\$Clsid",
+            "HKCU:\SOFTWARE\Classes\WOW6432Node\CLSID\$Clsid")) {
         if (Test-Path $k) { Remove-Item $k -Recurse -Force; Write-Host "      removed $k" }
     }
 
