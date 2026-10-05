@@ -332,7 +332,27 @@ pub struct TextService {
     terminated: Cell<bool>,
     /// Safe passthrough (R2): popup hidden and composition ended once after a caught panic.
     cleaned_up: Cell<bool>,
+    // Layout notifications (docs/02 §9). Re-reading the composition's position (GetTextExt) is itself
+    // a layout change in IMM32 apps (CUAS): reported right after our edit session, before the app's
+    // message loop runs again. Following every notification looped forever inside TSF's queue and
+    // froze the app (Subtitle Edit 5, 2026-10-05, D65). The four fields below keep notifications
+    // from feeding themselves.
+    /// One of our edit sessions is running: notifications meanwhile are our own edit or query.
+    in_edit: Rc<Cell<bool>>,
+    /// A Relayout edit session is queued and has not run yet: further notifications wait for it.
+    relayout_queued: Rc<Cell<bool>>,
+    /// The last Relayout found the composition where it was. Until the app's message loop runs again
+    /// (the popup's `Pumped` marker) a notification can only be the echo of that query: ignored. A
+    /// real move arrives with the app's own messages, after the marker.
+    layout_settled: Cell<bool>,
+    /// Relayouts left for the word shown by the last Preview: a hard stop for a host whose
+    /// notifications would keep "moving" the field forever.
+    relayout_budget: Cell<u8>,
 }
+
+/// Relayouts allowed per shown word: plenty for a panel that settles in a few steps (Start's search
+/// box animating in), a bound for anything else.
+const RELAYOUT_BUDGET: u8 = 8;
 
 /// One queued edit session in `TextService::pending`: counted while alive.
 struct PendingToken(Rc<Cell<u32>>);
@@ -347,6 +367,15 @@ impl PendingToken {
 impl Drop for PendingToken {
     fn drop(&mut self) {
         self.0.set(self.0.get().saturating_sub(1));
+    }
+}
+
+/// Clears a flag when dropped (see `TextService::relayout_queued`).
+struct ClearOnDrop(Rc<Cell<bool>>);
+
+impl Drop for ClearOnDrop {
+    fn drop(&mut self) {
+        self.0.set(false);
     }
 }
 
@@ -414,6 +443,10 @@ impl TextService {
             pending: Rc::new(Cell::new(0)),
             terminated: Cell::new(false),
             cleaned_up: Cell::new(false),
+            in_edit: Rc::new(Cell::new(false)),
+            relayout_queued: Rc::new(Cell::new(false)),
+            layout_settled: Cell::new(false),
+            relayout_budget: Cell::new(0),
         })
     }
 }
@@ -803,6 +836,10 @@ impl ITfTextLayoutSink_Impl for TextService_Impl {
     /// The app re-laid out or moved the field (docs/02 §9): while the list is shown, re-read the
     /// composition's screen rectangle and move the popup there. Start's search box reports a stale
     /// position for the first word while its panel animates in.
+    ///
+    /// Never from inside our own edit session, never the echo of our own re-read, at most one queued
+    /// and within the word's budget: the re-read (GetTextExt) is itself a layout change in IMM32 apps,
+    /// and an unconditional follow-up froze them (docs/02 §9, D65).
     fn OnLayoutChange(
         &self,
         pic: windows_core::Ref<'_, ITfContext>,
@@ -813,6 +850,13 @@ impl ITfTextLayoutSink_Impl for TextService_Impl {
             let Some(ctx) = pic.as_ref() else {
                 return Ok(());
             };
+            if self.in_edit.get()
+                || self.relayout_queued.get()
+                || self.layout_settled.get()
+                || self.relayout_budget.get() == 0
+            {
+                return Ok(());
+            }
             let ours = match self.state.try_borrow() {
                 Ok(s) => {
                     s.composing()
@@ -822,6 +866,8 @@ impl ITfTextLayoutSink_Impl for TextService_Impl {
                 Err(_) => false,
             };
             if ours {
+                self.relayout_budget.set(self.relayout_budget.get() - 1);
+                self.relayout_queued.set(true);
                 self.run(ctx, DocOp::Relayout);
             }
             Ok(())
@@ -1336,6 +1382,11 @@ impl TextService_Impl {
 
     /// Mouse input on the popup (docs/05 §3.4, §4.4): mapped onto the same actions as the keys.
     fn on_popup_event(&self, ev: PopupEvent) {
+        if ev == PopupEvent::Pumped {
+            // The app's message loop ran since the last Relayout: notifications are real again.
+            self.layout_settled.set(false);
+            return;
+        }
         if ev == PopupEvent::Settings {
             // Mouse click, not the key path; the button is drawn only where starting a process is allowed.
             let allowed = self.state.try_borrow().is_ok_and(|s| s.settings_allowed);
@@ -1401,7 +1452,7 @@ impl TextService_Impl {
                 PopupEvent::Pick(i) => Some(Action::Tashkeel(TashkeelCmd::QuickPick(
                     (i + 1).min(u8::MAX as usize) as u8,
                 ))),
-                PopupEvent::Settings => None,
+                PopupEvent::Settings | PopupEvent::Pumped => None,
             };
             (ctx, action)
         };
@@ -1653,10 +1704,18 @@ impl TextService_Impl {
         let ran = Rc::new(Cell::new(false));
         let slot: Rc<RefCell<Option<PendingToken>>> = Rc::new(RefCell::new(None));
         let (ran2, slot2) = (ran.clone(), slot.clone());
+        // A Relayout's "queued" mark lives as long as the session: cleared when it ran, was refused,
+        // or TSF released it unrun (the closure, and this guard with it, is dropped in every case).
+        let queued =
+            matches!(op, DocOp::Relayout).then(|| ClearOnDrop(self.relayout_queued.clone()));
+        let in_edit = self.in_edit.clone();
         let session: ITfEditSession = EditSession::new(move |ec| {
+            let _queued = queued;
             ran2.set(true);
             drop(slot2.borrow_mut().take());
+            let outer = in_edit.replace(true);
             let r = apply(&this, &ctx2, ec, op);
+            in_edit.set(outer);
             if let Err(e) = &r {
                 diag(&format!("edit session failed: {:#010X}", e.code().0));
             }
@@ -1755,6 +1814,9 @@ fn apply(
                         }
                     }
                 }
+                // A new word on screen: the field may still move (Start's panel animating in).
+                this.relayout_budget.set(RELAYOUT_BUDGET);
+                this.layout_settled.set(false);
                 this.show_popup();
             }
             DocOp::Relayout => {
@@ -1765,9 +1827,18 @@ fn apply(
                 if let Some(range) = comp.and_then(|c| c.GetRange().ok()) {
                     update_text_rect(this, ctx, ec, &range);
                     // Our own typing changes the layout too: only a real move repositions the popup.
+                    // No move: settled until the app's message loop runs (echoes of this query come
+                    // before that). Without a popup to carry the marker, the next Preview resets it.
                     let moved = this.state.try_borrow().is_ok_and(|s| s.text_rect != before);
                     if moved {
                         this.show_popup();
+                    } else {
+                        this.layout_settled.set(true);
+                        if let Ok(s) = this.state.try_borrow() {
+                            if let Some(p) = &s.popup {
+                                p.post_marker();
+                            }
+                        }
                     }
                 }
             }

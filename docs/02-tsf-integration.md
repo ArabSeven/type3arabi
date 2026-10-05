@@ -322,6 +322,16 @@ Display attributes:
   Never call `SetFocus`/`SetForegroundWindow`. Do **not** use `WS_EX_LAYOUTRTL` (we lay out RTL ourselves).
 - **Position**: in the same edit session after updating text, `ITfContextView::GetTextExt(ec, compositionRange, &rect, &clipped)`.
   `TF_E_NOLAYOUT` ⇒ keep previous position, wait for `ITfTextLayoutSink::OnLayoutChange`, then re-query.
+- **Following layout changes** (`OnLayoutChange` → a `Relayout` edit session that re-reads `GetTextExt` and moves
+  the popup only if the rectangle changed). A notification must never be able to feed itself: in IMM32 apps
+  (Avalonia, Qt 5, Java, SDL… bridged by CUAS) `GetTextExt` is answered by asking the app's IME window and is
+  **reported as a layout change**, right after our session and before the app's message loop runs again.
+  Following it unconditionally looped forever inside TSF's async queue: 100% CPU, black popup, frozen app
+  (Subtitle Edit 5.2, 2026-10-05, STATUS D65). Rules: ignore notifications while one of our edit sessions runs;
+  at most one `Relayout` queued; after a `Relayout` that found **no move**, ignore notifications until the
+  app's message loop delivers a marker posted to our popup (only echoes can arrive before it; a real move comes
+  with the app's own messages); and at most 8 `Relayout`s per shown word (reset by each preview) as a hard stop.
+  Gate: `imm32_harness` (docs/08 §1).
   Placement rule (screen coords, per-monitor work area from `MonitorFromRect`):
   popup's **right edge aligned to the composition's right edge** (RTL), top = rect.bottom + 2 px;
   if it overflows the bottom → place above (bottom = rect.top − 2); clamp horizontally into the work area.

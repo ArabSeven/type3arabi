@@ -81,6 +81,9 @@ pub enum PopupEvent {
     Pick(usize),
     /// Click on the Settings button of the candidate list's header.
     Settings,
+    /// The marker posted by `PopupWindow::post_marker` was delivered: the app's message loop ran
+    /// since then (not a mouse event).
+    Pumped,
 }
 
 /// Label of the "clear all diacritics" button at the top of the tashkeel editor (drawn with ✕).

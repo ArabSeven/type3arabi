@@ -38,15 +38,18 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetCapture, ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, IsWindow,
-    LoadCursorW, RegisterClassExW, SetWindowLongPtrW, SetWindowPos, ShowWindow, UnregisterClassW,
-    CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MA_NOACTIVATE,
-    SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETTINGCHANGE,
-    WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    LoadCursorW, PostMessageW, RegisterClassExW, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    UnregisterClassW, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_TOPMOST,
+    IDC_ARROW, MA_NOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WM_APP, WM_CAPTURECHANGED,
+    WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_PAINT, WM_SETTINGCHANGE, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_POPUP,
 };
 
 static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
 const WINDOW_CLASS: PCWSTR = w!("Type3arabi_CandidateWindow");
+/// Private message of our window class: see `PopupWindow::post_marker`.
+const WM_T3A_PUMPED: u32 = WM_APP + 0x3A;
 
 const MK_LBUTTON: usize = 0x0001;
 const MK_SHIFT: usize = 0x0004;
@@ -252,6 +255,13 @@ impl PopupWindow {
             }
             let _ = ShowWindow(self.hwnd, SW_HIDE);
         }
+    }
+
+    /// Post a marker to this window: the handler gets `PopupEvent::Pumped` once the app's message
+    /// loop delivers it, i.e. after the app regained control from whatever is running now.
+    pub fn post_marker(&self) -> bool {
+        // SAFETY: posting to our own live window; no pointers are passed.
+        unsafe { PostMessageW(Some(self.hwnd), WM_T3A_PUMPED, WPARAM(0), LPARAM(0)).is_ok() }
     }
 
     /// Show `model` next to `anchor` = (left, top, right, bottom) of the composition, screen coords.
@@ -1207,6 +1217,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let _ = InvalidateRect(Some(hwnd), None, false);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_T3A_PUMPED => {
+            if !ptr.is_null() {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    // The borrow ends before the handler runs (it may re-render this window).
+                    let handler = (*ptr).try_borrow().ok().and_then(|s| s.handler.clone());
+                    if let Some(handler) = handler {
+                        handler(PopupEvent::Pumped);
+                    }
+                }));
+            }
+            LRESULT(0)
         }
         WM_CAPTURECHANGED => {
             if !ptr.is_null() {
