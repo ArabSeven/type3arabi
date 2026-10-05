@@ -13,6 +13,41 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 still needs the Owner's runs. **Next gate: the Owner's manual test of 1.0.0-rc.2.** Only after that: public
 repository, public unsigned release, SignPath inquiry, signing workflow, Microsoft Store (Owner, 2026-09-25).
 
+## Release 1.1.3 (2026-10-06) — published, unsigned
+**Published:** https://github.com/ArabSeven/type3arabi/releases/tag/v1.1.3 (latest), annotated tag `v1.1.3` on `10a0c26`
+(`main`; CI run 37377846511 all 6 jobs green), built by `release.yml` run 37378571589 (signing skipped).
+`Type3arabi-1.1.3-x64.msi` = `Type3arabi-x64.msi`, 24,317,952 bytes, SHA-256
+`6bc82e4b7557ee2f6e7b22d34c87c6dbfda4160f829637ef057fa22e09278832` (= SHA256SUMS.txt). Downloaded back:
+`validate-msi.ps1 … -ModelSha256 <lock>` all checks pass (ProductVersion 1.1.3 on the MSI and all four binaries, release
+model = lock). `releases/latest/download/Type3arabi-x64.msi` serves it (24,317,952 bytes); the website has no version
+text, no redeploy. Notes: `docs/releases/v1.1.3.md`.
+**Not verified by the agent:** upgrade 1.1.2 → 1.1.3 on the Owner's PC from the published MSI (the Owner tested the dev
+install of the same code).
+Owner approval 2026-10-06 (O21) after testing the dev build in Subtitle Edit: deploy 1.1.3 with a condensed changelog,
+the ghost per-user registration explained and the cleanup path for users updating from older versions
+(`docs/releases/v1.1.3.md`; the check/remove PowerShell lines were tested on a dummy CLSID: found, removed, nothing else
+touched).
+
+## Fix 2026-10-06: IMM32 apps froze on the first letter (Subtitle Edit 5.2)
+Owner report 2026-10-05: Subtitle Edit 5.2.0 (Avalonia 11), switch to Type3arabi, type one letter in the subtitle box →
+the letter appears, the app freezes, the candidate list stays black, the tray shows the "IME disabled" icon. Root cause,
+fix and evidence: D65. **Affects every released version since 1.1.0** (D58 added the layout sink) in every IMM32-only
+app (Avalonia, Qt 5, Java, SDL, many games): apps that are not TSF-aware reach the TIP through CUAS.
+Reproduced on this PC with the **installed 1.1.2 DLL** (byte-identical to `target\tip\x86_64-pc-windows-msvc\release\t3a_tip.dll`,
+whose PDB symbolized the frames): `T3A_INSTALLED=1 imm32_harness` → "UI thread has been blocked for 8 s", CPU 952 ms/s
+(busy loop), stack `apply (DocOp::Relayout, service.rs:1765) → DoEditSession → textinputframework` inside TSF's queue.
+The unfixed dev build froze the same way when loaded through the harness's per-user DLL entry.
+After the fix (commands under D65): `imm32_harness` x64 5 rounds: 0 failures (first letter responsive, list painted, all
+words typed); `tsf_harness` x64 + x86 × 5 rounds: 0 failures incl. "popup follows the field when its window moves"
+(D58 kept); 4 parallel processes × 3 rounds on x64 and on x86: 0 failures; fmt; clippy x64 workspace + i686
+(tip/ui/hotkey/paths) `-D warnings`; `cargo test --workspace` 104 passed.
+**Owner confirmed 2026-10-06** (dev install of this build): Subtitle Edit — no freeze, no crash, normal operation.
+After the Owner deleted the stale per-user x86 entry (O22): `imm32_harness` **x86** × 5 rounds: 0 failures.
+Not verified separately: the "IME disabled" tray icon (most likely Windows showing a hung window's input state).
+Commits `4d15545` fix, `a44110c` harness, `a0d4d29` dev-uninstall, `97150af` yanked `yoke-derive` 0.8.3 → 0.8.4 in the
+Settings lockfile (CI `cargo deny` failed on it, run 37376242879; not caused by this fix), `10a0c26` version 1.1.3.
+Release: 1.1.3 (O21, Owner approved), section below.
+
 ## Release 1.1.2 (2026-09-26) — published, unsigned
 **Published:** https://github.com/ArabSeven/type3arabi/releases/tag/v1.1.2 (latest), annotated tag `v1.1.2` on `4beb3a3`
 (`main`; CI run 36259901703 all 6 jobs green), built by `release.yml` run 36260269783 (signing skipped).
@@ -420,9 +455,35 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O16 | Make the repository public (the website's GitHub/Datasets/download links return 404 until then) and upload the model asset `model-2026092502/type3arabi.dat` | **Done 2026-09-25**: repo public, model asset uploaded, v1.0.0 published |
 | O17 | SignPath inquiry: ask whether the CC BY-NC-SA model (incl. provisional sources) inside the MSI is acceptable under "OSI license for all components" | Not contacted (O15) |
 | O20 | Arabic (101) at sign-in (D62): this PC's sign-in screen / system accounts keep their own list, en-US + Arabic (Jordan) with Arabic (101) (`HKU\.DEFAULT`; likely Windows setup — our code never wrote it). Test the suspected source: Settings › Time & language › Language & region › Administrative language settings › Copy settings › tick "Welcome screen and system accounts" (copies en-US + Arabic·Type3arabi; our TIP is not secure-mode, so the sign-in screen gets the plain base layout), then restart a few times | Companion unloads it within 10 s regardless (D62) |
+| O21 | ~~Release 1.1.3 with the IMM32 freeze fix (D65)?~~ **Decided 2026-10-06: yes** (Owner, after testing Subtitle Edit) | Released as 1.1.3 |
+| O22 | ~~Stale per-user x86 registration on this PC (`HKCU\Software\Classes\WOW6432Node\CLSID\{8A4B9277-…}` → repo i686 DLL)~~ **Done 2026-10-06: Owner deleted it**; 1.1.3 notes tell users how to check for it | — |
 | O18 | Contact channel: the site lists GitHub issues + Linktree; add a public email address? | No email published |
 
 ## Agent decisions (one line each: what, why)
+- D65: IMM32 freeze (Owner report 2026-10-05, Subtitle Edit 5.2). Cause: `ITfTextLayoutSink::OnLayoutChange` (D58)
+  queued a `Relayout` edit session for every notification; `Relayout` calls `GetTextExt`, which CUAS (the IMM32→TSF
+  bridge) answers by asking the app's IME window and then **reports as a layout change**, right after our session and
+  before the app's message loop runs (traced: one echo per GetTextExt, outside our session). TSF drains its async queue
+  in one dispatch, so the cycle never returned to the app: 100% CPU, popup never painted (black), app frozen. RichEdit
+  (`tsf_harness`) never echoes, so no test saw it. Fix (docs/02 §9): ignore notifications during our own sessions; at
+  most one `Relayout` queued; after a no-move `Relayout` the layout is "settled" until a marker posted to our popup comes
+  back through the app's message loop (`PopupEvent::Pumped`) — echoes arrive before it, real moves after; budget of 8
+  `Relayout`s per shown word as a hard stop. First tried "no move ⇒ stop for the word": it broke the D58 layout-follow
+  check (RichEdit's no-move notifications during typing ate the later real move), so it was replaced by the marker.
+  Traced after the fix: ~3 relayouts per key in the IMM32 host, then quiet. Regression test: `imm32_harness` (D66).
+  Commands: `cargo build --release -p t3a-tip --lib --examples --target x86_64-pc-windows-msvc` (CARGO_TARGET_DIR=target/staging),
+  then `target\staging\x86_64-pc-windows-msvc\release\examples\imm32_harness.exe` (T3A_ROUNDS=5);
+  `T3A_INSTALLED=1` + `T3A_SYMPATH=<pdb dir>` reproduces a released DLL with symbolized frames.
+- D66: `imm32_harness` (t3a-tip example): an Avalonia-faithful IMM32 window (WM_IME_SETCONTEXT without the composition
+  window, Start/EndComposition handled, posted ImmSetCandidateWindow on every preedit change, context recreated on a
+  language switch, `_ignoreWmChar`). CUAS bridges only the thread's *active* TIP, and TSF loads TIPs itself (a
+  CoRegisterClassObject is ignored; the DLL is already loaded as a display-attribute provider when the window gets a
+  context), so this build is loaded through a volatile per-user `HKCU\Software\Classes\CLSID\{TIP}\InprocServer32` entry
+  that exists from window creation to profile activation (~1 s), carries a marker value, is removed by a guard, by the
+  watchdog and by the next run, and is never written over someone else's entry. Real keys (SendInput) only while its
+  own window is foreground. A freeze report suspends the UI thread, unwinds it (RtlVirtualUnwind) and symbolizes it with
+  dbghelp (no debugger is installed here). `dev-uninstall.ps1` now also removes `HKCU\…\WOW6432Node\CLSID\{TIP}` (O22).
+  `windows` feature `Win32_UI_Input_Ime` added for the t3a-tip dev-dependency only (same crate, no ledger change).
 - D64: SEO pass (Owner request 2026-09-27, after ChatGPT's web search failed to suggest Type3arabi for "Yamli/Maren for
   Windows"). Cause: repo public 2 days, site likely not yet in Bing's index (ChatGPT's main search source), and the site/README
   never used the words people search with (Yamli, Maren, Franco-Arabic, transliteration: 0 hits). Website (local, not
@@ -570,6 +631,10 @@ pass; the RC should change as little as possible between the Owner's test and re
 - M7: Store listing text; `docs/releases/` notes per release.
 
 ## Session log
+- 2026-10-06 — Agent (Claude): Owner's Subtitle Edit freeze investigated end to end: Avalonia's IMM32 path read from
+  source, freeze reproduced with the installed 1.1.2 DLL in a new IMM32 harness, root cause symbolized (D65), fixed and
+  verified (all harnesses, parallel stress, fmt/clippy/tests); stale per-user x86 registration found (O22). Not committed,
+  not released (O21). Next: the Owner tests Subtitle Edit with a dev install of this build.
 - 2026-09-27 — Agent (Claude): SEO/AI-search analysis and on-site fixes (D64), for the Owner's review before deploying.
   Owner actions after deploy: Bing Webmaster Tools + Google Search Console (submit sitemap), Cloudflare Crawler Hints and
   AI Crawl Control check, GitHub topics/description, Microsoft Q&A answers, AlternativeTo listings, winget.
