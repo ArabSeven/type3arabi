@@ -9,6 +9,8 @@
 | Golden/eval | `t3a-cli eval` | accuracy gates per milestone (§3) |
 | Key-router | `t3a-tip` pure module tests (portable: `KeyRouter` has no Windows types) | every row of `docs/02 §5.2` as a table-driven test |
 | Windows integration | `tests/win/` PowerShell + a small Rust harness using UI Automation | drive Notepad/WordPad-like targets: type sequences via `SendInput`, read resulting text via UIA, assert |
+| TIP in a TSF host | `t3a-tip` example `tsf_harness` (x64 + x86) | the TIP in-process on a RichEdit (native TSF): every key scenario, popup ownership and layout-follow; quiet, no install |
+| TIP in an IMM32 host | `t3a-tip` example `imm32_harness` (x64; needs a registered Type3arabi profile) | an Avalonia-like window (WM_IME_*, Imm* calls) reached through CUAS, as Subtitle Edit 5 / Qt 5 / Java / SDL apps are; this build's DLL is loaded for the profile through a per-user COM entry that exists only until the profile is activated; real keystrokes (`SendInput`, only while its own window is foreground); fails if the app's queue never drains (frozen app), the list is never painted, or text differs; a freeze prints the UI thread's stack |
 | Manual compat | §5 matrix | before each release |
 
 ## 2. Invariant tests that must exist from M3
@@ -43,6 +45,8 @@ steal; Narrator reads candidates (Tier-1 Win32 + browsers).
 | Tier-1 | Tier-2 |
 |---|---|
 | Notepad (Win11), Word 365, Outlook (new + classic), Excel cell edit, Chrome, Edge, Firefox, Windows Search / Start, File Explorer rename, WhatsApp Desktop, Microsoft Teams, VS Code, Windows Terminal, Settings search box (immersive) | Telegram Desktop, Discord, Slack, LibreOffice Writer, Notion, Obsidian, OneNote, Zoom chat, Photoshop text tool, a full-screen DirectX game chat (UILess), Sticky Notes, Mail/Calendar (immersive), elevated Notepad (admin), Win32 password box (expect Latin per §7 of `docs/02`) |
+IMM32-only apps (not TSF-aware) form their own class and need at least one entry per release: Subtitle Edit 5
+(Avalonia) is the reference; a Qt 5 or Java app is a good second.
 Results table lives in `docs/app-compat.md` (app, version, OS, date, pass/fail per check, notes → `docs/app-quirks.md`).
 
 ## 6. Soak & stability

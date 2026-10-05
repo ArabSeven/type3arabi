@@ -230,6 +230,7 @@ cd tools/pipeline && uv run pytest && uv run t3ap sources        # pipeline test
 # Windows only:
 cargo run --release -p t3a-tip --example tsf_harness --target x86_64-pc-windows-msvc   # TIP in a real TSF host, no install
 cargo run --release -p t3a-tip --example tsf_harness --target i686-pc-windows-msvc
+cargo run --release -p t3a-tip --example imm32_harness --target x86_64-pc-windows-msvc   # TIP behind CUAS in an IMM32 app (Avalonia-like); real keys; needs a registered profile; build the lib first
 powershell -ExecutionPolicy Bypass -File .\scripts\dev-install.ps1     # build, copy to Program Files, one Arabic profile
 powershell -ExecutionPolicy Bypass -File .\scripts\dev-uninstall.ps1   # remove (also repairs older broken installs)
 # Never regsvr32 a DLL inside target\: Windows keeps registered DLLs loaded (locked) in every app.

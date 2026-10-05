@@ -42,6 +42,10 @@ windows = { workspace = true, features = [
 ] }
 windows-core = { workspace = true }
 
+[target.'cfg(windows)'.dev-dependencies]
+# imm32_harness: an IMM32 host (WM_IME_* + Imm* calls) like Avalonia, Qt 5, Java, SDL apps.
+windows = { workspace = true, features = ["Win32_UI_Input_Ime"] }
+
 [build-dependencies]
 # Windows resources: brand icon + VERSIONINFO (docs/07 §1; ledger docs/01 §8).
 embed-resource = "3"
