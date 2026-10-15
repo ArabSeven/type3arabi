@@ -313,6 +313,7 @@ mod harness {
             '\n' => 0x0D,
             '\x08' => 0x08,
             '\x1B' => 0x1B,
+            '\t' => 0x09,
             _ => panic!("no vk for {c:?}"),
         }
     }
@@ -365,6 +366,32 @@ mod harness {
                 after = Some(h);
             }
         }
+    }
+
+    /// Pseudo-key: click the tashkeel editor's 2nd palette cell (damma), posted so it arrives through
+    /// the app's message loop like a real click (not from inside a key event).
+    const CLICK_DAMMA: char = '\u{E005}';
+
+    fn click_damma() -> bool {
+        let Some(p) = popup() else {
+            return false;
+        };
+        unsafe {
+            let mut rc = RECT::default();
+            let _ = GetClientRect(p, &mut rc);
+            let s = windows::Win32::UI::HiDpi::GetDpiForWindow(p).max(96) as f32 / 96.0;
+            let px = |v: f32| (v * s).round() as i32;
+            let (pad, gap) = (px(12.0), px(4.0));
+            let cell = (rc.right - 2 * pad - 9 * gap) / 10;
+            let (x, y) = (
+                rc.right - pad - cell - gap - cell / 2,
+                px(40.0 + 84.0 + 30.0) + 1,
+            );
+            let lp = LPARAM((((y as u32 & 0xFFFF) << 16) | (x as u32 & 0xFFFF)) as isize);
+            let _ = PostMessageW(Some(p), WM_LBUTTONDOWN, WPARAM(1), lp);
+            let _ = PostMessageW(Some(p), WM_LBUTTONUP, WPARAM(0), lp);
+        }
+        true
     }
 
     /// A visible list with an unpainted region is the "black list" of a frozen app.
@@ -667,7 +694,9 @@ mod harness {
                 ("shukran ", "شكراً "),  // U+0634 U+0643 U+0631 U+0627 U+064B U+0020
                 ("mar7\x08\x08\x08\x08", ""),
                 ("hello\x1B", "hello"),
-                ("3arabi\n", "عربي"), // U+0639 U+0631 U+0628 U+064A
+                ("3arabi\n", "عربي"),            // U+0639 U+0631 U+0628 U+064A
+                ("shukran\ta\n", "شَكراً"),        // U+0634 U+064E U+0643 U+0631 U+0627 U+064B
+                ("shukran\t\u{E005}\n", "شُكراً"), // U+0634 U+064F U+0643 U+0631 U+0627 U+064B
             ];
             let rounds: usize = std::env::var("T3A_ROUNDS")
                 .ok()
@@ -680,6 +709,27 @@ mod harness {
                     APP.with(|a| a.borrow_mut().text.clear());
                     for (i, c) in keys.chars().enumerate() {
                         APP.with(|a| a.borrow_mut().counts.clear());
+                        if trace {
+                            if let Some(p) = popup() {
+                                let mut r = RECT::default();
+                                let _ = GetWindowRect(p, &mut r);
+                                eprintln!(
+                                    "  before {c:?}: popup {:?}",
+                                    (r.left, r.top, r.right, r.bottom)
+                                );
+                            }
+                        }
+                        if c == CLICK_DAMMA {
+                            if !click_damma() {
+                                println!("FAIL round {round}: {keys:?}: no popup to click");
+                                failures += 1;
+                            }
+                            if !settle() {
+                                println!("FAIL round {round}: click in {keys:?}: frozen app");
+                                return report_busy();
+                            }
+                            continue;
+                        }
                         if !send_key(h, vk_for(c)) {
                             println!("ABORT: the harness window is not the foreground window; no key sent");
                             return 30;
