@@ -1,11 +1,12 @@
 //! # t3a-tip — the TSF Text Input Processor (docs/02-tsf-integration.md)
 //!
-//! Portable modules (compiled and tested everywhere): `ids`, `keyrouter`.
+//! Portable modules (compiled and tested everywhere): `anchor`, `ids`, `keyrouter`.
 //! Windows modules (M1): COM class factory, `TextService`, sinks, compositions, edit sessions,
 //! display attributes, lang-bar mode item, UIElement, registration, `guard` (panic safety).
 //!
 //! AGENTS.md R1: every exported function and COM method body goes through `guard()`.
 
+pub mod anchor;
 pub mod ids;
 pub mod keyrouter;
 

@@ -322,6 +322,12 @@ Display attributes:
   Never call `SetFocus`/`SetForegroundWindow`. Do **not** use `WS_EX_LAYOUTRTL` (we lay out RTL ourselves).
 - **Position**: in the same edit session after updating text, `ITfContextView::GetTextExt(ec, compositionRange, &rect, &clipped)`.
   `TF_E_NOLAYOUT` ⇒ keep previous position, wait for `ITfTextLayoutSink::OnLayoutChange`, then re-query.
+  The same for an answer that is the empty rect at the origin or lies on no monitor. "Previous" = the last
+  position the app reported for the focused field (forgotten on a focus change); only when there is none yet does
+  the popup use the caret (`GetGUIThreadInfo`) or the pointer. A `Relayout` never uses those fallbacks, and the
+  diacritics editor's previews (marks only, the word does not move) keep the popup where it is. Chrome (Google
+  Docs) answers `TS_E_NOLAYOUT` after every edit until the page reports its character bounds; the pointer
+  fallback moved the editor from under the mouse just before a click, so the click hit nothing (D67).
 - **Following layout changes** (`OnLayoutChange` → a `Relayout` edit session that re-reads `GetTextExt` and moves
   the popup only if the rectangle changed). A notification must never be able to feed itself: in IMM32 apps
   (Avalonia, Qt 5, Java, SDL… bridged by CUAS) `GetTextExt` is answered by asking the app's IME window and is

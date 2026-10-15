@@ -5,6 +5,7 @@
 //! re-entry degrades to "key not eaten" instead of a panic. Document changes happen only inside
 //! edit sessions (`DocOp` + `apply`), which read and write state the same way.
 
+use crate::anchor;
 use crate::ids::GUID_PRESERVED_TOGGLE;
 use crate::keyrouter::{
     classify, classify_scopes, shift_tap, Action, ContextMode, Decision, Key, KeyMap, Popup,
@@ -33,7 +34,7 @@ use t3a_ui::{
 };
 use windows::core::{implement, Interface, BOOL, GUID};
 use windows::Win32::Foundation::{E_FAIL, E_INVALIDARG, HWND, LPARAM, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::ClientToScreen;
+use windows::Win32::Graphics::Gdi::{ClientToScreen, MonitorFromPoint, MONITOR_DEFAULTTONULL};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::System::Variant::VARIANT;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, VK_SPACE};
@@ -183,6 +184,9 @@ pub struct State {
     eaten: [bool; 256],
     popup: Option<PopupWindow>,
     text_rect: RECT,
+    /// `text_rect` came from the app for the focused field (docs/02 §9): when a later query has no
+    /// layout, the popup stays there instead of jumping to the caret or the pointer.
+    rect_known: bool,
     /// Top-level window of the focused field (docs/02 §9): owns the popup.
     owner_hwnd: HWND,
     /// The context our composition lives in: keys arriving from another context first finalize it.
@@ -435,6 +439,7 @@ impl TextService {
                 eaten: [false; 256],
                 popup: None,
                 text_rect: RECT::default(),
+                rect_known: false,
                 owner_hwnd: HWND::default(),
                 comp_ctx: None,
                 edit_sink: None,
@@ -628,6 +633,7 @@ impl ITfThreadMgrEventSink_Impl for TextService_Impl {
             self.finalize_composition();
             if let Ok(mut s) = self.state.try_borrow_mut() {
                 s.anchor = None;
+                s.rect_known = false; // another field: its position is not known yet
                 s.recent_words.clear();
                 s.eaten = [false; 256]; // their key-ups go to the new focus
             }
@@ -1759,7 +1765,7 @@ fn apply(
     unsafe {
         match op {
             DocOp::Preview => {
-                let (comp, comp_ctx, atom, text) = match this.state.try_borrow() {
+                let (comp, comp_ctx, atom, text, editor, known) = match this.state.try_borrow() {
                     // Nothing to show any more (committed or cancelled since the request).
                     Ok(s) if !s.composing() => return Ok(()),
                     Ok(s) => (
@@ -1771,9 +1777,12 @@ fn apply(
                             s.attr_input
                         },
                         utf16(&s.preview_text()),
+                        s.tashkeel.is_some(),
+                        s.rect_known,
                     ),
                     Err(_) => return Ok(()),
                 };
+                let mut restarted = comp.is_none();
                 // Our composition, if it still takes text in this context. Apps can end or invalidate
                 // it without telling us (a field re-rendered, text replaced): then start a new one
                 // instead of failing every later key (the list/editor would stop responding).
@@ -1794,6 +1803,7 @@ fn apply(
                             s.composition = None;
                             s.comp_ctx = None;
                         }
+                        restarted = true;
                         diag("preview: composition lost; restarted");
                     }
                 }
@@ -1805,12 +1815,14 @@ fn apply(
                     Some(range) => {
                         set_attr(ctx, ec, &range, atom);
                         set_caret_end(ctx, ec, &range);
-                        update_text_rect(this, ctx, ec, &range);
+                        if anchor::requery_on_preview(editor, known, restarted) {
+                            update_text_rect(this, ctx, ec, &range, false);
+                        }
                     }
                     None => {
                         // Host refused a composition: still offer the candidate list at the caret.
                         if let Some(sel) = selection_range(ctx, ec) {
-                            update_text_rect(this, ctx, ec, &sel);
+                            update_text_rect(this, ctx, ec, &sel, false);
                         }
                     }
                 }
@@ -1825,7 +1837,7 @@ fn apply(
                     _ => return Ok(()),
                 };
                 if let Some(range) = comp.and_then(|c| c.GetRange().ok()) {
-                    update_text_rect(this, ctx, ec, &range);
+                    update_text_rect(this, ctx, ec, &range, true);
                     // Our own typing changes the layout too: only a real move repositions the popup.
                     // No move: settled until the app's message loop runs (echoes of this query come
                     // before that). Without a popup to carry the marker, the next Preview resets it.
@@ -2091,17 +2103,54 @@ unsafe fn clear_attr(ctx: &ITfContext, ec: u32, range: &ITfRange) {
 }
 
 /// Screen rectangle of `range` for popup placement, with caret / cursor fallbacks (docs/02 §15).
-unsafe fn update_text_rect(this: &TextService_Impl, ctx: &ITfContext, ec: u32, range: &ITfRange) {
-    let mut rc = RECT::default();
-    let mut ok = false;
+/// `follow`: a re-query after a layout change (`Relayout`), which only ever moves the popup to where
+/// the app says the word is — never to the caret or pointer fallback.
+unsafe fn update_text_rect(
+    this: &TextService_Impl,
+    ctx: &ITfContext,
+    ec: u32,
+    range: &ITfRange,
+    follow: bool,
+) {
     let mut owner = HWND::default();
+    let mut app = None;
     if let Ok(view) = ctx.GetActiveView() {
         owner = view.GetWnd().unwrap_or_default();
+        let mut rc = RECT::default();
         let mut clipped = BOOL::from(false);
-        ok = view.GetTextExt(ec, range, &mut rc, &mut clipped).is_ok()
-            && (rc.bottom > rc.top || rc.right > rc.left || rc.left != 0 || rc.top != 0);
+        if view.GetTextExt(ec, range, &mut rc, &mut clipped).is_ok() {
+            let r = (rc.left, rc.top, rc.right, rc.bottom);
+            // A rectangle on no monitor is no place on screen (a hidden input element, stale bounds).
+            let on_screen = [(rc.left, rc.top), (rc.right, rc.bottom)]
+                .iter()
+                .any(|&(x, y)| {
+                    !MonitorFromPoint(POINT { x, y }, MONITOR_DEFAULTTONULL).is_invalid()
+                });
+            if anchor::plausible(r) && on_screen {
+                app = Some(r);
+            }
+        }
     }
-    if !ok {
+    let known = match this.state.try_borrow() {
+        Ok(s) if s.rect_known => Some(s.text_rect),
+        _ => None,
+    };
+    let known = known.map(|k| (k.left, k.top, k.right, k.bottom));
+    let rc;
+    let choice = anchor::choose(app, known);
+    if follow && choice == anchor::Anchor::Fallback {
+        return;
+    }
+    if let anchor::Anchor::App((left, top, right, bottom))
+    | anchor::Anchor::Keep((left, top, right, bottom)) = choice
+    {
+        rc = RECT {
+            left,
+            top,
+            right,
+            bottom,
+        };
+    } else {
         let mut gti = GUITHREADINFO {
             cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
             ..Default::default()
@@ -2143,6 +2192,7 @@ unsafe fn update_text_rect(this: &TextService_Impl, ctx: &ITfContext, ec: u32, r
     }
     if let Ok(mut s) = this.state.try_borrow_mut() {
         s.text_rect = rc;
+        s.rect_known |= app.is_some();
         s.owner_hwnd = owner;
     }
 }
