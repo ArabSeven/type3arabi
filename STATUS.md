@@ -13,6 +13,35 @@ Remaining for M7 acceptance: an Owner-run install/upgrade/uninstall of the MSI (
 still needs the Owner's runs. **Next gate: the Owner's manual test of 1.0.0-rc.2.** Only after that: public
 repository, public unsigned release, SignPath inquiry, signing workflow, Microsoft Store (Owner, 2026-09-25).
 
+## Release 1.1.4 (2026-10-15) — published, unsigned
+**Published:** https://github.com/ArabSeven/type3arabi/releases/tag/v1.1.4 (latest), annotated tag `v1.1.4` on `77280e4`
+(`main`; CI run 38706490094 all 6 jobs green), built by `release.yml` run 38708083485 (signing skipped).
+`Type3arabi-1.1.4-x64.msi` = `Type3arabi-x64.msi`, 24,350,720 bytes, SHA-256
+`5b094b7af235aa3799db6ca4ae790747211fd5ca32785d51e1681779aa0e8660` (= SHA256SUMS.txt). Downloaded back:
+`validate-msi.ps1 … -ModelSha256 <lock>` all checks pass (ProductVersion 1.1.4 on the MSI and all four binaries, release
+model = lock). `releases/latest/download/Type3arabi-x64.msi` serves it (24,350,720 bytes); the website has no version
+text, no redeploy. Notes: `docs/releases/v1.1.4.md`.
+Owner approval 2026-10-15 after testing the dev install in Google Docs ("no jump, clicks apply"): commit, bump, release.
+Gates on the bumped version before the tag: fmt; clippy x64 + i686; `cargo test --workspace` 109 passed; Settings fmt +
+clippy + 6 tests; `cargo deny` both workspaces; `tsf_harness` and `imm32_harness` x64 + x86 × 5 rounds: 0 failed.
+**Not verified by the agent:** upgrade 1.1.3 → 1.1.4 on the Owner's PC from the published MSI (the Owner tested the dev
+install of the same code).
+
+## Fix 2026-10-15: diacritics editor jumped in Google Docs; a clicked mark was not applied
+Owner report 2026-10-15 (Google Docs in Chrome, 1.1.3): a diacritic shortcut applies the mark but the editor jumps to a
+new place (usually bottom left); clicking a mark (kasra) makes the same jump and applies nothing. Cause and fix: D67.
+Not reproduced in RichEdit (`tsf_harness`) or the IMM32 host: both answer `GetTextExt` every time (popup traced at a
+fixed position through Tab, `a` and a damma click). Chrome is the host that answers `TS_E_NOLAYOUT` (Chromium
+`TSFTextStore::GetTextExt`, read from source); the Docs failure itself was **not reproduced by the agent**.
+Evidence after the fix (2026-10-15): fmt; clippy x64 workspace + i686 (tip/ui/hotkey/paths) `-D warnings`;
+`cargo test --workspace` 109 passed (104 + 5 new `anchor` tests); `tsf_harness` x64 + x86 `T3A_ROUNDS=5`: 0 failed,
+popup-owner and layout-follow checks PASS; `imm32_harness` x64 + x86 `T3A_ROUNDS=5` (now with `shukran⇥a⏎` and
+`shukran⇥`+click on damma, the click posted through the app's message loop): 0 failed; `cargo deny check` ok;
+pipeline pytest 11 passed; `eval data/eval/smoke.tsv` all 84.7% top-1 / 97.4% hit@5 (engine unchanged).
+Dev-installed on this PC (`scripts\dev-install.ps1`; Program Files x64/x86 DLLs = the build's SHA-256).
+**Owner confirmed 2026-10-15** (dev install, Google Docs): no jump, clicks apply. Commits `a083917` fix, `f0619cb`
+harness, `77280e4` version 1.1.4. Release: 1.1.4, section above.
+
 ## Release 1.1.3 (2026-10-06) — published, unsigned
 **Published:** https://github.com/ArabSeven/type3arabi/releases/tag/v1.1.3 (latest), annotated tag `v1.1.3` on `10a0c26`
 (`main`; CI run 37377846511 all 6 jobs green), built by `release.yml` run 37378571589 (signing skipped).
@@ -460,6 +489,14 @@ and active". Gate E2 numbers were near-reproducible (86.0% vs 86.4% claimed; eva
 | O18 | Contact channel: the site lists GitHub issues + Linktree; add a public email address? | No email published |
 
 ## Agent decisions (one line each: what, why)
+- D67: Popup anchor (Owner report 2026-10-15, Google Docs). `update_text_rect` ignored docs/02 §9's "`TF_E_NOLAYOUT` ⇒
+  keep previous position": every failed `GetTextExt` placed the popup at the caret, else the mouse pointer. Chrome
+  answers `TS_E_NOLAYOUT` after each edit until the page reports character bounds, and sends layout changes all along,
+  so the editor followed the pointer (moved away from under a click: nothing applied) or a stray caret. Now
+  (`t3a-tip::anchor`): the app's answer if it is not the empty origin rect and lies on a monitor; else the last position
+  the app gave for the focused field (`rect_known`, reset on focus change); caret/pointer only before any answer, and
+  never from a `Relayout`; editor previews (marks only) do not re-query. Tests: `anchor::*` unit tests,
+  `imm32_harness` editor scenarios (key + posted click).
 - D65: IMM32 freeze (Owner report 2026-10-05, Subtitle Edit 5.2). Cause: `ITfTextLayoutSink::OnLayoutChange` (D58)
   queued a `Relayout` edit session for every notification; `Relayout` calls `GetTextExt`, which CUAS (the IMM32→TSF
   bridge) answers by asking the app's IME window and then **reports as a layout change**, right after our session and
@@ -631,6 +668,10 @@ pass; the RC should change as little as possible between the Owner's test and re
 - M7: Store listing text; `docs/releases/` notes per release.
 
 ## Session log
+- 2026-10-15 — Agent (Claude): Owner's Google Docs diacritics-editor jump/no-apply investigated; not reproducible in
+  RichEdit/IMM32 hosts, cause found in our NOLAYOUT handling vs Chrome's `GetTextExt` (D67), fixed, full gates green,
+  dev-installed; Owner confirmed in Docs; released as 1.1.4 (published, latest). Next: Owner upgrade check from the
+  published MSI (optional; the dev install already runs the same code).
 - 2026-10-06 — Agent (Claude): Owner's Subtitle Edit freeze investigated end to end: Avalonia's IMM32 path read from
   source, freeze reproduced with the installed 1.1.2 DLL in a new IMM32 harness, root cause symbolized (D65), fixed and
   verified (all harnesses, parallel stress, fmt/clippy/tests); stale per-user x86 registration found (O22). Not committed,
